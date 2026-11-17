@@ -1,5 +1,6 @@
 [package]
 name = "ignit_shader_engine"
+description = "Reusable WGSL nodes for engine rendering in Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,6 +9,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_shader_preprocessor = { path = "../shader_preprocessor" }
-ignit_shader_math = { path = "../shader_math" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.0" }
+ignit_shader_math = { path = "../shader_math", version = "1.6.0" }
 log = { workspace = true }

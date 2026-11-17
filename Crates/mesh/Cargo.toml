@@ -1,5 +1,6 @@
 [package]
 name = "ignit_mesh"
+description = "Mesh data and GPU mesh resources for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_core = { path = "../core" }
-ignit_vertex = { path = "../vertex" }
+ignit_core = { path = "../core", version = "1.6.0" }
+ignit_vertex = { path = "../vertex", version = "1.6.0" }
 cgmath = { workspace = true }
 wgpu = { workspace = true }

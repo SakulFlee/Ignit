@@ -1,5 +1,6 @@
 [package]
 name = "ignit_shader_2d"
+description = "Reusable WGSL nodes for 2D, UI, and text rendering in Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,4 +9,4 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_shader_preprocessor = { path = "../shader_preprocessor" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.0" }

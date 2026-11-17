@@ -1,5 +1,6 @@
 [package]
 name = "ignit_light"
+description = "Light descriptors and GPU light data for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

@@ -1,5 +1,6 @@
 [package]
 name = "ignit_texture"
+description = "Texture descriptors and GPU texture resources for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,8 +9,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_core = { path = "../core" }
-ignit_file_manager = { path = "../file_manager" }
+ignit_core = { path = "../core", version = "1.6.0" }
+ignit_file_manager = { path = "../file_manager", version = "1.6.0" }
 wgpu = { workspace = true }
 cgmath = { workspace = true }
 image = { workspace = true }

@@ -1,5 +1,6 @@
 [package]
 name = "ignit_file_manager"
+description = "Cross-platform asset and storage I/O for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

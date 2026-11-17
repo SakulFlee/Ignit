@@ -1,5 +1,6 @@
 [package]
 name = "ignit_debug_render"
+description = "Debug line and shape rendering overlays for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -12,12 +13,12 @@ cgmath = { workspace = true }
 wgpu = { workspace = true }
 winit = { workspace = true }
 
-ignit_app = { path = "../app" }
-ignit_camera = { path = "../camera" }
-ignit_core = { path = "../core" }
-ignit_ecs = { path = "../ecs" }
-ignit_ecs_bridge = { path = "../ecs_bridge" }
-ignit_instance = { path = "../instance" }
-ignit_light = { path = "../light" }
-ignit_shadow = { path = "../shadow" }
-ignit_vertex = { path = "../vertex" }
+ignit_app = { path = "../app", version = "1.6.0" }
+ignit_camera = { path = "../camera", version = "1.6.0" }
+ignit_core = { path = "../core", version = "1.6.0" }
+ignit_ecs = { path = "../ecs", version = "1.6.0" }
+ignit_ecs_bridge = { path = "../ecs_bridge", version = "1.6.0" }
+ignit_instance = { path = "../instance", version = "1.6.0" }
+ignit_light = { path = "../light", version = "1.6.0" }
+ignit_shadow = { path = "../shadow", version = "1.6.0" }
+ignit_vertex = { path = "../vertex", version = "1.6.0" }

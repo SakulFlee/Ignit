@@ -1,5 +1,6 @@
 [package]
 name = "ignit_ecs"
+description = "Entity-component-system world, queries, systems, and schedules for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

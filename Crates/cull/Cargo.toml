@@ -1,5 +1,6 @@
 [package]
 name = "ignit_cull"
+description = "CPU frustum culling for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

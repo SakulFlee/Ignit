@@ -1,5 +1,6 @@
 [package]
 name = "ignit_shader_preprocessor"
+description = "Named WGSL shader-node registry and builder for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,5 +9,5 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_file_manager = { path = "../file_manager" }
+ignit_file_manager = { path = "../file_manager", version = "1.6.0" }
 log = { workspace = true }

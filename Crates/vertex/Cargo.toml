@@ -1,5 +1,6 @@
 [package]
 name = "ignit_vertex"
+description = "Vertex formats for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

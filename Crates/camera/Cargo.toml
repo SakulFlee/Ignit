@@ -1,5 +1,6 @@
 [package]
 name = "ignit_camera"
+description = "Camera descriptors and projection helpers for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,6 +9,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_math = { path = "../math" }
+ignit_math = { path = "../math", version = "1.6.0" }
 cgmath = { workspace = true }
 wgpu = { workspace = true }
