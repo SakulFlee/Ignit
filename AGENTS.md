@@ -210,9 +210,11 @@ cargo run -p template_minimal_2d
 | `Examples/all-in-one` | `template_all_in_one` | Scene, glTF, lighting, shadows, billboards, volumetric fog, SMAA, UI, and overlays. Ships its own minimal `Assets/`. |
 | `Examples/minimal-2d` | `template_minimal_2d` | 2D shape rendering; no asset files. |
 
-The template app sources are canonical in `Examples/`; the CLI embeds them
-during generation. `Crates/cli/src/template/` only contains platform
-scaffolding such as Gradle and Xcode files.
+The template app sources are canonical in `Examples/`. The publishable
+`ignit-cli` crate carries copies under `Crates/cli/src/template/app/`, and
+`.forgejo/ci/test-templates.sh` checks that they stay in sync.
+`Crates/cli/src/template/` also contains platform scaffolding such as Gradle
+and Xcode files.
 
 ---
 
@@ -241,7 +243,7 @@ ignit run ios --device "<device>"
 
 - `init` supports the `minimal-3d`, `all-in-one`, and `minimal-2d` templates, and can point at the engine via `--engine-repo`, `--engine-branch`, or `--engine-path`.
 - The CLI writes `Ignit.toml`, which configures the engine repository/branch plus Android and iOS packaging/deployment settings.
-- Template app sources live in `Examples/`; the generators live in `Crates/cli/src/init/`. Platform scaffolding lives in `Crates/cli/src/template/`.
+- Template app sources live in `Examples/`; publishable copies live in `Crates/cli/src/template/app/` and are checked by `test-templates.sh`. The generators live in `Crates/cli/src/init/`. Platform scaffolding lives in `Crates/cli/src/template/`.
 - Generated projects are plain Cargo projects; there is no generated dev shell or direnv setup.
 - When changing CLI behavior or templates, test the generated project end to end, not only the CLI crate.
 

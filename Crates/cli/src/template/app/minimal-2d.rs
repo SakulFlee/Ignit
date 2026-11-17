@@ -1,0 +1,236 @@
+use ignit::app::{App, AppSettings, Module};
+use ignit::app::{LayerRenderer, RenderLayer, RenderOverlayContext};
+use ignit::ecs::{System, World};
+use ignit::ecs_bridge::SurfaceFormatResource;
+use ignit::logging::{self, error, info};
+use ignit::renderer::{Camera2DUniform, Renderer2D};
+use ignit::twod::{Batch2D, ShapeDescriptor, Vertex2D};
+
+pub const NAME: &str = env!("CARGO_PKG_NAME");
+
+#[ignit::main]
+pub fn entrypoint(
+    event_loop_result: Result<
+        ignit::winit::event_loop::EventLoop<()>,
+        ignit::winit::error::EventLoopError,
+    >,
+) {
+    #[cfg(not(target_os = "android"))]
+    logging::init();
+
+    let event_loop = event_loop_result.expect("Event Loop failure");
+
+    let app_settings = AppSettings {
+        vsync_enabled: true,
+        name: NAME.to_string(),
+        back_presses_to_exit: 3,
+        ..AppSettings::default()
+    };
+
+    match App::new()
+        .add_module(Scene2DModule {
+            vertices: std::sync::Mutex::new(Vec::new()),
+        })
+        .add_module(ignit::debug_ui::DebugUiModule::new())
+        .liftoff(event_loop, app_settings)
+    {
+        Ok(()) => info!("Cleanly exited!"),
+        Err(e) => error!("Runtime failure: {e:?}"),
+    }
+}
+
+/// Overlay that renders 2D shapes.
+struct ShapeOverlay {
+    renderer: Renderer2D,
+    camera_buffer: ignit::wgpu::Buffer,
+    camera_bind_group: ignit::wgpu::BindGroup,
+    vertices: Vec<Vertex2D>,
+}
+
+impl ShapeOverlay {
+    fn new(device: &ignit::wgpu::Device, format: ignit::wgpu::TextureFormat) -> Self {
+        let renderer = Renderer2D::new(device, format);
+
+        let camera_buffer = device.create_buffer(&ignit::wgpu::BufferDescriptor {
+            label: Some("2D Camera Buffer"),
+            size: std::mem::size_of::<Camera2DUniform>() as u64,
+            usage: ignit::wgpu::BufferUsages::UNIFORM | ignit::wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let camera_bind_group = renderer.create_bind_group(device, &camera_buffer);
+
+        Self {
+            renderer,
+            camera_buffer,
+            camera_bind_group,
+            vertices: Vec::new(),
+        }
+    }
+}
+
+impl LayerRenderer for ShapeOverlay {
+    fn layer(&self) -> RenderLayer {
+        RenderLayer::World2D
+    }
+
+    fn render(&mut self, ctx: RenderOverlayContext) {
+        if self.vertices.is_empty() {
+            return;
+        }
+
+        let (screen_w, screen_h) = ctx.screen_size;
+
+        let projection = [
+            [2.0 / screen_w, 0.0, 0.0, 0.0],
+            [0.0, -2.0 / screen_h, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [-1.0, 1.0, 0.0, 1.0],
+        ];
+
+        let uniform = Camera2DUniform {
+            view_proj: projection,
+            screen_size: [screen_w, screen_h],
+            _padding: [0.0; 2],
+        };
+
+        let uniform_bytes = unsafe {
+            std::slice::from_raw_parts(
+                &uniform as *const Camera2DUniform as *const u8,
+                std::mem::size_of::<Camera2DUniform>(),
+            )
+        };
+
+        ctx.queue
+            .write_buffer(&self.camera_buffer, 0, uniform_bytes);
+
+        let Some(command_encoder) = ctx.encoder else {
+            return;
+        };
+
+        {
+            let mut render_pass =
+                command_encoder.begin_render_pass(&ignit::wgpu::RenderPassDescriptor {
+                    label: Some("2D Scene Pass"),
+                    color_attachments: &[Some(ignit::wgpu::RenderPassColorAttachment {
+                        view: ctx.target_view,
+                        resolve_target: None,
+                        ops: ignit::wgpu::Operations {
+                            load: ignit::wgpu::LoadOp::Load,
+                            store: ignit::wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+
+            let byte_data = unsafe {
+                std::slice::from_raw_parts(
+                    self.vertices.as_ptr() as *const u8,
+                    self.vertices.len() * std::mem::size_of::<Vertex2D>(),
+                )
+            };
+            ctx.queue
+                .write_buffer(self.renderer.vertex_buffer(), 0, byte_data);
+
+            render_pass.set_pipeline(self.renderer.pipeline());
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.renderer.vertex_buffer().slice(..));
+            render_pass.draw(0..self.vertices.len() as u32, 0..1);
+        }
+    }
+}
+
+struct Scene2DModule {
+    vertices: std::sync::Mutex<Vec<ignit::twod::Vertex2D>>,
+}
+
+impl Module for Scene2DModule {
+    fn setup(
+        &self,
+        _ecs: &mut World,
+        _device: &ignit::wgpu::Device,
+        _queue: &ignit::wgpu::Queue,
+    ) -> Vec<Box<dyn System>> {
+        let mut batch = Batch2D::new();
+
+        // Red square at (100, 100) with size 100x100
+        batch.push_shape(&ignit::twod::shape::generate_rect(
+            100.0,
+            100.0,
+            100.0,
+            100.0,
+            [0.9, 0.3, 0.2, 1.0],
+        ));
+
+        // Green circle at (300, 200) with radius 50
+        batch.push_shape(&ignit::twod::shape::generate_circle(
+            [300.0, 200.0],
+            50.0,
+            32,
+            [0.2, 0.8, 0.3, 1.0],
+        ));
+
+        // Blue triangle at (500, 150)
+        let triangle = ShapeDescriptor::solid_triangle([0.3, 0.4, 0.9, 1.0]);
+        let mut tri_verts = ignit::twod::shape::generate_shape_vertices(&triangle, 80.0, 80.0);
+        for v in &mut tri_verts {
+            v.position[0] += 500.0;
+            v.position[1] += 150.0;
+        }
+        batch.push_shape(&tri_verts);
+
+        // Yellow quad at (200, 350) with size 150x80
+        batch.push_shape(&ignit::twod::shape::generate_rect(
+            200.0,
+            350.0,
+            150.0,
+            80.0,
+            [1.0, 1.0, 0.2, 1.0],
+        ));
+
+        // Cyan polygon (hexagon) at (600, 300)
+        let hex = ShapeDescriptor::solid_polygon(6, [0.2, 0.8, 0.8, 1.0]);
+        let mut hex_verts = ignit::twod::shape::generate_shape_vertices(&hex, 60.0, 60.0);
+        for v in &mut hex_verts {
+            v.position[0] += 600.0;
+            v.position[1] += 300.0;
+        }
+        batch.push_shape(&hex_verts);
+
+        info!("Created 2D scene with {} vertices", batch.vertex_count());
+
+        // Store vertices for register_overlays().
+        *self.vertices.lock().unwrap() = batch.vertices;
+
+        vec![]
+    }
+
+    fn register_overlays(
+        &self,
+        ecs: &mut World,
+        layer_renderers: &mut Vec<Box<dyn LayerRenderer>>,
+    ) {
+        let format = ecs
+            .get_resource::<SurfaceFormatResource>()
+            .map(|f| f.0)
+            .unwrap_or(ignit::wgpu::TextureFormat::Bgra8UnormSrgb);
+
+        let device = match ecs.get_resource::<ignit::ecs_bridge::DeviceResource>() {
+            Some(d) => d,
+            None => {
+                ignit::logging::warn!(
+                    "Scene2DModule: no DeviceResource, skipping overlay registration"
+                );
+                return;
+            }
+        };
+
+        let mut overlay = ShapeOverlay::new(&device.0, format);
+        overlay.vertices = std::mem::take(&mut *self.vertices.lock().unwrap());
+        layer_renderers.push(Box::new(overlay));
+    }
+}

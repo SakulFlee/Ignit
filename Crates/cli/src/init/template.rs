@@ -226,34 +226,18 @@ fn generate_main_rs(project_dir: &Path, config: &ProjectConfig) -> Result<()> {
     Ok(())
 }
 
-// The canonical template sources are workspace examples. Embedding them keeps
-// `ignit init` self-contained when the CLI is installed from git or a path.
-const MINIMAL_3D_TEMPLATE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../Examples/minimal-3d/src/lib.rs"
-));
+// The canonical template sources are workspace examples. Copies live under
+// `src/template/app` so the published CLI crate is self-contained;
+// `.forgejo/ci/test-templates.sh` checks that the copies stay in sync.
+const MINIMAL_3D_TEMPLATE: &str = include_str!("../template/app/minimal-3d.rs");
 
-const ALL_IN_ONE_TEMPLATE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../Examples/all-in-one/src/lib.rs"
-));
+const ALL_IN_ONE_TEMPLATE: &str = include_str!("../template/app/all-in-one.rs");
 
-const ALL_IN_ONE_SCENE: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../Examples/all-in-one/Assets/Scenes/procgeo_demo.ron"
-));
+const ALL_IN_ONE_SCENE: &[u8] = include_bytes!("../template/app/procgeo_demo.ron");
 
-const ALL_IN_ONE_HELMET: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../Examples/all-in-one/Assets/Models/DamagedHelmet.glb"
-));
+const ALL_IN_ONE_HELMET: &[u8] = include_bytes!("../template/app/DamagedHelmet.glb");
 
-const ALL_IN_ONE_CUSTOM_SHADER: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../Examples/all-in-one/src/custom_shader.wgsl"
-));
+const ALL_IN_ONE_CUSTOM_SHADER: &str =
+    include_str!("../template/app/all-in-one-custom-shader.wgsl");
 
-const MINIMAL_2D_TEMPLATE: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../Examples/minimal-2d/src/lib.rs"
-));
+const MINIMAL_2D_TEMPLATE: &str = include_str!("../template/app/minimal-2d.rs");
