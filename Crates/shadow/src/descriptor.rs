@@ -83,10 +83,8 @@ impl ShadowGpuData {
     /// Compute total layer count needed across all slots.
     pub fn total_layers(&self) -> u32 {
         let mut max_layer = 0u32;
-        for i in 0..self.cascade_count as usize {
-            if self.slots[i].layer_index + 1 > max_layer {
-                max_layer = self.slots[i].layer_index + 1;
-            }
+        for slot in self.slots.iter().take(self.cascade_count as usize) {
+            max_layer = max_layer.max(slot.layer_index + 1);
         }
         max_layer
     }
