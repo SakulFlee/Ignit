@@ -1,5 +1,6 @@
 [package]
 name = "ignit_touch_ui"
+description = "Touch-control overlays for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -11,8 +12,8 @@ repository.workspace = true
 cgmath = { workspace = true }
 wgpu = { workspace = true }
 
-ignit_app = { path = "../app" }
-ignit_core = { path = "../core" }
-ignit_ecs = { path = "../ecs" }
-ignit_ecs_bridge = { path = "../ecs_bridge" }
-ignit_input = { path = "../input" }
+ignit_app = { path = "../app", version = "1.6.0" }
+ignit_core = { path = "../core", version = "1.6.0" }
+ignit_ecs = { path = "../ecs", version = "1.6.0" }
+ignit_ecs_bridge = { path = "../ecs_bridge", version = "1.6.0" }
+ignit_input = { path = "../input", version = "1.6.0" }

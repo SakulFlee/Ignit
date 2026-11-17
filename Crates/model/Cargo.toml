@@ -1,5 +1,6 @@
 [package]
 name = "ignit_model"
+description = "Model descriptors and GPU model resources for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,11 +9,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_core = { path = "../core" }
-ignit_mesh = { path = "../mesh" }
-ignit_instance = { path = "../instance" }
-ignit_math = { path = "../math" }
-ignit_material_shader = { path = "../material_shader" }
+ignit_core = { path = "../core", version = "1.6.0" }
+ignit_mesh = { path = "../mesh", version = "1.6.0" }
+ignit_instance = { path = "../instance", version = "1.6.0" }
+ignit_math = { path = "../math", version = "1.6.0" }
+ignit_material_shader = { path = "../material_shader", version = "1.6.0" }
 cgmath = { workspace = true }
 hashbrown = { workspace = true }
 ulid = { workspace = true }

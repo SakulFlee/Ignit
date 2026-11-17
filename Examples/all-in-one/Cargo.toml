@@ -1,4 +1,5 @@
 [package]
+publish = false
 name = "template_all_in_one"
 version.workspace = true
 authors.workspace = true

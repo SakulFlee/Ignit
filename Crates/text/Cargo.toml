@@ -1,5 +1,6 @@
 [package]
 name = "ignit_text"
+description = "SDF font atlases and text mesh generation for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_2d = { path = "../2d" }
+ignit_2d = { path = "../2d", version = "1.6.0" }
 cgmath = { workspace = true }
 fontdue = { workspace = true }
 log = { workspace = true }

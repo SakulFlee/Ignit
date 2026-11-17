@@ -1,5 +1,6 @@
 [package]
 name = "ignit_macros"
+description = "Procedural macros for Ignit applications"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

@@ -1,5 +1,6 @@
 [package]
 name = "ignit_math"
+description = "Transforms, projections, and math types for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

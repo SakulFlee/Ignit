@@ -1,5 +1,6 @@
 [package]
 name = "ignit_2d"
+description = "2D camera, shapes, batching, and rendering for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

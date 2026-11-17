@@ -1,4 +1,5 @@
 [package]
+publish = false
 name = "template_minimal_3d"
 version.workspace = true
 authors.workspace = true

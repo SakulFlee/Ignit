@@ -1,5 +1,6 @@
 [package]
 name = "ignit_shadow"
+description = "Shadow mapping, cascades, and shadow resources for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,13 +9,13 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_camera = { path = "../camera" }
-ignit_math = { path = "../math" }
-ignit_texture = { path = "../texture" }
-ignit_vertex = { path = "../vertex" }
-ignit_instance = { path = "../instance" }
-ignit_model = { path = "../model" }
-ignit_material_shader = { path = "../material_shader" }
+ignit_camera = { path = "../camera", version = "1.6.0" }
+ignit_math = { path = "../math", version = "1.6.0" }
+ignit_texture = { path = "../texture", version = "1.6.0" }
+ignit_vertex = { path = "../vertex", version = "1.6.0" }
+ignit_instance = { path = "../instance", version = "1.6.0" }
+ignit_model = { path = "../model", version = "1.6.0" }
+ignit_material_shader = { path = "../material_shader", version = "1.6.0" }
 cgmath = { workspace = true }
 wgpu = { workspace = true }
 log = { workspace = true }

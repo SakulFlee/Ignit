@@ -1,5 +1,6 @@
 [package]
 name = "ignit_input"
+description = "Keyboard, mouse, touch, and gamepad input for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

@@ -1,5 +1,6 @@
 [package]
 name = "ignit_ibl_brdf"
+description = "BRDF lookup-table generation for image-based lighting in Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,6 +9,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_texture = { path = "../texture" }
+ignit_texture = { path = "../texture", version = "1.6.0" }
 cgmath = { workspace = true }
 wgpu = { workspace = true }

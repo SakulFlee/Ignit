@@ -1,5 +1,6 @@
 [package]
 name = "ignit_shader_core"
+description = "Shader descriptors, variables, and pipeline plumbing for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_shader_preprocessor = { path = "../shader_preprocessor" }
-ignit_texture = { path = "../texture" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.0" }
+ignit_texture = { path = "../texture", version = "1.6.0" }
 wgpu = { workspace = true }
 log = { workspace = true }

@@ -1,7 +1,12 @@
 [package]
 name = "ignit_render_graph"
-version = "0.1.0"
-edition = "2024"
+description = "Render graph construction and pass scheduling for Ignit"
+version.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
 
 [dependencies]
 wgpu = { workspace = true }

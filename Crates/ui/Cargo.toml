@@ -1,5 +1,6 @@
 [package]
 name = "ignit_ui"
+description = "ECS UI components, layout, hit testing, and events for Ignit"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,9 +9,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_2d = { path = "../2d" }
-ignit_ecs = { path = "../ecs" }
-ignit_text = { path = "../text" }
+ignit_2d = { path = "../2d", version = "1.6.0" }
+ignit_ecs = { path = "../ecs", version = "1.6.0" }
+ignit_text = { path = "../text", version = "1.6.0" }
 cgmath = { workspace = true }
 wgpu = { workspace = true }
 log = { workspace = true }
