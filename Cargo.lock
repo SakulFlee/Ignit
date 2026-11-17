@@ -4796,13 +4796,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "template_2d"
-version = "1.6.0"
-dependencies = [
- "orbital",
-]
-
-[[package]]
 name = "template_all_in_one"
 version = "1.6.0"
 dependencies = [
@@ -4810,35 +4803,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "template_billboards"
+name = "template_minimal_2d"
 version = "1.6.0"
 dependencies = [
  "orbital",
 ]
 
 [[package]]
-name = "template_many_lights"
-version = "1.6.0"
-dependencies = [
- "orbital",
-]
-
-[[package]]
-name = "template_minimal"
-version = "1.6.0"
-dependencies = [
- "orbital",
-]
-
-[[package]]
-name = "template_orthographic"
-version = "1.6.0"
-dependencies = [
- "orbital",
-]
-
-[[package]]
-name = "template_volumetrics"
+name = "template_minimal_3d"
 version = "1.6.0"
 dependencies = [
  "orbital",

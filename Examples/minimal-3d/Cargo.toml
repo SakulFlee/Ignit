@@ -1,5 +1,5 @@
 [package]
-name = "template_billboards"
+name = "template_minimal_3d"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,11 +8,11 @@ license.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "template_billboards"
+name = "template_minimal_3d"
 path = "src/main.rs"
 
 [lib]
-name = "template_billboards"
+name = "template_minimal_3d"
 path = "src/lib.rs"
 crate-type = ["cdylib", "lib"]
 

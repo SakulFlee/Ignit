@@ -193,28 +193,20 @@ Asset export is no longer part of the build. `cargo build` does not require Blen
 Run from the example directory or from the repository root:
 
 ```bash
-cd Examples/minimal && cargo run
+cd Examples/minimal-3d && cargo run
 cd Examples/all-in-one && cargo run
-cd Examples/2d && cargo run
+cd Examples/minimal-2d && cargo run
 
-cargo run -p template_minimal
+cargo run -p template_minimal_3d
 cargo run -p template_all_in_one
-cargo run -p template_2d
-cargo run -p template_volumetrics
-cargo run -p template_many_lights
-cargo run -p template_orthographic
-cargo run -p template_billboards
+cargo run -p template_minimal_2d
 ```
 
 | Directory | Package | Notes |
 |-----------|---------|-------|
-| `Examples/minimal` | `template_minimal` | Procedural scene; no asset files. |
+| `Examples/minimal-3d` | `template_minimal_3d` | Procedural 3D scene; no asset files. |
 | `Examples/all-in-one` | `template_all_in_one` | Scene, glTF, lighting, shadows, billboards, volumetric fog, SMAA, UI, and overlays. Ships its own minimal `Assets/`. |
-| `Examples/2d` | `template_2d` | 2D shape rendering; no asset files. |
-| `Examples/volumetrics` | `template_volumetrics` | Froxel volumetric lighting and height fog with two shadow-casting spotlights; no asset files. |
-| `Examples/many_lights` | `template_many_lights` | 96 unshadowed point lights plus a shadowed spotlight for tiled light-list stress; no asset files. |
-| `Examples/orthographic` | `template_orthographic` | Orthographic camera rendering; no asset files. |
-| `Examples/billboards` | `template_billboards` | Full/Y-axis/fixed billboards, lit/unlit, SDF text and blended sorting; no asset files. |
+| `Examples/minimal-2d` | `template_minimal_2d` | 2D shape rendering; no asset files. |
 
 The template app sources are canonical in `Examples/`; the CLI embeds them
 during generation. `Crates/orbital_cli/src/template/` only contains platform
@@ -245,7 +237,7 @@ orbital run --release
 orbital run ios --device "<device>"
 ```
 
-- `init` supports the `minimal`, `all-in-one`, and `2d` templates, and can point at the engine via `--engine-repo`, `--engine-branch`, or `--engine-path`.
+- `init` supports the `minimal-3d`, `all-in-one`, and `minimal-2d` templates, and can point at the engine via `--engine-repo`, `--engine-branch`, or `--engine-path`.
 - The CLI writes `Orbital.toml`, which configures the engine repository/branch plus Android and iOS packaging/deployment settings.
 - Template app sources live in `Examples/`; the generators live in `Crates/orbital_cli/src/init/`. Platform scaffolding lives in `Crates/orbital_cli/src/template/`.
 - Generated projects are plain Cargo projects; there is no generated dev shell or direnv setup.
