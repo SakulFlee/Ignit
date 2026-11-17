@@ -67,7 +67,7 @@ pub fn ensure_android_sdk() -> Result<()> {
             if crate::tooling::is_nixos() {
                 anyhow::bail!(
                     "The Orbital-managed Android SDK is not supported on NixOS.\n\
-                     Use `nix develop .#android`, or point ANDROID_HOME at a Nix-provided SDK."
+                     Point ANDROID_HOME at a Nix-provided SDK, or run the Android build in a container."
                 );
             }
             download_sdk()?;
@@ -86,9 +86,9 @@ pub fn ensure_android_sdk() -> Result<()> {
 fn print_nixos_sdk_hint() {
     println!(
         "\nNixOS detected. The Orbital-managed Android SDK and JDK are generic Linux\n\
-         builds and do not run on NixOS without nix-ld or an FHS wrapper.\n\
-         Use the opt-in Android dev shell instead:\n  nix develop .#android\n\
-         or point ANDROID_HOME/JAVA_HOME at a Nix-provided SDK/JDK."
+         builds and do not run on NixOS without nix-ld.\n\
+         Point ANDROID_HOME/JAVA_HOME at a Nix-provided SDK/JDK, or run the Android\n\
+         build in a container."
     );
 }
 
@@ -97,7 +97,7 @@ fn print_nixos_sdk_hint() {
 fn detect_android_sdk() -> Option<PathBuf> {
     // 1-3. Env vars (note: ANDROID_SDK_HOME is the AVD/preferences home, NOT
     // the SDK). Explicit environment variables must win over the Orbital cache
-    // so Nix dev shells and other patched SDK installations can be used.
+    // so externally provided SDK installations can be used.
     for var in ["ANDROID_HOME", "ANDROID_SDK_ROOT", "ANDROID_SDK"] {
         if let Ok(path) = std::env::var(var) {
             let path = PathBuf::from(path);
@@ -514,9 +514,8 @@ pub fn ensure_ndk(sdk_path: &Path) -> Result<PathBuf> {
 
     if is_nix_managed_sdk(sdk_path) {
         anyhow::bail!(
-            "Android NDK {ndk_version} is not present in the Nix-managed SDK at {}.\n\
-             Add it to the Android dev shell with:\n  \
-             ndkVersions = [ \"{ndk_version}\" ];",
+            "Android NDK {ndk_version} is not present in the read-only SDK at {}.\n\
+             Point ANDROID_HOME at a writable SDK, or install the NDK outside Nix.",
             sdk_path.display()
         );
     }
@@ -527,7 +526,8 @@ pub fn ensure_ndk(sdk_path: &Path) -> Result<PathBuf> {
         if crate::tooling::is_nixos() {
             anyhow::bail!(
                 "sdkmanager not found in {}.\n\
-                 Use `nix develop .#android`, or provide an SDK that includes command-line tools.",
+                 Point ANDROID_HOME at an SDK that includes command-line tools, or run the\n\
+                 Android build in a container.",
                 sdk_path.display()
             );
         }
@@ -757,9 +757,7 @@ pub fn sdkmanager_install(packages: &[String]) -> Result<()> {
     if is_nix_managed_sdk(&sdk_path) {
         anyhow::bail!(
             "The Android SDK at {} is Nix-managed and read-only.\n\
-             Use the Android emulator dev shell instead:\n  \
-             nix develop .#android-emulator\n\
-             or add the required packages to your SDK composition.",
+             Point ANDROID_HOME at a writable SDK, or install the packages outside Nix.",
             sdk_path.display()
         );
     }

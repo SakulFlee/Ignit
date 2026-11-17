@@ -6,7 +6,6 @@ on:
       - '.forgejo/ci/**'
       - '.forgejo/workflows/build-image.yml'
       - 'rust-toolchain.toml'
-      - 'Containerfile'
   workflow_dispatch:
     inputs:
       rebuild:

@@ -1,278 +1,71 @@
 {
-  description = "Rust development environment pinned by rust-toolchain.toml";
+  description = "Orbital CLI";
 
-  inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/8edc0c72e3a38faf5434e40d1f19431125fe4b30";
-    flake-utils.url = "github:numtide/flake-utils";
-    fenix = {
-      url = "github:nix-community/fenix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-  };
+  # Packaging only. There is intentionally no devShell here: CI uses plain
+  # containers/rustup, and NixOS users can build projects with
+  # `nix-shell -p cargo pkg-config systemd wayland libxkbcommon vulkan-loader mesa`.
+  inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
-  outputs = { self, nixpkgs, flake-utils, fenix }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = nixpkgs.legacyPackages.${system};
+  outputs =
+    { nixpkgs }:
+    let
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
 
-        # Android tooling is only evaluated when the opt-in `android` dev
-        # shell is selected, so the default shell stays lightweight.
-        pkgsAndroid = import nixpkgs {
-          inherit system;
-          config = {
-            allowUnfree = true;
-            android_sdk.accept_license = true;
+      # Read the version from the workspace manifest so releases never have to
+      # edit this file.
+      version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).workspace.package.version;
+
+      mkCli =
+        pkgs:
+        pkgs.rustPlatform.buildRustPackage {
+          pname = "orbital-cli";
+          inherit version;
+          src = ./.;
+
+          # `allowBuiltinFetchGit` avoids `outputHashes` for the git-sourced
+          # engine dependencies: every one of them is pinned to a revision in
+          # Cargo.lock. If a future nixpkgs drops that option, replace it with
+          # an `outputHashes` entry per git dependency (the build error names
+          # each package).
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            allowBuiltinFetchGit = true;
+          };
+
+          # Package the CLI only; the workspace examples are not installed.
+          # `cargoInstallHook` copies every binary produced in target/, so the
+          # build flags double as the install filter.
+          cargoBuildFlags = [ "-p" "orbital-cli" ];
+
+          # The CLI tests spawn processes and are covered by `cargo test`.
+          doCheck = false;
+
+          meta = {
+            description = "Scaffold, build and run Orbital projects";
+            mainProgram = "orbital";
+            license = with pkgs.lib.licenses; [
+              mit
+              asl20
+            ];
+            platforms = systems;
           };
         };
-
-        androidSystemImageAbi =
-          if pkgs.stdenv.hostPlatform.isDarwin && pkgs.stdenv.hostPlatform.isAarch64 then
-            "arm64-v8a"
-          else
-            "x86_64";
-
-        composeAndroidSdk =
-          { includeEmulator ? false, platformVersions ? [ "34" "35" "36" ] }:
-          (pkgsAndroid.androidenv.composeAndroidPackages {
-            cmdLineToolsVersion = "22.0";
-            inherit platformVersions;
-            # AGP 9.3 requires build-tools 36.0.0, even when compiling against
-            # an older SDK platform.
-            buildToolsVersions = [ "36.0.0" ];
-            includeNDK = true;
-            ndkVersions = [ "26.2.11394342" ];
-            inherit includeEmulator;
-            includeSystemImages = includeEmulator;
-            systemImageTypes = [ "default" ];
-            abiVersions = [ androidSystemImageAbi ];
-          }).androidsdk;
-
-        androidSdk = composeAndroidSdk { };
-        # Match the template's default target SDK so the emulator shell does
-        # not pull down system images for every supported compile SDK.
-        androidEmulatorSdk = composeAndroidSdk {
-          includeEmulator = true;
-          platformVersions = [ "34" ];
-        };
-
-        androidSdkRoot = "${androidSdk}/libexec/android-sdk";
-        androidEmulatorSdkRoot = "${androidEmulatorSdk}/libexec/android-sdk";
-
-        rustToolchainConfig = builtins.fromTOML (builtins.readFile ./rust-toolchain.toml);
-
-        androidRustTargets = [
-          "aarch64-linux-android"
-          "armv7-linux-androideabi"
-          "x86_64-linux-android"
-          "i686-linux-android"
-        ];
-
-        rustToolchain = fenix.packages.${system}.fromToolchainFile {
-          file = ./rust-toolchain.toml;
-          sha256 = "sha256-+xUr6Al1wZSqX8aEsq7DpuFOK4Ve/i+qTl+K5uWQ9GM=";
-        };
-
-        # Same pinned toolchain, plus the Android standard libraries.
-        rustToolchainAndroid = fenix.packages.${system}.fromToolchainFile {
-          file = pkgs.writeText "rust-toolchain-android.toml" ''
-            [toolchain]
-            channel = "${rustToolchainConfig.toolchain.channel}"
-            profile = "${rustToolchainConfig.toolchain.profile or "default"}"
-            components = [ ${pkgs.lib.concatMapStringsSep ", " (component: "\"${component}\"") (rustToolchainConfig.toolchain.components or [ ])} ]
-            targets = [ ${pkgs.lib.concatMapStringsSep ", " (target: "\"${target}\"") ((rustToolchainConfig.toolchain.targets or [ ]) ++ androidRustTargets)} ]
-          '';
-          sha256 = "sha256-+xUr6Al1wZSqX8aEsq7DpuFOK4Ve/i+qTl+K5uWQ9GM=";
-        };
-
-        rustToolchainCross = rustToolchain;
-
-        commonTools = with pkgs; [
-          pkgs.gcc
-          pkgs.binutils
-          pkgs.gnumake
-          pkgs.git
-          pkgs.cargo-flamegraph
-          pkgs.cargo-criterion
-          pkgs.pkg-config
-        ];
-
-        # Android shells do not need the profiling tools.
-        androidTools = with pkgs; [
-          pkgs.gcc
-          pkgs.binutils
-          pkgs.gnumake
-          pkgs.git
-          pkgs.pkg-config
-        ];
-
-        commonLinuxBuildInputs = with pkgs; [
-          pkgs.glibc.dev
-          pkgs.systemd
-          wayland
-          libxkbcommon
-          vulkan-loader
-          pkgs.mesa
-        ];
-
-        commonLinuxLdLibraryPath = pkgs.lib.makeLibraryPath [
-          pkgs.wayland
-          pkgs.libxkbcommon
-          pkgs.vulkan-loader
-          pkgs.mesa
-        ];
-
-        dummyLibpthread = pkgs.runCommand "dummy-libpthread-x86_64-w64-mingw32" {} ''
-          mkdir -p $out/lib
-          ${pkgs.binutils}/bin/ar rcs $out/lib/libpthread.a
-        '';
-
-        orbitalCliHook = ''
-          # Keep a project-local `orbital` CLI on PATH. It is installed into
-          # .cargo/bin (already prepended to PATH) so it survives direnv
-          # reloads and never requires a flake rebuild.
-          #
-          # Source of truth, in order of preference:
-          #   1. ORBITAL_CLI_PATH            (generated project, local engine)
-          #   2. Crates/orbital_cli in $PWD  (this engine checkout)
-          #   3. Forgejo git repository       (generated project, remote engine)
-          _orbital_install_cli() {
-            if [ -n "''${ORBITAL_CLI_PATH:-}" ]; then
-              cargo install --path "$ORBITAL_CLI_PATH" --root "$PWD/.cargo" --debug --locked --force
-            elif [ -f "$PWD/Crates/orbital_cli/Cargo.toml" ]; then
-              cargo install --path "$PWD/Crates/orbital_cli" --root "$PWD/.cargo" --debug --locked --force
-            else
-              cargo install --git "''${ORBITAL_CLI_REPO:-https://forgejo.sakul-flee.de/SakulFlee/Orbital.git}" \
-                --branch "''${ORBITAL_CLI_BRANCH:-main}" \
-                --root "$PWD/.cargo" --debug --force orbital-cli
-            fi
-          }
-          orbital-update() { _orbital_install_cli; }
-
-          # Automatic Android-shell re-exec already runs the current CLI, so
-          # avoid an unnecessary `cargo install` in that path. Normal shell
-          # activation also installs only when the binary is missing; use
-          # `orbital-update` (or ORBITAL_AUTO_UPDATE_CLI=1) to refresh it.
-          if [ -z "''${ORBITAL_SKIP_CLI_INSTALL:-}" ]; then
-            if [ -f "$PWD/Crates/orbital_cli/Cargo.toml" ]; then
-              if [ ! -x "$PWD/.cargo/bin/orbital" ] || [ -n "''${ORBITAL_AUTO_UPDATE_CLI:-}" ]; then
-                echo "[direnv] Building orbital CLI..."
-                _orbital_install_cli
-              fi
-            elif [ ! -x "$PWD/.cargo/bin/orbital" ]; then
-              # Generated project: install once, refresh with `orbital-update`.
-              echo "[direnv] Installing orbital CLI..."
-              _orbital_install_cli
-            fi
-          fi
-        '';
-
-        mkAndroidShell = { sdk, sdkRoot, shellName }: pkgs.mkShell {
-          nativeBuildInputs = [
-            rustToolchainAndroid
-            pkgsAndroid.cargo-ndk
-            pkgsAndroid.jdk25
-            sdk
-          ] ++ androidTools;
-
-          buildInputs = commonLinuxBuildInputs;
-
-          ORBITAL_ANDROID_SHELL = shellName;
-          ORBITAL_SKIP_CLI_INSTALL = "1";
-          ANDROID_HOME = sdkRoot;
-          ANDROID_SDK_ROOT = sdkRoot;
-          ANDROID_NDK_HOME = "${sdkRoot}/ndk/26.2.11394342";
-          ANDROID_NDK_ROOT = "${sdkRoot}/ndk/26.2.11394342";
-          JAVA_HOME = "${pkgsAndroid.jdk25}";
-          GRADLE_OPTS = "-Dorg.gradle.project.android.aapt2FromMavenOverride=${sdkRoot}/build-tools/36.0.0/aapt2";
-
-          shellHook = ''
-            export RUST_SRC_PATH="${rustToolchainAndroid}/lib/rustlib/src/rust/library"
-            export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${commonLinuxLdLibraryPath}"
-            mkdir -p .cargo/bin
-            ln -sf "$(which gcc)" .cargo/bin/x86_64-linux-gnu-gcc
-            export PATH="$PWD/.cargo/bin:$PATH"
-            export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="$(which gcc)"
-
-            ${orbitalCliHook}
-          '';
-        };
-      in
-      {
-        # Shared with generated projects that define their own Android shells.
-        packages.rustToolchainAndroid = rustToolchainAndroid;
-
-        devShells.default = pkgs.mkShell {
-          nativeBuildInputs = [ rustToolchain fenix.packages.${system}.stable.rust-analyzer-preview ] ++ commonTools;
-
-          buildInputs = commonLinuxBuildInputs;
-
-          shellHook = ''
-            export RUST_SRC_PATH="${rustToolchain}/lib/rustlib/src/rust/library"
-            export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${commonLinuxLdLibraryPath}"
-            mkdir -p .cargo/bin
-            ln -sf "$(which gcc)" .cargo/bin/x86_64-linux-gnu-gcc
-            export PATH="$PWD/.cargo/bin:$PATH"
-            export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="$(which gcc)"
-
-            ${orbitalCliHook}
-          '';
-        };
-
-        devShells.android = mkAndroidShell {
-          sdk = androidSdk;
-          sdkRoot = androidSdkRoot;
-          shellName = "android";
-        };
-
-        # Opt-in shell for `orbital run android` when no physical device is
-        # attached. It adds the emulator and the matching system image, which
-        # is a multi-gigabyte download.
-        devShells.android-emulator = mkAndroidShell {
-          sdk = androidEmulatorSdk;
-          sdkRoot = androidEmulatorSdkRoot;
-          shellName = "android-emulator";
-        };
-
-        devShells.aarch64-cross = pkgs.mkShell {
-          nativeBuildInputs = [ rustToolchainCross ] ++ commonTools ++ [
-            pkgs.pkgsCross.aarch64-multiplatform.buildPackages.stdenv.cc
-            pkgs.pkgsCross.aarch64-multiplatform.buildPackages.pkg-config
-          ];
-
-          buildInputs = with pkgs.pkgsCross.aarch64-multiplatform; [
-            glibc.dev
-            systemd
-            wayland
-            libxkbcommon
-            vulkan-loader
-          ];
-
-          shellHook = ''
-            export RUST_SRC_PATH="${rustToolchainCross}/lib/rustlib/src/rust/library"
-            export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${commonLinuxLdLibraryPath}"
-            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="${pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc}/bin/aarch64-unknown-linux-gnu-cc"
-            export CC_aarch64_unknown_linux_gnu="${pkgs.pkgsCross.aarch64-multiplatform.stdenv.cc}/bin/aarch64-unknown-linux-gnu-cc"
-            export PKG_CONFIG_ALLOW_CROSS=1
-          '';
-        };
-
-        devShells.windows-x86_64-cross = pkgs.mkShell {
-          nativeBuildInputs = [ rustToolchainCross ] ++ commonTools ++ [
-            pkgs.pkgsCross.mingwW64.buildPackages.stdenv.cc
-            pkgs.pkgsCross.mingwW64.buildPackages.pkg-config
-            pkgs.pkgsCross.mingwW64.buildPackages.binutils
-            dummyLibpthread
-          ];
-
-          shellHook = ''
-            export RUST_SRC_PATH="${rustToolchainCross}/lib/rustlib/src/rust/library"
-            export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER="${pkgs.pkgsCross.mingwW64.stdenv.cc}/bin/x86_64-w64-mingw32-gcc"
-            export CC_x86_64_pc_windows_gnu="${pkgs.pkgsCross.mingwW64.stdenv.cc}/bin/x86_64-w64-mingw32-gcc"
-            export CXX_x86_64_pc_windows_gnu="${pkgs.pkgsCross.mingwW64.stdenv.cc}/bin/x86_64-w64-mingw32-g++"
-            export AR_x86_64_pc_windows_gnu="${pkgs.pkgsCross.mingwW64.stdenv.cc}/bin/x86_64-w64-mingw32-ar"
-            export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-L${dummyLibpthread}/lib"
-            export PKG_CONFIG_ALLOW_CROSS=1
-          '';
-        };
-      });
+    in
+    {
+      packages = nixpkgs.lib.genAttrs systems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          orbital-cli = mkCli pkgs;
+        in
+        {
+          inherit orbital-cli;
+          default = orbital-cli;
+        }
+      );
+    };
 }

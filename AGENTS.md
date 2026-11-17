@@ -248,14 +248,22 @@ orbital run ios --device "<device>"
 - `init` supports the `minimal`, `all-in-one`, and `2d` templates, and can point at the engine via `--engine-repo`, `--engine-branch`, or `--engine-path`.
 - The CLI writes `Orbital.toml`, which configures the engine repository/branch plus Android and iOS packaging/deployment settings.
 - Template app sources live in `Examples/`; the generators live in `Crates/orbital_cli/src/init/`. Platform scaffolding lives in `Crates/orbital_cli/src/template/`.
-- The Nix shell installs a project-local `orbital` into `.cargo/bin` and provides `orbital-update` to refresh it.
+- Generated projects are plain Cargo projects; there is no generated dev shell or direnv setup.
 - When changing CLI behavior or templates, test the generated project end to end, not only the CLI crate.
 
 ### Nix
 
-`flake.nix` provides the primary dev environment: the Rust toolchain pinned by `rust-toolchain.toml` (1.99.1 with `cargo`, `clippy`, `rust-src`, `rustc`, `rustfmt`), `rust-analyzer`, Linux graphics/input libraries, cross-compilation shells, `cargo-flamegraph`, `cargo-criterion`, and `pkg-config`.
-Enter with `nix-shell`, `nix develop`, or `direnv allow` (`.envrc` uses `use flake`).
-When changing the channel in `rust-toolchain.toml`, update the manifest `sha256` passed to `fromToolchainFile` in `flake.nix`.
+`flake.nix` is packaging only: it builds the `orbital` CLI (`nix build .#orbital-cli`, `nix shell .#orbital-cli`, or `nix profile install .#orbital-cli`). It has no dev shell, no pinned toolchain, and no shell hooks; CI and local development use `rust-toolchain.toml` via rustup.
+
+On NixOS, build projects inside a shell that provides the engine's system libraries:
+
+```bash
+nix-shell -p cargo pkg-config systemd wayland libxkbcommon vulkan-loader mesa --run 'orbital build'
+```
+
+Enable `hardware.graphics` for the Vulkan ICD. Android builds need a container or `programs.nix-ld`, because the CLI-managed SDK/JDK are generic Linux builds.
+
+Keep the flake minimal. If the pinned git dependencies or toolchain drift, prefer fixing the package over reintroducing environment management.
 
 ### Cargo configuration
 
@@ -272,7 +280,7 @@ When changing the channel in `rust-toolchain.toml`, update the manifest `sha256`
 | GitHub | `.github/workflows/main.yml`, `.github/workflows/release.yml` | `main.yml` runs `cargo fmt --all -- --check`, `cargo clippy -- -D warnings`, and `cargo test --no-fail-fast` for branches and PRs. Release tags use `release.yml`, which builds and publishes artifacts. |
 | TeamCity | `.teamcity/settings.kts` | `cargo fmt --all -- --check`, `cargo clippy -- -D warnings`, `cargo test --no-fail-fast`. |
 
-All CI systems and the Nix devshell use the toolchain pinned in `rust-toolchain.toml`.
+All CI systems use the toolchain pinned in `rust-toolchain.toml` through rustup.
 
 ### Release artifacts
 
@@ -313,12 +321,12 @@ Treat the current WASM status as unverified: `Crates/ecs/src/system/runner.rs` u
 |------|---------|
 | `Cargo.toml` | Workspace members, dependencies, profiles, lints. |
 | `rust-toolchain.toml` | Pinned Rust toolchain shared by local and CI. |
-| `flake.nix` / `shell.nix` | Nix devshells and toolchain. |
+| `flake.nix` | Nix package for the `orbital` CLI (no dev shell). |
 | `.cargo/config.toml` | Cross-compilation linkers. |
 | `Crates/orbital/src/lib.rs` | Facade re-exports. |
 | `Crates/orbital_cli/src/main.rs` | CLI commands and desktop/Android/iOS dispatch. |
 | `Crates/orbital_cli/src/init/mod.rs` | Project scaffolding flow. |
-| `Crates/orbital_cli/src/init/template.rs` | Generated project files (Cargo, devshell, env). |
+| `Crates/orbital_cli/src/init/template.rs` | Generated project files (Cargo, config, sources). |
 | `Orbital.toml` | Engine, Android, and iOS project configuration for the CLI. |
 | `Crates/orbital_app/src/module.rs` | `Module` lifecycle. |
 | `Crates/orbital_app/src/module_runtime.rs` | Frame loop, schedules, realization, overlays. |
