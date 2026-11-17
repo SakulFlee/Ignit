@@ -21,6 +21,28 @@ for asset in "${required_example_assets[@]}"; do
     fi
 done
 
+# The publishable CLI crate carries copies of the example template sources.
+# Keep them byte-for-byte identical to the canonical workspace examples.
+vendored_templates=(
+    "Examples/minimal-3d/src/lib.rs:Crates/cli/src/template/app/minimal-3d.rs"
+    "Examples/minimal-2d/src/lib.rs:Crates/cli/src/template/app/minimal-2d.rs"
+    "Examples/all-in-one/src/lib.rs:Crates/cli/src/template/app/all-in-one.rs"
+    "Examples/all-in-one/src/custom_shader.wgsl:Crates/cli/src/template/app/all-in-one-custom-shader.wgsl"
+    "Examples/all-in-one/Assets/Scenes/procgeo_demo.ron:Crates/cli/src/template/app/procgeo_demo.ron"
+    "Examples/all-in-one/Assets/Models/DamagedHelmet.glb:Crates/cli/src/template/app/DamagedHelmet.glb"
+)
+
+for pair in "${vendored_templates[@]}"; do
+    source="${pair%%:*}"
+    copy="${pair##*:}"
+
+    if ! cmp -s "$ROOT/$source" "$ROOT/$copy"; then
+        echo "Vendored template is out of date: $copy" >&2
+        echo "Copy it from $source" >&2
+        exit 1
+    fi
+done
+
 echo "Building the ignit CLI..."
 cargo build --manifest-path "$ROOT/Cargo.toml" -p ignit-cli
 

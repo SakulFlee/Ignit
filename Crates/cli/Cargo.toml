@@ -6,6 +6,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Command-line tool for creating and building Ignit projects"
+keywords = ["ignit", "game-engine", "graphics", "cli"]
+categories = ["command-line-utilities", "game-development"]
 
 [[bin]]
 name = "ignit"
