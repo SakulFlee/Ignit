@@ -50,13 +50,13 @@ syn = { version = "3.0", features = ["full"] }
 
 criterion = { version = "0.8", features = ["html_reports"] }
 
-# Iced sub-crates (wgpu 30 fork)
-iced_core = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git", branch = "master" }
-iced_widget = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git", branch = "master" }
-iced_runtime = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git", branch = "master" }
-iced_graphics = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git", branch = "master" }
-iced_wgpu = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git", branch = "master", default-features = false }
-iced_winit = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git", branch = "master", default-features = false }
+# Iced sub-crates (Ignit fork)
+iced_core = { package = "ignit-iced-core", version = "0.15.0-ignit.1" }
+iced_widget = { package = "ignit-iced-widget", version = "0.15.0-ignit.1" }
+iced_runtime = { package = "ignit-iced-runtime", version = "0.15.0-ignit.1" }
+iced_graphics = { package = "ignit-iced-graphics", version = "0.15.0-ignit.1" }
+iced_wgpu = { package = "ignit-iced-wgpu", version = "0.15.0-ignit.1", default-features = false }
+iced_winit = { package = "ignit-iced-winit", version = "0.15.0-ignit.1", default-features = false }
 
 # Iced third-party deps
 arboard = { version = "3.6", default-features = false }
