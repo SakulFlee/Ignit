@@ -783,29 +783,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cosmic-text"
-version = "0.19.0"
-source = "git+https://github.com/hecrj/cosmic-text.git?rev=19cca2bd90e73e20614964f06d44240e71e503b3#19cca2bd90e73e20614964f06d44240e71e503b3"
-dependencies = [
- "bitflags 2.13.2",
- "fontdb",
- "harfrust",
- "linebender_resource_handle",
- "log",
- "rangemap",
- "rustc-hash 2.1.3",
- "self_cell",
- "skrifa",
- "smol_str 0.3.6",
- "swash",
- "sys-locale",
- "unicode-bidi",
- "unicode-linebreak",
- "unicode-script",
- "unicode-segmentation",
-]
-
-[[package]]
 name = "cpubits"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -930,18 +907,6 @@ name = "crunchy"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
-
-[[package]]
-name = "cryoglyph"
-version = "0.1.0"
-source = "git+https://github.com/sertonix/cryoglyph.git?rev=6b341f2ea339abaf86b8add2cff317e7d8607ce9#6b341f2ea339abaf86b8add2cff317e7d8607ce9"
-dependencies = [
- "cosmic-text",
- "etagere",
- "lru",
- "rustc-hash 2.1.3",
- "wgpu",
-]
 
 [[package]]
 name = "crypto-common"
@@ -1729,7 +1694,7 @@ dependencies = [
 [[package]]
 name = "iced_core"
 version = "0.15.0-dev"
-source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#e1dfa6072ca9fa714c4cd70c686956ff49623db7"
+source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#82adc40524ed49f6b29a0306b72f84b151c9a24f"
 dependencies = [
  "bitflags 2.13.2",
  "bytes",
@@ -1748,7 +1713,7 @@ dependencies = [
 [[package]]
 name = "iced_debug"
 version = "0.15.0-dev"
-source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#e1dfa6072ca9fa714c4cd70c686956ff49623db7"
+source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#82adc40524ed49f6b29a0306b72f84b151c9a24f"
 dependencies = [
  "iced_core",
  "iced_futures",
@@ -1758,7 +1723,7 @@ dependencies = [
 [[package]]
 name = "iced_futures"
 version = "0.15.0-dev"
-source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#e1dfa6072ca9fa714c4cd70c686956ff49623db7"
+source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#82adc40524ed49f6b29a0306b72f84b151c9a24f"
 dependencies = [
  "futures",
  "iced_core",
@@ -1771,14 +1736,14 @@ dependencies = [
 [[package]]
 name = "iced_graphics"
 version = "0.15.0-dev"
-source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#e1dfa6072ca9fa714c4cd70c686956ff49623db7"
+source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#82adc40524ed49f6b29a0306b72f84b151c9a24f"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",
- "cosmic-text",
  "half",
  "iced_core",
  "iced_futures",
+ "ignit-cosmic-text",
  "log",
  "lyon_path",
  "raw-window-handle",
@@ -1789,7 +1754,7 @@ dependencies = [
 [[package]]
 name = "iced_program"
 version = "0.15.0-dev"
-source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#e1dfa6072ca9fa714c4cd70c686956ff49623db7"
+source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#82adc40524ed49f6b29a0306b72f84b151c9a24f"
 dependencies = [
  "iced_graphics",
  "iced_runtime",
@@ -1798,7 +1763,7 @@ dependencies = [
 [[package]]
 name = "iced_renderer"
 version = "0.15.0-dev"
-source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#e1dfa6072ca9fa714c4cd70c686956ff49623db7"
+source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#82adc40524ed49f6b29a0306b72f84b151c9a24f"
 dependencies = [
  "iced_graphics",
  "iced_tiny_skia",
@@ -1810,7 +1775,7 @@ dependencies = [
 [[package]]
 name = "iced_runtime"
 version = "0.15.0-dev"
-source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#e1dfa6072ca9fa714c4cd70c686956ff49623db7"
+source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#82adc40524ed49f6b29a0306b72f84b151c9a24f"
 dependencies = [
  "bytes",
  "iced_core",
@@ -1821,12 +1786,12 @@ dependencies = [
 [[package]]
 name = "iced_tiny_skia"
 version = "0.15.0-dev"
-source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#e1dfa6072ca9fa714c4cd70c686956ff49623db7"
+source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#82adc40524ed49f6b29a0306b72f84b151c9a24f"
 dependencies = [
  "bytemuck",
- "cosmic-text",
  "iced_debug",
  "iced_graphics",
+ "ignit-cosmic-text",
  "kurbo",
  "log",
  "rustc-hash 2.1.3",
@@ -1837,14 +1802,14 @@ dependencies = [
 [[package]]
 name = "iced_wgpu"
 version = "0.15.0-dev"
-source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#e1dfa6072ca9fa714c4cd70c686956ff49623db7"
+source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#82adc40524ed49f6b29a0306b72f84b151c9a24f"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",
- "cryoglyph",
  "futures",
  "iced_debug",
  "iced_graphics",
+ "ignit-cryoglyph",
  "log",
  "lyon",
  "rustc-hash 2.1.3",
@@ -1855,7 +1820,7 @@ dependencies = [
 [[package]]
 name = "iced_widget"
 version = "0.15.0-dev"
-source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#e1dfa6072ca9fa714c4cd70c686956ff49623db7"
+source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#82adc40524ed49f6b29a0306b72f84b151c9a24f"
 dependencies = [
  "iced_renderer",
  "iced_runtime",
@@ -1869,7 +1834,7 @@ dependencies = [
 [[package]]
 name = "iced_winit"
 version = "0.15.0-dev"
-source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#e1dfa6072ca9fa714c4cd70c686956ff49623db7"
+source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git?branch=master#82adc40524ed49f6b29a0306b72f84b151c9a24f"
 dependencies = [
  "arboard",
  "iced_debug",
@@ -1945,9 +1910,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "ignit-cosmic-text"
+version = "0.19.0-ignit.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb78302b83e88639d9a0500332a486b65eb4661853d3e5e0aba0163ca3b9679e"
+dependencies = [
+ "bitflags 2.13.2",
+ "fontdb",
+ "harfrust",
+ "linebender_resource_handle",
+ "log",
+ "rangemap",
+ "rustc-hash 2.1.3",
+ "self_cell",
+ "skrifa",
+ "smol_str 0.3.6",
+ "swash",
+ "sys-locale",
+ "unicode-bidi",
+ "unicode-linebreak",
+ "unicode-script",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "ignit-cryoglyph"
+version = "0.1.0-ignit.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "180f92734487bfcdda43fa946e254ee136210c52fe5616ecc8f0dafb4ac5f546"
+dependencies = [
+ "etagere",
+ "ignit-cosmic-text",
+ "lru",
+ "rustc-hash 2.1.3",
+ "wgpu",
+]
+
+[[package]]
 name = "ignit-winit"
 version = "0.30.8-ignit.1"
-source = "git+https://forgejo.sakul-flee.de/SakulFlee/Ignit-Winit.git?branch=main#86a3d64d0d698feb50f19dad478093b06e98d4fc"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f59f01028ec4cdcb7b802dc2ef8e06eb8dcd60c9d0c03ceb00014feb5c53955"
 dependencies = [
  "ahash",
  "android-activity",
@@ -6255,3 +6258,8 @@ checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
 dependencies = [
  "zune-core",
 ]
+
+[[patch.unused]]
+name = "cosmic-text"
+version = "0.19.0"
+source = "git+https://github.com/hecrj/cosmic-text.git?rev=19cca2bd90e73e20614964f06d44240e71e503b3#19cca2bd90e73e20614964f06d44240e71e503b3"
