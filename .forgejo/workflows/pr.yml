@@ -8,7 +8,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     container:
-      image: forgejo.sakul-flee.de/sakulflee/orbital-ci-build-image:latest
+      image: forgejo.sakul-flee.de/sakulflee/ignit-ci-build-image:latest
     env:
       RUSTC_WRAPPER: sccache
       CARGO_INCREMENTAL: 0
