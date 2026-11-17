@@ -51,12 +51,12 @@ syn = { version = "3.0", features = ["full"] }
 criterion = { version = "0.8", features = ["html_reports"] }
 
 # Iced sub-crates (wgpu 30 fork)
-iced_core = { git = "https://forgejo.sakul-flee.de/SakulFlee/orbital-iced.git", branch = "master" }
-iced_widget = { git = "https://forgejo.sakul-flee.de/SakulFlee/orbital-iced.git", branch = "master" }
-iced_runtime = { git = "https://forgejo.sakul-flee.de/SakulFlee/orbital-iced.git", branch = "master" }
-iced_graphics = { git = "https://forgejo.sakul-flee.de/SakulFlee/orbital-iced.git", branch = "master" }
-iced_wgpu = { git = "https://forgejo.sakul-flee.de/SakulFlee/orbital-iced.git", branch = "master", default-features = false }
-iced_winit = { git = "https://forgejo.sakul-flee.de/SakulFlee/orbital-iced.git", branch = "master", default-features = false }
+iced_core = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git", branch = "master" }
+iced_widget = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git", branch = "master" }
+iced_runtime = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git", branch = "master" }
+iced_graphics = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git", branch = "master" }
+iced_wgpu = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git", branch = "master", default-features = false }
+iced_winit = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit-Iced.git", branch = "master", default-features = false }
 
 # Iced third-party deps
 arboard = { version = "3.6", default-features = false }
@@ -116,7 +116,7 @@ wasmtimer = "0.4.2"
 wincode = "0.6"
 web-sys = "0.3"
 web-time = "1.1"
-winit = { git = "https://forgejo.sakul-flee.de/SakulFlee/Orbital-Winit.git", branch = "main", default-features = false, features = [
+winit = { package = "ignit-winit", git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit-Winit.git", branch = "main", default-features = false, features = [
   "rwh_06",
 ] }
 
