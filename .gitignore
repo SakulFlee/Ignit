@@ -40,9 +40,8 @@ jniLibs/
 # VIM
 Session.vim
 
-# Direnv and Cargo hidden files
+# Cargo hidden files
 .cargo/
-.direnv/
 
 # Jupyter NVim generated files
 performance_report.py

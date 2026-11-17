@@ -37,7 +37,7 @@ fn is_jdk(home: &Path) -> bool {
 /// Returns the JDK home directory if a working Java (with javac) is found.
 pub fn find_java() -> Option<PathBuf> {
     // 1. JAVA_HOME. Explicit environment variables must win over the Orbital
-    // cache so Nix dev shells and other patched JDK installations can be used.
+    // cache so externally provided JDK installations can be used.
     if let Ok(java_home) = std::env::var("JAVA_HOME") {
         let java_home = PathBuf::from(java_home);
         let java = java_executable(&java_home);
@@ -88,9 +88,8 @@ pub fn ensure_java() -> Result<PathBuf> {
     if crate::tooling::is_nixos() {
         println!(
             "NixOS detected. The Orbital-managed Temurin JDK is a generic Linux build\n\
-             and does not run on NixOS without nix-ld or an FHS wrapper.\n\
-             Use the opt-in Android dev shell instead:\n  nix develop .#android\n\
-             or set JAVA_HOME to a Nix-provided JDK."
+             and does not run on NixOS without nix-ld.\n\
+             Set JAVA_HOME to a Nix-provided JDK, or run the Android build in a container."
         );
         anyhow::bail!("Java runtime required but not installed.");
     }

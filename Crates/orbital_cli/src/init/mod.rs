@@ -101,19 +101,17 @@ pub fn run(
 
     println!("\nNext steps:");
     println!("  cd {}", project_dir.display());
-    println!("  direnv allow            # loads the dev shell and installs the orbital CLI");
+
+    if crate::tooling::is_nixos() {
+        println!("  # NixOS: build in a shell that provides the engine's system libraries, e.g.");
+        println!("  nix-shell -p cargo pkg-config systemd wayland libxkbcommon vulkan-loader mesa");
+    }
 
     if config.generate_android {
-        if crate::tooling::is_nixos() {
-            println!("  nix develop .#android  # opt-in Android SDK/JDK shell");
-            println!("  nix develop .#android-emulator  # adds emulator + system image");
-        }
         println!("  orbital build android");
     } else {
         println!("  orbital build");
     }
-
-    println!("\nTo update the orbital CLI later, run `orbital-update` inside the project.");
 
     Ok(())
 }

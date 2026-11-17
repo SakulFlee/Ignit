@@ -18,13 +18,9 @@ const TOKEN = process.env.FORGEJO_TOKEN || process.env.GITHUB_TOKEN || '';
 const FULL_PATHS = new Set([
   'Cargo.toml',
   'Cargo.lock',
-  'flake.nix',
-  'flake.lock',
-  'shell.nix',
   'rust-toolchain',
   'rust-toolchain.toml',
   'renovate.json',
-  '.envrc',
   'Orbital.toml',
 ]);
 

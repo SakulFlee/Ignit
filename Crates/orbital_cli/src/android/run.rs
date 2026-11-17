@@ -290,19 +290,12 @@ fn setup_new_avd() -> Result<String> {
         if let Some(sdk_path) = crate::android::sdk::current_sdk_path()
             && crate::android::sdk::is_nix_managed_sdk(&sdk_path)
         {
-            if crate::nix_shell::can_enter_android_emulator_shell() {
-                crate::nix_shell::reexec_in_android_emulator_shell()?;
-            }
-
             println!(
                 "\nThe Android SDK at {} is Nix-managed and read-only.",
                 sdk_path.display()
             );
-            println!("Use the Android emulator dev shell instead:");
-            println!("  nix develop .#android-emulator");
             println!(
-                "It includes the emulator and the {} system image.",
-                system_image
+                "Point ANDROID_HOME at a writable SDK, or run the Android build in a container."
             );
             anyhow::bail!(
                 "The emulator and system image are not installed in the Nix-managed Android SDK."

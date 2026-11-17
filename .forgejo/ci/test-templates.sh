@@ -34,7 +34,7 @@ for template in minimal all-in-one 2d; do
         --project-path "$project" \
         --engine-path "$ROOT"
 
-    for file in Cargo.toml Orbital.toml .envrc flake.nix src/lib.rs src/main.rs Assets/.gitkeep; do
+    for file in Cargo.toml Orbital.toml src/lib.rs src/main.rs Assets/.gitkeep; do
         if [[ ! -e "$project/$file" ]]; then
             echo "Missing generated file: $project/$file" >&2
             exit 1

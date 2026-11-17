@@ -99,6 +99,28 @@ To use the engine in your own project, add the following to your `Cargo.toml`:
 orbital = { path = "./Runtime" }
 ```
 
+## Nix
+
+The flake packages the `orbital` CLI. It provides no dev shell — install the
+binary and let Cargo build your project:
+
+```shell
+nix shell github:SakulFlee/Orbital#orbital-cli
+# or
+nix profile install github:SakulFlee/Orbital#orbital-cli
+```
+
+On NixOS, build from a shell that provides the engine's system libraries, and
+enable `hardware.graphics` for the Vulkan drivers:
+
+```shell
+nix-shell -p cargo pkg-config systemd wayland libxkbcommon vulkan-loader mesa \
+  --run 'orbital build'
+```
+
+Android builds need a container or `programs.nix-ld`, because the CLI-managed
+SDK and JDK are generic Linux builds.
+
 ## Performance Reporting
 
 The debug UI can write FPS, frame-stage timings and cache counters to

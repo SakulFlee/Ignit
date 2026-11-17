@@ -591,8 +591,7 @@ fn ensure_rust_targets(targets: &[String]) -> Result<()> {
             anyhow::bail!(
                 "Missing Rust targets: {}\n\
                  The active toolchain does not include them, and rustup is not available.\n\
-                 Use the Android dev shell (`nix develop .#android`), or add the targets\n\
-                 to your Rust toolchain.",
+                 Add the targets to your Rust toolchain, or build in a container that has them.",
                 missing.join(", ")
             );
         }
