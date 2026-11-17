@@ -1,0 +1,34 @@
+[package]
+name = "ignit_debug_ui"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Debug overlay UI for the Ignit game engine (performance, ECS inspector, console)"
+
+[dependencies]
+cgmath = { workspace = true }
+log = { workspace = true }
+winit = { workspace = true }
+
+ignit_app = { path = "../app" }
+ignit_billboard = { path = "../billboard" }
+ignit_camera = { path = "../camera" }
+ignit_core = { path = "../core" }
+ignit_debug_render = { path = "../debug_render" }
+ignit_ecs = { path = "../ecs" }
+ignit_ecs_bridge = { path = "../ecs_bridge" }
+ignit_iced = { path = "../iced" }
+ignit_material_shader = { path = "../material_shader" }
+ignit_renderer = { path = "../renderer" }
+
+# Iced sub-crates, matching ignit_iced so the types line up.
+iced_core = { workspace = true }
+iced_widget = { workspace = true, features = ["wgpu"] }
+iced_wgpu = { workspace = true }
+iced_winit = { workspace = true }
+
+[dev-dependencies]
+ignit_mesh = { path = "../mesh" }

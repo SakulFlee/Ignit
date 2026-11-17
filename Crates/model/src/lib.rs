@@ -1,0 +1,261 @@
+use std::{
+    error::Error,
+    sync::{
+        Arc, Mutex, RwLock,
+        atomic::{AtomicU64, Ordering},
+    },
+};
+
+use cgmath::{EuclideanSpace, Point3, Vector3, Vector4};
+use hashbrown::HashMap;
+use wgpu::{Buffer, BufferDescriptor, BufferUsages, Device, Queue, TextureFormat};
+
+use ignit_core::cache::{Cache, CacheEntry};
+use ignit_instance::Instance;
+use ignit_material_shader::{MaterialShader, MaterialShaderDescriptor, PipelineCache};
+use ignit_math::Transform;
+pub use ignit_mesh::{Mesh, MeshDescriptor};
+use ulid::Ulid;
+
+mod descriptor;
+pub use descriptor::*;
+
+static MATERIAL_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
+static MATERIAL_CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
+
+/// Returns cumulative material cache hits and misses.
+pub fn material_cache_stats() -> (u64, u64) {
+    (
+        MATERIAL_CACHE_HITS.load(Ordering::Relaxed),
+        MATERIAL_CACHE_MISSES.load(Ordering::Relaxed),
+    )
+}
+
+#[derive(Debug, Clone)]
+pub struct Model {
+    mesh: Arc<Mesh>,
+    materials: Vec<Arc<MaterialShader>>,
+    /// Source descriptors kept for cheap identity checks. A transform-only
+    /// update can compare these `Arc`s without re-hashing the whole mesh.
+    source_mesh: Arc<MeshDescriptor>,
+    source_materials: Vec<Arc<MaterialShaderDescriptor>>,
+    instance_count: u32,
+    instance_capacity: u32,
+    instance_buffer: Buffer,
+    /// CPU copy of the instance buffer, used to compact visible instances
+    /// without re-encoding every transform each frame.
+    instance_data: Vec<u8>,
+    /// World-space bounding sphere per instance: `[center.x, center.y, center.z, radius]`.
+    instance_bounds: Vec<[f32; 4]>,
+    /// Hash of the mesh and materials. Instance transforms are excluded so an
+    /// animation update can reuse the existing GPU buffer.
+    source_hash: Ulid,
+}
+
+impl Model {
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_descriptor<'cache>(
+        descriptor: &ModelDescriptor,
+        color_format: &TextureFormat,
+        device: &Device,
+        queue: &Queue,
+        mesh_cache: &'cache RwLock<Cache<Arc<MeshDescriptor>, Mesh>>,
+        material_cache: &'cache RwLock<Cache<Arc<MaterialShaderDescriptor>, MaterialShader>>,
+        pipeline_cache: &Mutex<PipelineCache>,
+        gbuffer_color_formats: Option<&[TextureFormat]>,
+    ) -> Result<Self, Box<dyn Error + 'cache>> {
+        // --- Mesh ---
+        let mesh = match mesh_cache.write() {
+            Ok(mut lock) => lock
+                .entry(descriptor.mesh.clone())
+                .or_insert(CacheEntry::new(Mesh::from_descriptor(
+                    &descriptor.mesh,
+                    device,
+                    queue,
+                )))
+                .clone_inner(),
+            Err(e) => return Err(Box::new(e)),
+        };
+
+        // --- Material ---
+        let mut materials = Vec::new();
+        for material_descriptor in &descriptor.materials {
+            let material = match material_cache.write() {
+                Ok(mut lock) => {
+                    if let Some(entry) = lock.get(material_descriptor) {
+                        MATERIAL_CACHE_HITS.fetch_add(1, Ordering::Relaxed);
+                        entry.clone_inner()
+                    } else {
+                        MATERIAL_CACHE_MISSES.fetch_add(1, Ordering::Relaxed);
+
+                        let mut pipeline_cache = pipeline_cache.lock().unwrap();
+                        let material = MaterialShader::from_descriptor_with_cache(
+                            material_descriptor,
+                            Some(*color_format),
+                            device,
+                            queue,
+                            &mut pipeline_cache,
+                            gbuffer_color_formats,
+                        )?;
+                        let entry = CacheEntry::new(material);
+                        let material = entry.clone_inner();
+                        lock.insert(material_descriptor.clone(), entry);
+                        material
+                    }
+                }
+                Err(e) => return Err(Box::new(e)),
+            };
+            materials.push(material);
+        }
+
+        let instance_capacity = (descriptor.transforms.len() as u32).max(1);
+        let instance_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("Model Instance Buffer"),
+            size: instance_capacity as u64 * 64,
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut model = Self {
+            mesh,
+            materials,
+            source_mesh: descriptor.mesh.clone(),
+            source_materials: descriptor.materials.clone(),
+            instance_count: 0,
+            instance_capacity,
+            instance_buffer,
+            instance_data: Vec::with_capacity(instance_capacity as usize * 64),
+            instance_bounds: Vec::with_capacity(instance_capacity as usize),
+            source_hash: descriptor.instance_hash(),
+        };
+        model.update_instances(&descriptor.transforms, device, queue);
+        Ok(model)
+    }
+
+    /// Update the instance buffer in place.
+    ///
+    /// The buffer is only reallocated when the new instance count exceeds the
+    /// existing capacity. This is the path animation will use every frame.
+    pub fn update_instances(
+        &mut self,
+        transforms: &HashMap<Ulid, Transform>,
+        device: &Device,
+        queue: &Queue,
+    ) {
+        let instance_count = transforms.len() as u32;
+        if instance_count > self.instance_capacity {
+            let new_capacity = instance_count.next_power_of_two().max(1);
+            self.instance_buffer = device.create_buffer(&BufferDescriptor {
+                label: Some("Model Instance Buffer"),
+                size: new_capacity as u64 * 64,
+                usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.instance_capacity = new_capacity;
+            self.instance_data.reserve(new_capacity as usize * 64);
+            self.instance_bounds.reserve(new_capacity as usize);
+        }
+
+        self.instance_data.clear();
+        self.instance_bounds.clear();
+        let bounding_sphere = self.mesh.bounding_sphere();
+
+        for transform in transforms.values() {
+            let instance = Instance::from(transform);
+            self.instance_data
+                .extend(instance.to_buffer_data_flattened());
+
+            if let Some(sphere) = &bounding_sphere {
+                let matrix = transform.to_matrix();
+                let center =
+                    matrix * Vector4::new(sphere.center.x, sphere.center.y, sphere.center.z, 1.0);
+                let max_scale = transform
+                    .scale
+                    .x
+                    .max(transform.scale.y)
+                    .max(transform.scale.z);
+                self.instance_bounds.push([
+                    center.x,
+                    center.y,
+                    center.z,
+                    sphere.radius * max_scale,
+                ]);
+            } else {
+                self.instance_bounds.push([0.0, 0.0, 0.0, 0.0]);
+            }
+        }
+
+        if instance_count > 0 {
+            queue.write_buffer(&self.instance_buffer, 0, &self.instance_data);
+        }
+        self.instance_count = instance_count;
+    }
+
+    pub fn mesh(&self) -> &Mesh {
+        &self.mesh
+    }
+
+    pub fn materials(&self) -> &Vec<Arc<MaterialShader>> {
+        &self.materials
+    }
+
+    /// Whether any material on this model casts shadows.
+    pub fn casts_shadows(&self) -> bool {
+        self.materials
+            .iter()
+            .any(|material| material.cast_shadows())
+    }
+
+    pub fn instance_count(&self) -> u32 {
+        self.instance_count
+    }
+
+    pub fn instance_buffer(&self) -> &Buffer {
+        &self.instance_buffer
+    }
+
+    /// CPU copy of the instance buffer, matching [`Self::instance_buffer`].
+    pub fn instance_data(&self) -> &[u8] {
+        &self.instance_data
+    }
+
+    /// World-space bounding sphere per instance: `[center.x, center.y, center.z, radius]`.
+    pub fn instance_bounds(&self) -> &[[f32; 4]] {
+        &self.instance_bounds
+    }
+
+    /// Average world-space center of all instances.
+    pub fn instance_center(&self) -> Option<Point3<f32>> {
+        if self.instance_bounds.is_empty() {
+            return None;
+        }
+
+        let mut center = Vector3::new(0.0, 0.0, 0.0);
+        for bound in &self.instance_bounds {
+            center += Vector3::new(bound[0], bound[1], bound[2]);
+        }
+        Some(Point3::from_vec(center / self.instance_bounds.len() as f32))
+    }
+
+    /// Hash of the mesh and materials, used to decide whether a model can
+    /// update its instances in place.
+    pub fn source_hash(&self) -> Ulid {
+        self.source_hash
+    }
+
+    /// Whether `descriptor` still refers to the same mesh and material
+    /// descriptors used to build this model.
+    ///
+    /// This is a pointer-identity check, not a content hash. Descriptors are
+    /// immutable values held in shared `Arc`s, so a changed source necessarily
+    /// produces a different `Arc`.
+    pub fn source_matches(&self, descriptor: &ModelDescriptor) -> bool {
+        Arc::ptr_eq(&self.source_mesh, &descriptor.mesh)
+            && self.source_materials.len() == descriptor.materials.len()
+            && self
+                .source_materials
+                .iter()
+                .zip(&descriptor.materials)
+                .all(|(a, b)| Arc::ptr_eq(a, b))
+    }
+}

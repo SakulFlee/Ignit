@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use criterion::Criterion;
-use orbital_ecs::Entity;
+use ignit_ecs::Entity;
 use rand::RngExt;
 use rand::prelude::SliceRandom;
 

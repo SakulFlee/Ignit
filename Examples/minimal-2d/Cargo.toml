@@ -17,4 +17,4 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-orbital = { path = "../../Crates/orbital" }
+ignit = { path = "../../Crates/ignit" }

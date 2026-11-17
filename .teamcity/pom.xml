@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <project>
   <modelVersion>4.0.0</modelVersion>
-  <name>OpenSourceProjects_Orbital Config DSL Script</name>
-  <groupId>OpenSourceProjects_Orbital</groupId>
-  <artifactId>OpenSourceProjects_Orbital_dsl</artifactId>
+  <name>OpenSourceProjects_Ignit Config DSL Script</name>
+  <groupId>OpenSourceProjects_Ignit</groupId>
+  <artifactId>OpenSourceProjects_Ignit_dsl</artifactId>
   <version>1.0-SNAPSHOT</version>
 
   <parent>

@@ -1,0 +1,36 @@
+[package]
+name = "ignit_ecs_bridge"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ignit_macros = { path = "../macros" }
+ignit_core = { path = "../core" }
+ignit_ecs = { path = "../ecs" }
+ignit_importer_gltf = { path = "../importer_gltf" }
+ignit_camera = { path = "../camera" }
+ignit_cull = { path = "../cull" }
+ignit_ibl_brdf = { path = "../ibl_brdf" }
+ignit_light = { path = "../light" }
+ignit_material_shader = { path = "../material_shader" }
+ignit_math = { path = "../math" }
+ignit_mesh = { path = "../mesh" }
+ignit_model = { path = "../model" }
+ignit_shadow = { path = "../shadow" }
+ignit_world_environment = { path = "../world_environment" }
+cgmath = { workspace = true }
+hashbrown = { workspace = true }
+ignit_input = { path = "../input" }
+ulid = { workspace = true }
+wgpu = { workspace = true }
+winit = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Linux needs a winit backend selected explicitly. `ignit_iced` enables
+# these through its own Linux target section; bridge crates that reach winit
+# without pulling iced must do the same so standalone crate builds work.
+winit = { workspace = true, features = ["x11", "wayland"] }

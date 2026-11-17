@@ -1,0 +1,18 @@
+[package]
+name = "ignit_touch_ui"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+cgmath = { workspace = true }
+wgpu = { workspace = true }
+
+ignit_app = { path = "../app" }
+ignit_core = { path = "../core" }
+ignit_ecs = { path = "../ecs" }
+ignit_ecs_bridge = { path = "../ecs_bridge" }
+ignit_input = { path = "../input" }

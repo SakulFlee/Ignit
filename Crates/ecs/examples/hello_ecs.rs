@@ -3,7 +3,7 @@
 //! The scheduler is run multiple times in a loop.
 //! Each system runs on each run, modifying or interacting with the [`Health`] and [`Name`] component.
 
-use orbital_ecs::{Res, ResMut, Schedule, World};
+use ignit_ecs::{Res, ResMut, Schedule, World};
 
 #[derive(Debug, Clone)]
 struct Name(String);

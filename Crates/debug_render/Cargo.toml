@@ -1,0 +1,23 @@
+[package]
+name = "ignit_debug_render"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+cgmath = { workspace = true }
+wgpu = { workspace = true }
+winit = { workspace = true }
+
+ignit_app = { path = "../app" }
+ignit_camera = { path = "../camera" }
+ignit_core = { path = "../core" }
+ignit_ecs = { path = "../ecs" }
+ignit_ecs_bridge = { path = "../ecs_bridge" }
+ignit_instance = { path = "../instance" }
+ignit_light = { path = "../light" }
+ignit_shadow = { path = "../shadow" }
+ignit_vertex = { path = "../vertex" }

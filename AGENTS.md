@@ -38,10 +38,10 @@ cargo clippy -- -D warnings
 cargo test --no-fail-fast
 ```
 
-- The forked iced crates are fetched automatically by Cargo from the `orbital-iced` git dependency; no submodule initialization is required.
+- The forked iced crates are fetched automatically by Cargo from the `ignit-iced` git dependency; no submodule initialization is required.
 - Forgejo CI runs `cargo fmt --all -- --check` and `cargo clippy -- -D warnings`. GitHub and TeamCity are looser. Use the strict Forgejo commands locally.
 - Run the affected example(s) from the table in section 6.
-- For changes to `Crates/orbital_cli` or its templates, test the CLI end to end: build it, scaffold a throwaway project, and exercise the affected `orbital build`/`orbital run` path.
+- For changes to `Crates/cli` or its templates, test the CLI end to end: build it, scaffold a throwaway project, and exercise the affected `ignit build`/`ignit run` path.
 - Review `git diff` yourself: no debug leftovers, secrets, generated assets, or unrelated files.
 - Commit messages, pull-request metadata, and code must not contain AI/model attribution.
 
@@ -59,12 +59,12 @@ cargo test --no-fail-fast
 
 ## 3. Repository overview
 
-**Orbital** is a cross-platform real-time 3D rendering engine and framework written in Rust.
+**Ignit** is a cross-platform real-time 3D rendering engine and framework written in Rust.
 It renders PBR scenes (glTF import, image-based lighting, shadows) with **WGPU** and **WGSL** shaders.
 
-- Canonical repository: [Forgejo](https://forgejo.sakul-flee.de/SakulFlee/Orbital).
+- Canonical repository: [Forgejo](https://forgejo.sakul-flee.de/SakulFlee/Ignit).
 - GitHub is a mirror. Open pull requests on Forgejo; if you can only use GitHub, treat a GitHub PR as a proposal to be ported to Forgejo before merge.
-- New projects and platform builds go through the `orbital` CLI (`Crates/orbital_cli`); it is a primary user-facing part of the project.
+- New projects and platform builds go through the `ignit` CLI (`Crates/cli`); it is a primary user-facing part of the project.
 - Edition: 2024. Workspace resolver: v2.
 - License: see `LICENSE`. Do not rely on older documentation for licensing terms.
 
@@ -77,7 +77,8 @@ The engine was rewritten several times; this explains some naming:
 | Akimo (Java) | CPU 2D → LWJGL OpenGL/Vulkan | Original project name |
 | Akimo (C++) | Vulkan bindings | Complete rewrite, same name |
 | Orbital (Rust/Vulkan) | Rust + Vulkan bindings | First Rust iteration |
-| **Orbital (Rust/WGPU/WGSL)** | **Current** | Cross-platform shaders via WGPU/WGSL |
+| Orbital (Rust/WGPU/WGSL) | Rust + WGPU/WGSL | Previous Rust iteration, renamed to Ignit |
+| **Ignit (Rust/WGPU/WGSL)** | **Current** | Cross-platform shaders via WGPU/WGSL |
 
 ---
 
@@ -87,32 +88,33 @@ Workspace members are `Examples/*` and `Crates/*` (see `Cargo.toml`).
 
 | Path | Purpose |
 |------|---------|
-| `Crates/orbital` | Facade crate. Re-exports engine modules (`twod`, `app`, `debug_render`, `ecs`, `ecs_bridge`, `file_manager`, `iced`, `importer`, `procgeo`, `renderer`, `resources`, `shader_preprocessor`, `text`, `touch_ui`, `ui`) plus `macros::main`, `cgmath`, `wgpu`, and `winit`. |
-| `Crates/orbital_app` | `App` builder, `Module` trait, `ModuleRuntime`, core/game schedules, realization systems, render layers and overlays. |
-| `Crates/ecs` (`orbital_ecs`) | ECS: world, entities, components, queries, systems, schedules, events. |
-| `Crates/orbital_ecs_bridge` | Engine-specific ECS components/resources: camera, model, light, time, input snapshots, GPU resources, importer, iced events. |
-| `Crates/orbital_core` | Caches, logging, MIP helpers, quaternion/projection utilities, `wgpu_util`. |
-| `Crates/orbital_macros` | `#[orbital::main]` procedural macro generating desktop, Android, and iOS entry points. |
-| `Crates/orbital_input` | Keyboard, mouse, touch, and gamepad input abstraction. |
-| `Crates/orbital_file_manager` | Cross-platform asset/storage/cache I/O (desktop `Assets/`, Android APK assets, iOS bundle resources). |
-| `Crates/orbital_math` | Transforms, modes, projections. |
-| `Crates/orbital_camera`, `orbital_instance`, `orbital_vertex`, `orbital_mesh`, `orbital_model`, `orbital_light`, `orbital_cull`, `orbital_shadow`, `orbital_texture`, `orbital_material_shader` | Geometry, scene, and GPU resource crates. |
-| `Crates/orbital_ibl_brdf`, `orbital_world_environment` | BRDF LUT and HDR/IBL environment handling. |
-| `Crates/orbital_procgeo` | Procedural shapes and RON scene descriptions (`SceneBuilder`). |
-| `Crates/orbital_billboard` | Camera-facing textured billboards realized as normal models. |
-| `Crates/orbital_resources` | Compatibility re-export shim only; real types live in the fine-grained crates. |
-| `Crates/orbital_shader_preprocessor` | Named WGSL `ShaderNode` registry and `ShaderBuilder`. |
-| `Crates/orbital_shader_core` | `ShaderDescriptor`, variables, bind-group and pipeline plumbing. |
-| `Crates/orbital_shader_engine`, `orbital_shader_math`, `orbital_shader_pbr`, `orbital_shader_debug`, `orbital_shader_2d` | Reusable WGSL node libraries for engine, math, PBR, debug, and 2D/UI/text. |
-| `Crates/orbital_renderer` | Main `Renderer` (shadow pass, skybox, models, timestamps) plus `Renderer2D`, `TextRenderer`, `UiRenderer`. |
-| `Crates/orbital_2d` | 2D camera, vertices, shape descriptors, batching. |
-| `Crates/orbital_text` | Fontdue-based font data, SDF atlas packing, 2D/billboard text mesh generation. |
-| `Crates/orbital_ui` | ECS UI components/widgets, layout, hit testing, UI events. |
-| `Crates/orbital_iced` | Integration crate for iced panels (`IcedBridgeModule`, `IcedLayerRenderer`, `IcedState`). |
-| `Crates/orbital_touch_ui`, `orbital_debug_render` | Touch controls and debug overlays. |
-| `Crates/orbital_importer_gltf` | glTF 2.0 importer with `KHR_lights_punctual`, async rayon tasks. |
-| `Crates/orbital_cli` | `orbital-cli` package with the `orbital` binary. Project scaffolding (`init`, `init-android`), templates, desktop/Android/iOS build and run, and `Orbital.toml` handling. |
-| `orbital-iced` (external) | Forked iced sub-crates (`iced`, `iced_core`, `iced_widget`, `iced_wgpu`, `iced_winit`, …), consumed as Cargo `git` dependencies from `SakulFlee/orbital-iced`. Not the same as `orbital_iced`. |
+| `Crates/ignit` | Facade crate. Re-exports engine modules (`twod`, `app`, `debug_render`, `ecs`, `ecs_bridge`, `file_manager`, `iced`, `importer`, `procgeo`, `renderer`, `resources`, `shader_preprocessor`, `text`, `touch_ui`, `ui`) plus `macros::main`, `cgmath`, `wgpu`, and `winit`. |
+| `Crates/app` | `App` builder, `Module` trait, `ModuleRuntime`, core/game schedules, realization systems, render layers and overlays. |
+| `Crates/ecs` (`ignit_ecs`) | ECS: world, entities, components, queries, systems, schedules, events. |
+| `Crates/ecs_bridge` | Engine-specific ECS components/resources: camera, model, light, time, input snapshots, GPU resources, importer, iced events. |
+| `Crates/core` | Caches, logging, MIP helpers, quaternion/projection utilities, `wgpu_util`. |
+| `Crates/macros` | `#[ignit::main]` procedural macro generating desktop, Android, and iOS entry points. |
+| `Crates/input` | Keyboard, mouse, touch, and gamepad input abstraction. |
+| `Crates/file_manager` | Cross-platform asset/storage/cache I/O (desktop `Assets/`, Android APK assets, iOS bundle resources). |
+| `Crates/math` | Transforms, modes, projections. |
+| `Crates/camera`, `Crates/instance`, `Crates/vertex`, `Crates/mesh`, `Crates/model`, `Crates/light`, `Crates/cull`, `Crates/shadow`, `Crates/texture`, `Crates/material_shader` | Geometry, scene, and GPU resource crates. |
+| `Crates/ibl_brdf`, `Crates/world_environment` | BRDF LUT and HDR/IBL environment handling. |
+| `Crates/procgeo` | Procedural shapes and RON scene descriptions (`SceneBuilder`). |
+| `Crates/billboard` | Camera-facing textured billboards realized as normal models. |
+| `Crates/resources` | Compatibility re-export shim only; real types live in the fine-grained crates. |
+| `Crates/shader_preprocessor` | Named WGSL `ShaderNode` registry and `ShaderBuilder`. |
+| `Crates/shader_core` | `ShaderDescriptor`, variables, bind-group and pipeline plumbing. |
+| `Crates/shader_engine`, `Crates/shader_math`, `Crates/shader_pbr`, `Crates/shader_debug`, `Crates/shader_2d` | Reusable WGSL node libraries for engine, math, PBR, debug, and 2D/UI/text. |
+| `Crates/renderer` | Main `Renderer` (shadow pass, skybox, models, timestamps) plus `Renderer2D`, `TextRenderer`, `UiRenderer`. |
+| `Crates/render_graph` | Render graph construction and pass scheduling. |
+| `Crates/2d` | 2D camera, vertices, shape descriptors, batching. |
+| `Crates/text` | Fontdue-based font data, SDF atlas packing, 2D/billboard text mesh generation. |
+| `Crates/ui` | ECS UI components/widgets, layout, hit testing, UI events. |
+| `Crates/iced` | Integration crate for iced panels (`IcedBridgeModule`, `IcedLayerRenderer`, `IcedState`). |
+| `Crates/touch_ui`, `Crates/debug_render` | Touch controls and debug overlays. |
+| `Crates/importer_gltf` | glTF 2.0 importer with `KHR_lights_punctual`, async rayon tasks. |
+| `Crates/cli` | `ignit-cli` package with the `ignit` binary. Project scaffolding (`init`, `init-android`), templates, desktop/Android/iOS build and run, and `Ignit.toml` handling. |
+| `ignit-iced` (external) | Forked iced sub-crates (`iced`, `iced_core`, `iced_widget`, `iced_wgpu`, `iced_winit`, …), consumed as Cargo `git` dependencies from `SakulFlee/ignit-iced`. Not the same as `ignit_iced`. |
 | `Examples/` | Official templates as runnable workspace example crates. |
 | `Images/` | README screenshots. |
 
@@ -126,7 +128,7 @@ Workspace members are `Examples/*` and `Crates/*` (see `Cargo.toml`).
 - A `Module` is a plugin: it receives `&mut World`, `&Device`, `&Queue` in `setup` and returns systems. It can also register render overlays and save/restore/clear state.
 - `App` combines modules in registration order; `ModuleRuntime` owns the ECS `World`, schedules, renderer, and overlay renderers.
 - Overlays use the unified `LayerRenderer` API. `OverlaySubmission::MainEncoder` records into the scene encoder; `OverlaySubmission::MainSubmit` records its own command buffer but merges it into the scene submission (currently iced); `OverlaySubmission::Owned` submits separately after the scene.
-- Examples use `#[orbital::main]` on an `entrypoint(Result<EventLoop, EventLoopError>)`; the macro generates desktop, Android, and iOS entry points.
+- Examples use `#[ignit::main]` on an `entrypoint(Result<EventLoop, EventLoopError>)`; the macro generates desktop, Android, and iOS entry points.
 
 ### Frame order
 
@@ -148,7 +150,7 @@ Per redraw: realize cameras → lights → environment → models → shadow sta
 ### Resource realization
 
 Camera, model, light, and environment resources follow descriptor → ECS component/dirty flag → realization system → GPU resource/cache.
-Mesh, material, and descriptor caches are keyed by descriptor and use `orbital_core::cache::Cache` (5 s default TTL, `Arc` strong-count tracking).
+Mesh, material, and descriptor caches are keyed by descriptor and use `ignit_core::cache::Cache` (5 s default TTL, `Arc` strong-count tracking).
 
 ### Shaders and rendering
 
@@ -158,7 +160,7 @@ Mesh, material, and descriptor caches are keyed by descriptor and use `orbital_c
 - Main pass order: shadow → skybox → models → transparent → volumetrics → tonemap → AA. Models use CPU-culled compacted instance buffers when available.
 - Volumetrics are opt-in through a `VolumetricSettings` ECS resource. When enabled, a compute pass injects height fog, diffuse environment/sky radiance, and shadowed light scattering into a froxel grid, another pass pre-integrates each froxel column into cumulative in-scattering and transmittance, and a fullscreen pass composites the prefix once per pixel after forward transparency and before tonemapping. Froxel slices are distributed linearly in view-space distance rather than NDC depth. A separate compute pass reprojects and blends previous-frame volumetric history to reduce view-aligned froxel shimmer.
 - Anti-aliasing is selected with `AppSettings::anti_aliasing`: `Off`, `Fxaa`, or LUT-based `Smaa` (SMAA 1x). SMAA quality is selected with `AppSettings::smaa_quality` (`Low`/`Medium`/`High`/`Ultra`); it runs on the LDR post-chain output, and 2D, UI, and text render afterward and stay sharp. At runtime, `RenderSettings` is the live AA/quality resource; `ModuleRuntime` applies it each redraw.
-- 2D, text, and UI have separate renderer paths. Most WGSL is embedded in crates with `include_str!`; the shadow depth shader lives in `Crates/orbital_shadow/src/shadow_depth.wgsl`.
+- 2D, text, and UI have separate renderer paths. Most WGSL is embedded in crates with `include_str!`; the shadow depth shader lives in `Crates/shadow/src/shadow_depth.wgsl`.
 
 ### Import pipeline
 
@@ -166,13 +168,13 @@ Mesh, material, and descriptor caches are keyed by descriptor and use `orbital_c
 
 ### UI and 2D
 
-- `orbital_2d` provides shapes, batching, and `Camera2D`.
-- `orbital_text` provides SDF glyph atlases and text meshes.
-- `orbital_renderer` exposes `Renderer2D`, `TextRenderer`, and `UiRenderer`.
-- `orbital_ui` provides ECS widgets, layout, hit testing, and events; it is not automatically driven by `ModuleRuntime`.
-- `orbital_iced` is the production iced panel integration: events are processed before game systems and panels draw at `RenderLayer::UI`.
-- `orbital_debug_ui` provides the Performance, ECS, Console, and Rendering panels. Rendering exposes AA mode, SMAA quality, active-camera projection, and live volumetrics controls.
-- `orbital_touch_ui` renders a virtual joystick overlay.
+- `ignit_2d` provides shapes, batching, and `Camera2D`.
+- `ignit_text` provides SDF glyph atlases and text meshes.
+- `ignit_renderer` exposes `Renderer2D`, `TextRenderer`, and `UiRenderer`.
+- `ignit_ui` provides ECS widgets, layout, hit testing, and events; it is not automatically driven by `ModuleRuntime`.
+- `ignit_iced` is the production iced panel integration: events are processed before game systems and panels draw at `RenderLayer::UI`.
+- `ignit_debug_ui` provides the Performance, ECS, Console, and Rendering panels. Rendering exposes AA mode, SMAA quality, active-camera projection, and live volumetrics controls.
+- `ignit_touch_ui` renders a virtual joystick overlay.
 
 ---
 
@@ -209,48 +211,48 @@ cargo run -p template_minimal_2d
 | `Examples/minimal-2d` | `template_minimal_2d` | 2D shape rendering; no asset files. |
 
 The template app sources are canonical in `Examples/`; the CLI embeds them
-during generation. `Crates/orbital_cli/src/template/` only contains platform
+during generation. `Crates/cli/src/template/` only contains platform
 scaffolding such as Gradle and Xcode files.
 
 ---
 
 ## 7. Tooling and CI
 
-### Orbital CLI (`orbital`)
+### Ignit CLI (`ignit`)
 
-`Crates/orbital_cli` builds the `orbital` binary and is the main entry point for creating and building Orbital projects.
+`Crates/cli` builds the `ignit` binary and is the main entry point for creating and building Ignit projects.
 
 ```bash
-cargo build -p orbital-cli
-cargo run -p orbital-cli -- --help
+cargo build -p ignit-cli
+cargo run -p ignit-cli -- --help
 
 # Scaffold a project
-orbital init my-game --template all-in-one
+ignit init my-game --template all-in-one
 
 # Add Android support to an existing project
-orbital init-android
+ignit init-android
 
 # Build and run (desktop is the default)
-orbital build
-orbital build android --release
-orbital run --release
-orbital run ios --device "<device>"
+ignit build
+ignit build android --release
+ignit run --release
+ignit run ios --device "<device>"
 ```
 
 - `init` supports the `minimal-3d`, `all-in-one`, and `minimal-2d` templates, and can point at the engine via `--engine-repo`, `--engine-branch`, or `--engine-path`.
-- The CLI writes `Orbital.toml`, which configures the engine repository/branch plus Android and iOS packaging/deployment settings.
-- Template app sources live in `Examples/`; the generators live in `Crates/orbital_cli/src/init/`. Platform scaffolding lives in `Crates/orbital_cli/src/template/`.
+- The CLI writes `Ignit.toml`, which configures the engine repository/branch plus Android and iOS packaging/deployment settings.
+- Template app sources live in `Examples/`; the generators live in `Crates/cli/src/init/`. Platform scaffolding lives in `Crates/cli/src/template/`.
 - Generated projects are plain Cargo projects; there is no generated dev shell or direnv setup.
 - When changing CLI behavior or templates, test the generated project end to end, not only the CLI crate.
 
 ### Nix
 
-`flake.nix` is packaging only: it builds the `orbital` CLI (`nix build .#orbital-cli`, `nix shell .#orbital-cli`, or `nix profile install .#orbital-cli`). It has no dev shell, no pinned toolchain, and no shell hooks; CI and local development use `rust-toolchain.toml` via rustup.
+`flake.nix` is packaging only: it builds the `ignit` CLI (`nix build .#ignit-cli`, `nix shell .#ignit-cli`, or `nix profile install .#ignit-cli`). It has no dev shell, no pinned toolchain, and no shell hooks; CI and local development use `rust-toolchain.toml` via rustup.
 
 On NixOS, build projects inside a shell that provides the engine's system libraries:
 
 ```bash
-nix-shell -p cargo pkg-config systemd wayland libxkbcommon vulkan-loader mesa --run 'orbital build'
+nix-shell -p cargo pkg-config systemd wayland libxkbcommon vulkan-loader mesa --run 'ignit build'
 ```
 
 Enable `hardware.graphics` for the Vulkan ICD. Android builds need a container or `programs.nix-ld`, because the CLI-managed SDK/JDK are generic Linux builds.
@@ -278,9 +280,9 @@ All CI systems use the toolchain pinned in `rust-toolchain.toml` through rustup.
 
 Release tags (`v*`) run the shared `.github/workflows/release-shared.yml` from both forges. Release builds do not run lint or tests; those stay in the PR/`main` pipelines. A release publishes:
 
-- raw `orbital-cli-<version>-<target>` binaries
-- one `orbital-examples-<version>-<target>.tar.gz` (Unix) or `.zip` (Windows) per desktop target containing every example; only `template_all_in_one` carries its two runtime assets
-- universal `orbital-template-<name>-<version>-universal.apk` files for the Android templates
+- raw `ignit-cli-<version>-<target>` binaries
+- one `ignit-examples-<version>-<target>.tar.gz` (Unix) or `.zip` (Windows) per desktop target containing every example; only `template_all_in_one` carries its two runtime assets
+- universal `ignit-template-<name>-<version>-universal.apk` files for the Android templates
 - `SHA256SUMS`
 
 GitHub additionally builds macOS. iOS is not part of the release matrix yet.
@@ -296,12 +298,12 @@ Treat the current WASM status as unverified: `Crates/ecs/src/system/runner.rs` u
 
 ## 8. Gotchas
 
-- **Two similarly named projects.** `Crates/orbital_iced` is the in-repo Orbital integration crate; `orbital-iced` is the external forked iced repo consumed as a Cargo `git` dependency.
-- **`orbital_resources` is a shim.** It only re-exports types from the fine-grained resource crates.
-- **There is no `orbital_shaders` crate.** Use the `orbital_shader_*` family.
-- **`orbital_ecs` lives in `Crates/ecs`**, not `Crates/orbital_ecs`.
+- **Two similarly named projects.** `Crates/iced` is the in-repo Ignit integration crate; `ignit-iced` is the external forked iced repo consumed as a Cargo `git` dependency.
+- **`ignit_resources` is a shim.** It only re-exports types from the fine-grained resource crates.
+- **There is no `ignit_shaders` crate.** Use the `ignit_shader_*` family.
+- **`ignit_ecs` lives in `Crates/ecs`.**
 - **Examples own their assets.** There is no repository-wide `Assets/` tree; the all-in-one example keeps its scene and model under `Examples/all-in-one/Assets/`.
-- **The shadow depth shader is embedded.** It lives in `Crates/orbital_shadow/src/shadow_depth.wgsl`.
+- **The shadow depth shader is embedded.** It lives in `Crates/shadow/src/shadow_depth.wgsl`.
 - **`App` state hooks.** `CombinedModule` forwards `setup` and `register_overlays`, but not per-module `save_state`/`restore_state`/`clear_state`.
 - **CI coverage is uneven.** Linux is the primary target; Windows/macOS/Android/iOS paths exist but are not equally covered.
 
@@ -313,28 +315,28 @@ Treat the current WASM status as unverified: `Crates/ecs/src/system/runner.rs` u
 |------|---------|
 | `Cargo.toml` | Workspace members, dependencies, profiles, lints. |
 | `rust-toolchain.toml` | Pinned Rust toolchain shared by local and CI. |
-| `flake.nix` | Nix package for the `orbital` CLI (no dev shell). |
+| `flake.nix` | Nix package for the `ignit` CLI (no dev shell). |
 | `.cargo/config.toml` | Cross-compilation linkers. |
-| `Crates/orbital/src/lib.rs` | Facade re-exports. |
-| `Crates/orbital_cli/src/main.rs` | CLI commands and desktop/Android/iOS dispatch. |
-| `Crates/orbital_cli/src/init/mod.rs` | Project scaffolding flow. |
-| `Crates/orbital_cli/src/init/template.rs` | Generated project files (Cargo, config, sources). |
-| `Orbital.toml` | Engine, Android, and iOS project configuration for the CLI. |
-| `Crates/orbital_app/src/module.rs` | `Module` lifecycle. |
-| `Crates/orbital_app/src/module_runtime.rs` | Frame loop, schedules, realization, overlays. |
-| `Crates/orbital_app/src/systems/realize.rs` | GPU realization for cameras, models, lights, environments. |
-| `Crates/orbital_app/src/systems/import.rs` | Import queue polling and entity spawning. |
+| `Crates/ignit/src/lib.rs` | Facade re-exports. |
+| `Crates/cli/src/main.rs` | CLI commands and desktop/Android/iOS dispatch. |
+| `Crates/cli/src/init/mod.rs` | Project scaffolding flow. |
+| `Crates/cli/src/init/template.rs` | Generated project files (Cargo, config, sources). |
+| `Ignit.toml` | Engine, Android, and iOS project configuration for the CLI. |
+| `Crates/app/src/module.rs` | `Module` lifecycle. |
+| `Crates/app/src/module_runtime.rs` | Frame loop, schedules, realization, overlays. |
+| `Crates/app/src/systems/realize.rs` | GPU realization for cameras, models, lights, environments. |
+| `Crates/app/src/systems/import.rs` | Import queue polling and entity spawning. |
 | `Crates/ecs/src/world.rs` | ECS world, entities, components, resources. |
 | `Crates/ecs/src/system/schedule.rs` | Scheduling, conflict batching, intervals. |
 | `Crates/ecs/src/query/query.rs` | Query API. |
-| `Crates/orbital_ecs_bridge/src/components.rs` | Engine ECS components. |
-| `Crates/orbital_ecs_bridge/src/resources.rs` | Engine ECS resources. |
-| `Crates/orbital_shader_preprocessor/src/registry.rs` | WGSL node registry. |
-| `Crates/orbital_shader_core/src/lib.rs` | `ShaderDescriptor` and pipeline plumbing. |
-| `Crates/orbital_renderer/src/renderer.rs` | Pass ordering, models, overlays, 2D/UI/text. |
-| `Crates/orbital_renderer/src/volumetric.rs` | Froxel injection/composite pipelines for volumetric lighting and height fog. |
-| `Crates/orbital_importer_gltf/src/lib.rs` | Async glTF importer. |
-| `Crates/orbital_iced/src/bridge.rs` | Iced panel/module bridge. |
+| `Crates/ecs_bridge/src/components.rs` | Engine ECS components. |
+| `Crates/ecs_bridge/src/resources.rs` | Engine ECS resources. |
+| `Crates/shader_preprocessor/src/registry.rs` | WGSL node registry. |
+| `Crates/shader_core/src/lib.rs` | `ShaderDescriptor` and pipeline plumbing. |
+| `Crates/renderer/src/renderer.rs` | Pass ordering, models, overlays, 2D/UI/text. |
+| `Crates/renderer/src/volumetric.rs` | Froxel injection/composite pipelines for volumetric lighting and height fog. |
+| `Crates/importer_gltf/src/lib.rs` | Async glTF importer. |
+| `Crates/iced/src/bridge.rs` | Iced panel/module bridge. |
 | `.forgejo/workflows/lint.yml` | Strict Forgejo fmt/clippy. |
 | `.forgejo/workflows/release.yml` | Forgejo release entry point. |
 | `.github/workflows/release.yml` | GitHub release entry point. |

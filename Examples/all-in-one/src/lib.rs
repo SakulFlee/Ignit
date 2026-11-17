@@ -2,37 +2,37 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
-use orbital::app::{
+use ignit::app::{
     App, AppSettings, CursorToggle, LayerRenderer, Module, RenderLayer, RenderOverlayContext,
     sys_camera_controller, sys_ortho_dolly,
 };
-use orbital::billboard::{
+use ignit::billboard::{
     Billboard, BillboardMode, BillboardModule, SharedTextAtlas, Text, text_billboard_with_atlas,
 };
-use orbital::cgmath::{InnerSpace, Point3, Quaternion, Rad, Rotation3, Vector3};
-use orbital::debug_render::DebugModule;
-use orbital::ecs::{Commands, ComponentAccess, IntoSystem, Res, ResMut, System, World};
-use orbital::ecs_bridge::{
+use ignit::cgmath::{InnerSpace, Point3, Quaternion, Rad, Rotation3, Vector3};
+use ignit::debug_render::DebugModule;
+use ignit::ecs::{Commands, ComponentAccess, IntoSystem, Res, ResMut, System, World};
+use ignit::ecs_bridge::{
     ActiveCamera, CameraDescriptor, CursorGrabConfig, CursorGrabState, DeltaTime,
     EnvironmentDescriptorResource, ImportQueueResource, LightDescriptor, LightDirty,
     ModelDescriptor, ModelDirty, ModelInstances, Position, Rotation, VolumetricQuality,
     VolumetricSettings,
 };
-use orbital::importer::{ImportTask, gltf::GltfImport};
+use ignit::importer::{ImportTask, gltf::GltfImport};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-use orbital::logging;
-use orbital::logging::{error, info};
-use orbital::procgeo::scene::SceneBuilder;
-use orbital::procgeo::shapes::box_;
-use orbital::renderer::{AntiAliasing, Camera2DUniform, Renderer2D};
-use orbital::resources::WorldEnvironmentDescriptor;
-use orbital::resources::{
+use ignit::logging;
+use ignit::logging::{error, info};
+use ignit::procgeo::scene::SceneBuilder;
+use ignit::procgeo::shapes::box_;
+use ignit::renderer::{AntiAliasing, Camera2DUniform, Renderer2D};
+use ignit::resources::WorldEnvironmentDescriptor;
+use ignit::resources::{
     AlphaMode, GeneratedSkyParameters, MaterialShaderDescriptor, SamplingType, ShadowCaster,
     SunPosition, Transform, VertexStageLayout,
 };
-use orbital::text::{DefaultFont, TextConfig};
-use orbital::twod::Vertex2D;
-use orbital::winit::keyboard::KeyCode;
+use ignit::text::{DefaultFont, TextConfig};
+use ignit::twod::Vertex2D;
+use ignit::winit::keyboard::KeyCode;
 
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -268,7 +268,7 @@ fn room_labels() -> [(&'static str, Point3<f32>, BillboardMode); 9] {
 }
 
 fn build_text_label(
-    font: &mut orbital::text::FontData,
+    font: &mut ignit::text::FontData,
     atlas: &SharedTextAtlas,
     text: &str,
     position: Point3<f32>,
@@ -326,8 +326,8 @@ fn build_room_labels() -> Vec<(Text, Billboard)> {
 fn spawn_scene_model(
     ecs: &mut World,
     label: &str,
-    mesh: orbital::resources::MeshDescriptor,
-    material: Arc<orbital::resources::MaterialShaderDescriptor>,
+    mesh: ignit::resources::MeshDescriptor,
+    material: Arc<ignit::resources::MaterialShaderDescriptor>,
     transform: Transform,
 ) {
     let entity = ecs.spawn_entity();
@@ -347,11 +347,11 @@ fn spawn_scene_model(
     ecs.attach_component(&entity, ModelDirty(true)).unwrap();
 }
 
-#[orbital::main]
+#[ignit::main]
 pub fn entrypoint(
     event_loop_result: Result<
-        orbital::winit::event_loop::EventLoop<()>,
-        orbital::winit::error::EventLoopError,
+        ignit::winit::event_loop::EventLoop<()>,
+        ignit::winit::error::EventLoopError,
     >,
 ) {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -359,17 +359,17 @@ pub fn entrypoint(
 
     let event_loop = event_loop_result.expect("Event Loop failure");
 
-    let present_mode = match std::env::var("ORBITAL_PRESENT_MODE").as_deref() {
-        Ok("immediate") => Some(orbital::wgpu::PresentMode::Immediate),
-        Ok("mailbox") => Some(orbital::wgpu::PresentMode::Mailbox),
-        Ok("fifo") => Some(orbital::wgpu::PresentMode::Fifo),
-        Ok("fiforelaxed") => Some(orbital::wgpu::PresentMode::FifoRelaxed),
+    let present_mode = match std::env::var("IGNIT_PRESENT_MODE").as_deref() {
+        Ok("immediate") => Some(ignit::wgpu::PresentMode::Immediate),
+        Ok("mailbox") => Some(ignit::wgpu::PresentMode::Mailbox),
+        Ok("fifo") => Some(ignit::wgpu::PresentMode::Fifo),
+        Ok("fiforelaxed") => Some(ignit::wgpu::PresentMode::FifoRelaxed),
         _ => None,
     };
 
     let app_settings = AppSettings {
         vsync_enabled: false,
-        fullscreen: std::env::var_os("ORBITAL_FULLSCREEN").is_some(),
+        fullscreen: std::env::var_os("IGNIT_FULLSCREEN").is_some(),
         present_mode,
         name: NAME.to_string(),
         // Showcase the higher-quality LUT-based SMAA path in the flagship example.
@@ -392,8 +392,8 @@ pub fn entrypoint(
                 .with_toggle_key(KeyCode::F3)
                 .with_freeze_key(KeyCode::F4),
         )
-        .add_module(orbital::debug_ui::DebugUiModule::new())
-        .add_module(orbital::touch_ui::TouchUiModule)
+        .add_module(ignit::debug_ui::DebugUiModule::new())
+        .add_module(ignit::touch_ui::TouchUiModule)
         .liftoff(event_loop, app_settings)
     {
         Ok(()) => info!("Cleanly exited!"),
@@ -452,7 +452,7 @@ impl System for HelmetAdjuster {
             }
 
             let generation = world.generation(eid);
-            let entity = orbital::ecs::Entity::new(eid, generation);
+            let entity = ignit::ecs::Entity::new(eid, generation);
 
             // Read original transform from imported glTF, only modify position
             let original_transform = world
@@ -576,13 +576,13 @@ struct ProcgeoSceneModule;
 struct LightAnimator {
     t: f32,
     access: ComponentAccess,
-    entity: orbital::ecs::Entity,
+    entity: ignit::ecs::Entity,
     x: f32,
     z: f32,
 }
 
 impl LightAnimator {
-    fn new(entity: orbital::ecs::Entity, x: f32, z: f32) -> Self {
+    fn new(entity: ignit::ecs::Entity, x: f32, z: f32) -> Self {
         Self {
             t: 0.0,
             entity,
@@ -606,7 +606,7 @@ impl System for LightAnimator {
 
     fn run(&mut self, world: &World, commands: &mut Commands) {
         let dt = world
-            .get_resource::<orbital::ecs_bridge::DeltaTime>()
+            .get_resource::<ignit::ecs_bridge::DeltaTime>()
             .map(|d| d.0)
             .unwrap_or(0.016);
         self.t += dt as f32;
@@ -624,8 +624,8 @@ impl System for LightAnimator {
 
 struct ShapeOverlay {
     renderer: Renderer2D,
-    camera_buffer: orbital::wgpu::Buffer,
-    camera_bind_group: orbital::wgpu::BindGroup,
+    camera_buffer: ignit::wgpu::Buffer,
+    camera_bind_group: ignit::wgpu::BindGroup,
     vertices: Vec<Vertex2D>,
     /// Screen size (physical pixels) the vertices were last laid out for.
     ///
@@ -637,13 +637,13 @@ struct ShapeOverlay {
 }
 
 impl ShapeOverlay {
-    fn new(device: &orbital::wgpu::Device, format: orbital::wgpu::TextureFormat) -> Self {
+    fn new(device: &ignit::wgpu::Device, format: ignit::wgpu::TextureFormat) -> Self {
         let renderer = Renderer2D::new(device, format);
 
-        let camera_buffer = device.create_buffer(&orbital::wgpu::BufferDescriptor {
+        let camera_buffer = device.create_buffer(&ignit::wgpu::BufferDescriptor {
             label: Some("2D Camera Buffer"),
             size: std::mem::size_of::<Camera2DUniform>() as u64,
-            usage: orbital::wgpu::BufferUsages::UNIFORM | orbital::wgpu::BufferUsages::COPY_DST,
+            usage: ignit::wgpu::BufferUsages::UNIFORM | ignit::wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -665,7 +665,7 @@ impl ShapeOverlay {
 
         // Green circle — left
         self.vertices
-            .extend_from_slice(&orbital::twod::shape::generate_circle(
+            .extend_from_slice(&ignit::twod::shape::generate_circle(
                 [cx - 60.0, top + 15.0],
                 20.0,
                 24,
@@ -673,8 +673,8 @@ impl ShapeOverlay {
             ));
 
         // Blue triangle — center
-        let tri = orbital::twod::shape::ShapeDescriptor::solid_triangle([0.3, 0.4, 0.9, 0.85]);
-        let mut tri_verts = orbital::twod::shape::generate_shape_vertices(&tri, 40.0, 40.0);
+        let tri = ignit::twod::shape::ShapeDescriptor::solid_triangle([0.3, 0.4, 0.9, 0.85]);
+        let mut tri_verts = ignit::twod::shape::generate_shape_vertices(&tri, 40.0, 40.0);
         for v in &mut tri_verts {
             v.position[0] += cx - 20.0;
             v.position[1] += top + 5.0;
@@ -682,8 +682,8 @@ impl ShapeOverlay {
         self.vertices.extend_from_slice(&tri_verts);
 
         // Red square — right
-        let quad = orbital::twod::shape::ShapeDescriptor::solid_quad([0.9, 0.2, 0.2, 0.85]);
-        let mut quad_verts = orbital::twod::shape::generate_shape_vertices(&quad, 40.0, 40.0);
+        let quad = ignit::twod::shape::ShapeDescriptor::solid_quad([0.9, 0.2, 0.2, 0.85]);
+        let mut quad_verts = ignit::twod::shape::generate_shape_vertices(&quad, 40.0, 40.0);
         for v in &mut quad_verts {
             v.position[0] += cx + 25.0;
             v.position[1] += top + 10.0;
@@ -746,14 +746,14 @@ impl LayerRenderer for ShapeOverlay {
 
         {
             let mut render_pass =
-                command_encoder.begin_render_pass(&orbital::wgpu::RenderPassDescriptor {
+                command_encoder.begin_render_pass(&ignit::wgpu::RenderPassDescriptor {
                     label: Some("2D Overlay Pass"),
-                    color_attachments: &[Some(orbital::wgpu::RenderPassColorAttachment {
+                    color_attachments: &[Some(ignit::wgpu::RenderPassColorAttachment {
                         view: ctx.target_view,
                         resolve_target: None,
-                        ops: orbital::wgpu::Operations {
-                            load: orbital::wgpu::LoadOp::Load,
-                            store: orbital::wgpu::StoreOp::Store,
+                        ops: ignit::wgpu::Operations {
+                            load: ignit::wgpu::LoadOp::Load,
+                            store: ignit::wgpu::StoreOp::Store,
                         },
                         depth_slice: None,
                     })],
@@ -824,8 +824,8 @@ impl Module for ProcgeoSceneModule {
     fn setup(
         &self,
         ecs: &mut World,
-        _device: &orbital::wgpu::Device,
-        _queue: &orbital::wgpu::Queue,
+        _device: &ignit::wgpu::Device,
+        _queue: &ignit::wgpu::Queue,
     ) -> Vec<Box<dyn System>> {
         // Spawn the camera in the central hallway, looking toward the
         // original room row. Turning around reveals the mirrored row.
@@ -1230,14 +1230,14 @@ impl Module for ProcgeoSceneModule {
         layer_renderers: &mut Vec<Box<dyn LayerRenderer>>,
     ) {
         let format = ecs
-            .get_resource::<orbital::ecs_bridge::SurfaceFormatResource>()
+            .get_resource::<ignit::ecs_bridge::SurfaceFormatResource>()
             .map(|f| f.0)
-            .unwrap_or(orbital::wgpu::TextureFormat::Bgra8UnormSrgb);
+            .unwrap_or(ignit::wgpu::TextureFormat::Bgra8UnormSrgb);
 
-        let device = match ecs.get_resource::<orbital::ecs_bridge::DeviceResource>() {
+        let device = match ecs.get_resource::<ignit::ecs_bridge::DeviceResource>() {
             Some(d) => d,
             None => {
-                orbital::logging::warn!(
+                ignit::logging::warn!(
                     "ProcgeoSceneModule: no DeviceResource, skipping overlay registration"
                 );
                 return;

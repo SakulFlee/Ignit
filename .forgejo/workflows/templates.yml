@@ -3,7 +3,7 @@ on:
   pull_request:
     paths:
       - 'Examples/**'
-      - 'Crates/orbital_cli/**'
+      - 'Crates/cli/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.forgejo/ci/test-templates.sh'

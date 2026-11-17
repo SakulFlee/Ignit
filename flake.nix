@@ -1,5 +1,5 @@
 {
-  description = "Orbital CLI";
+  description = "Ignit CLI";
 
   # Packaging only. There is intentionally no devShell here: CI uses plain
   # containers/rustup, and NixOS users can build projects with
@@ -22,7 +22,7 @@
       mkCli =
         pkgs:
         pkgs.rustPlatform.buildRustPackage {
-          pname = "orbital-cli";
+          pname = "ignit-cli";
           inherit version;
           src = ./.;
 
@@ -39,14 +39,14 @@
           # Package the CLI only; the workspace examples are not installed.
           # `cargoInstallHook` copies every binary produced in target/, so the
           # build flags double as the install filter.
-          cargoBuildFlags = [ "-p" "orbital-cli" ];
+          cargoBuildFlags = [ "-p" "ignit-cli" ];
 
           # The CLI tests spawn processes and are covered by `cargo test`.
           doCheck = false;
 
           meta = {
-            description = "Scaffold, build and run Orbital projects";
-            mainProgram = "orbital";
+            description = "Scaffold, build and run Ignit projects";
+            mainProgram = "ignit";
             license = with pkgs.lib.licenses; [
               mit
               asl20
@@ -60,11 +60,11 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          orbital-cli = mkCli pkgs;
+          ignit-cli = mkCli pkgs;
         in
         {
-          inherit orbital-cli;
-          default = orbital-cli;
+          inherit ignit-cli;
+          default = ignit-cli;
         }
       );
     };

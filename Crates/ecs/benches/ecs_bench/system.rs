@@ -1,5 +1,5 @@
 use criterion::Criterion;
-use orbital_ecs::{IntoSystem, Schedule, Snapshot};
+use ignit_ecs::{IntoSystem, Schedule, Snapshot};
 
 use super::common::{Pos, Vel, setup_dense_world};
 

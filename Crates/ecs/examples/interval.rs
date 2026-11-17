@@ -18,7 +18,7 @@
 
 use std::time::Duration;
 
-use orbital_ecs::{IntoSystem, ResMut, Schedule, World, with_interval};
+use ignit_ecs::{IntoSystem, ResMut, Schedule, World, with_interval};
 
 #[derive(Debug, Default)]
 struct Clock {
@@ -62,7 +62,7 @@ fn main() {
     // Boxed systems (e.g. returned from `Module::setup`, which only hands
     // the runtime a `Vec<Box<dyn System>>`) can be wrapped instead of using
     // the Schedule-level helpers — this one sweeps every 500 ms.
-    let boxed: Box<dyn orbital_ecs::System> = (|mut clock: ResMut<Clock>| {
+    let boxed: Box<dyn ignit_ecs::System> = (|mut clock: ResMut<Clock>| {
         clock.sweeps += 1;
         println!("[{:>5.2}s] maintenance sweep (boxed, 500 ms)", clock.now);
     })

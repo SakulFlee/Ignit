@@ -7,12 +7,12 @@ version = "1.6.0"
 authors = ["Lukas Weber <dev@sakul-flee.de>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
-# Mirror: https://github.com/SakulFlee/Orbital
-repository = "https://forgejo.sakul-flee.de/SakulFlee/Orbital"
+# Mirror: https://github.com/SakulFlee/Ignit
+repository = "https://forgejo.sakul-flee.de/SakulFlee/Ignit"
 rust-version = "1.94"
 
 [workspace.dependencies]
-# Orbital crates
+# Ignit crates
 wgpu = { version = "30.0.0", features = [
   "angle",
   "dx12",
@@ -43,7 +43,7 @@ pollster = "1.0"
 rayon = "1.10"
 wasm-bindgen-rayon = "1.2"
 
-# Procedural macros (orbital_macros)
+# Procedural macros (ignit_macros)
 proc-macro2 = "1.0"
 quote = "1.0"
 syn = { version = "3.0", features = ["full"] }

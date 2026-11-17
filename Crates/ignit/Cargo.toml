@@ -1,0 +1,76 @@
+[package]
+name = "ignit"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[features]
+default = ["gamepad_input", "gamepad_input_poll", "auto_request_redraw"]
+renderdoc = []
+# Semantic gamepad input (backend-independent buttons/axes/ids + state).
+gamepad_input = ["ignit_input/gamepad_input", "ignit_app/gamepad_input"]
+# gilrs backend for desktop gamepads (also re-exported by this crate).
+gamepad_gilrs = [
+    "dep:gilrs",
+    "ignit_input/gamepad_gilrs",
+    "ignit_app/gamepad_gilrs",
+]
+# Automatically polls gamepad inputs and processes them.
+gamepad_input_poll = [
+    "gamepad_input",
+    "gamepad_gilrs",
+    "ignit_app/gamepad_input_poll",
+]
+# Will automatically request a redraw when the last frame was rendered.
+auto_request_redraw = ["ignit_app/auto_request_redraw"]
+
+
+[dependencies]
+ignit_core = { path = "../core" }
+ignit_file_manager = { path = "../file_manager" }
+ignit_macros = { path = "../macros" }
+ignit_input = { path = "../input" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor" }
+ignit_resources = { path = "../resources" }
+ignit_importer_gltf = { path = "../importer_gltf" }
+wgpu = { workspace = true }
+cgmath = { workspace = true }
+gltf = { workspace = true }
+hashbrown = { workspace = true }
+image = { workspace = true }
+log = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+ulid = { workspace = true }
+winit = { workspace = true }
+rayon = { workspace = true }
+
+ignit_renderer = { path = "../renderer" }
+ignit_app = { path = "../app" }
+ignit_billboard = { path = "../billboard" }
+ignit_ecs = { path = "../ecs" }
+ignit_camera = { path = "../camera" }
+ignit_ecs_bridge = { path = "../ecs_bridge" }
+ignit_procgeo = { path = "../procgeo" }
+ignit_debug_render = { path = "../debug_render" }
+ignit_debug_ui = { path = "../debug_ui" }
+ignit_touch_ui = { path = "../touch_ui" }
+ignit_2d = { path = "../2d" }
+ignit_text = { path = "../text" }
+ignit_ui = { path = "../ui" }
+ignit_iced = { path = "../iced" }
+
+gilrs = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = { workspace = true }
+winit = { workspace = true, features = ["android-native-activity"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+winit = { workspace = true }

@@ -1,0 +1,65 @@
+[package]
+name = "ignit_app"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+# Semantic gamepad input; always available through ignit_input's
+# default features. Kept as a no-op for downstream compatibility.
+gamepad_input = []
+# gilrs polling backend for desktop gamepads (mobile relies on the
+# platform's own providers instead).
+gamepad_gilrs = [
+    "dep:gilrs",
+    "ignit_input/gamepad_input",
+    "ignit_input/gamepad_gilrs",
+]
+auto_request_redraw = []
+# Poll gamepads every frame (implies the gilrs backend).
+gamepad_input_poll = ["gamepad_gilrs"]
+default = []
+
+[dependencies]
+ignit_core = { path = "../core" }
+ignit_camera = { path = "../camera" }
+ignit_cull = { path = "../cull" }
+ignit_ecs = { path = "../ecs" }
+ignit_ecs_bridge = { path = "../ecs_bridge" }
+ignit_file_manager = { path = "../file_manager" }
+ignit_ibl_brdf = { path = "../ibl_brdf" }
+ignit_input = { path = "../input" }
+ignit_instance = { path = "../instance" }
+ignit_light = { path = "../light" }
+ignit_material_shader = { path = "../material_shader" }
+ignit_model = { path = "../model" }
+ignit_renderer = { path = "../renderer" }
+ignit_shader_core = { path = "../shader_core" }
+ignit_shader_engine = { path = "../shader_engine" }
+ignit_shader_math = { path = "../shader_math" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor" }
+ignit_shader_pbr = { path = "../shader_pbr" }
+ignit_shadow = { path = "../shadow" }
+ignit_texture = { path = "../texture" }
+ignit_world_environment = { path = "../world_environment" }
+cgmath = { workspace = true }
+libc = "0.2"
+libloading = "0.9"
+log = { workspace = true }
+serde_json = "1"
+sysinfo = { workspace = true }
+wgpu = { workspace = true }
+winit = { workspace = true }
+
+gilrs = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = { workspace = true }
+jni = "0.22"
+winit = { workspace = true, features = ["android-native-activity"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2-game-controller = { workspace = true }

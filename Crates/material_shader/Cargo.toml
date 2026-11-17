@@ -1,0 +1,17 @@
+[package]
+name = "ignit_material_shader"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ignit_core = { path = "../core" }
+ignit_shader_core = { path = "../shader_core" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor" }
+ignit_texture = { path = "../texture" }
+ignit_vertex = { path = "../vertex" }
+ignit_instance = { path = "../instance" }
+wgpu = { workspace = true }

@@ -41,7 +41,7 @@ Enable the `wasm-threads` feature to activate WASM threading:
 
 ```toml
 [dependencies]
-orbital_ecs = { path = "../Crates/ecs", features = ["wasm-threads"] }
+ignit_ecs = { path = "../Crates/ecs", features = ["wasm-threads"] }
 ```
 
 Without this flag, compilation on WASM will fail with a

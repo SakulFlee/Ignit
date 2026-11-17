@@ -1,0 +1,26 @@
+[package]
+name = "ignit_input"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["gamepad_input"]
+# Semantic gamepad input (backend-independent buttons/axes/ids + state).
+# No dependencies: mobile backends report through this vocabulary directly.
+gamepad_input = []
+# gilrs backend for desktop gamepads (SDL mapping DB, hotplug, PC pad
+# variation). Mobile platforms never enable this — they translate their
+# platform providers into the semantic types instead.
+gamepad_gilrs = ["dep:gilrs", "gamepad_input"]
+gamepad_input_poll = ["gamepad_input"]
+
+[dependencies]
+winit = { workspace = true }
+cgmath = { workspace = true }
+hashbrown = { workspace = true }
+log = { workspace = true }
+gilrs = { workspace = true, optional = true }

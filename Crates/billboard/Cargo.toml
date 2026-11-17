@@ -1,0 +1,23 @@
+[package]
+name = "ignit_billboard"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ignit_app = { path = "../app" }
+ignit_ecs = { path = "../ecs" }
+ignit_ecs_bridge = { path = "../ecs_bridge" }
+ignit_material_shader = { path = "../material_shader" }
+ignit_mesh = { path = "../mesh" }
+ignit_shader_core = { path = "../shader_core" }
+ignit_shader_pbr = { path = "../shader_pbr" }
+ignit_texture = { path = "../texture" }
+ignit_text = { path = "../text" }
+ignit_math = { path = "../math" }
+ignit_vertex = { path = "../vertex" }
+cgmath = { workspace = true }
+wgpu = { workspace = true }

@@ -1,18 +1,18 @@
-use orbital::app::{App, AppSettings, Module};
-use orbital::app::{LayerRenderer, RenderLayer, RenderOverlayContext};
-use orbital::ecs::{System, World};
-use orbital::ecs_bridge::SurfaceFormatResource;
-use orbital::logging::{self, error, info};
-use orbital::renderer::{Camera2DUniform, Renderer2D};
-use orbital::twod::{Batch2D, ShapeDescriptor, Vertex2D};
+use ignit::app::{App, AppSettings, Module};
+use ignit::app::{LayerRenderer, RenderLayer, RenderOverlayContext};
+use ignit::ecs::{System, World};
+use ignit::ecs_bridge::SurfaceFormatResource;
+use ignit::logging::{self, error, info};
+use ignit::renderer::{Camera2DUniform, Renderer2D};
+use ignit::twod::{Batch2D, ShapeDescriptor, Vertex2D};
 
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
-#[orbital::main]
+#[ignit::main]
 pub fn entrypoint(
     event_loop_result: Result<
-        orbital::winit::event_loop::EventLoop<()>,
-        orbital::winit::error::EventLoopError,
+        ignit::winit::event_loop::EventLoop<()>,
+        ignit::winit::error::EventLoopError,
     >,
 ) {
     #[cfg(not(target_os = "android"))]
@@ -31,7 +31,7 @@ pub fn entrypoint(
         .add_module(Scene2DModule {
             vertices: std::sync::Mutex::new(Vec::new()),
         })
-        .add_module(orbital::debug_ui::DebugUiModule::new())
+        .add_module(ignit::debug_ui::DebugUiModule::new())
         .liftoff(event_loop, app_settings)
     {
         Ok(()) => info!("Cleanly exited!"),
@@ -42,19 +42,19 @@ pub fn entrypoint(
 /// Overlay that renders 2D shapes.
 struct ShapeOverlay {
     renderer: Renderer2D,
-    camera_buffer: orbital::wgpu::Buffer,
-    camera_bind_group: orbital::wgpu::BindGroup,
+    camera_buffer: ignit::wgpu::Buffer,
+    camera_bind_group: ignit::wgpu::BindGroup,
     vertices: Vec<Vertex2D>,
 }
 
 impl ShapeOverlay {
-    fn new(device: &orbital::wgpu::Device, format: orbital::wgpu::TextureFormat) -> Self {
+    fn new(device: &ignit::wgpu::Device, format: ignit::wgpu::TextureFormat) -> Self {
         let renderer = Renderer2D::new(device, format);
 
-        let camera_buffer = device.create_buffer(&orbital::wgpu::BufferDescriptor {
+        let camera_buffer = device.create_buffer(&ignit::wgpu::BufferDescriptor {
             label: Some("2D Camera Buffer"),
             size: std::mem::size_of::<Camera2DUniform>() as u64,
-            usage: orbital::wgpu::BufferUsages::UNIFORM | orbital::wgpu::BufferUsages::COPY_DST,
+            usage: ignit::wgpu::BufferUsages::UNIFORM | ignit::wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -110,14 +110,14 @@ impl LayerRenderer for ShapeOverlay {
 
         {
             let mut render_pass =
-                command_encoder.begin_render_pass(&orbital::wgpu::RenderPassDescriptor {
+                command_encoder.begin_render_pass(&ignit::wgpu::RenderPassDescriptor {
                     label: Some("2D Scene Pass"),
-                    color_attachments: &[Some(orbital::wgpu::RenderPassColorAttachment {
+                    color_attachments: &[Some(ignit::wgpu::RenderPassColorAttachment {
                         view: ctx.target_view,
                         resolve_target: None,
-                        ops: orbital::wgpu::Operations {
-                            load: orbital::wgpu::LoadOp::Load,
-                            store: orbital::wgpu::StoreOp::Store,
+                        ops: ignit::wgpu::Operations {
+                            load: ignit::wgpu::LoadOp::Load,
+                            store: ignit::wgpu::StoreOp::Store,
                         },
                         depth_slice: None,
                     })],
@@ -145,20 +145,20 @@ impl LayerRenderer for ShapeOverlay {
 }
 
 struct Scene2DModule {
-    vertices: std::sync::Mutex<Vec<orbital::twod::Vertex2D>>,
+    vertices: std::sync::Mutex<Vec<ignit::twod::Vertex2D>>,
 }
 
 impl Module for Scene2DModule {
     fn setup(
         &self,
         _ecs: &mut World,
-        _device: &orbital::wgpu::Device,
-        _queue: &orbital::wgpu::Queue,
+        _device: &ignit::wgpu::Device,
+        _queue: &ignit::wgpu::Queue,
     ) -> Vec<Box<dyn System>> {
         let mut batch = Batch2D::new();
 
         // Red square at (100, 100) with size 100x100
-        batch.push_shape(&orbital::twod::shape::generate_rect(
+        batch.push_shape(&ignit::twod::shape::generate_rect(
             100.0,
             100.0,
             100.0,
@@ -167,7 +167,7 @@ impl Module for Scene2DModule {
         ));
 
         // Green circle at (300, 200) with radius 50
-        batch.push_shape(&orbital::twod::shape::generate_circle(
+        batch.push_shape(&ignit::twod::shape::generate_circle(
             [300.0, 200.0],
             50.0,
             32,
@@ -176,7 +176,7 @@ impl Module for Scene2DModule {
 
         // Blue triangle at (500, 150)
         let triangle = ShapeDescriptor::solid_triangle([0.3, 0.4, 0.9, 1.0]);
-        let mut tri_verts = orbital::twod::shape::generate_shape_vertices(&triangle, 80.0, 80.0);
+        let mut tri_verts = ignit::twod::shape::generate_shape_vertices(&triangle, 80.0, 80.0);
         for v in &mut tri_verts {
             v.position[0] += 500.0;
             v.position[1] += 150.0;
@@ -184,7 +184,7 @@ impl Module for Scene2DModule {
         batch.push_shape(&tri_verts);
 
         // Yellow quad at (200, 350) with size 150x80
-        batch.push_shape(&orbital::twod::shape::generate_rect(
+        batch.push_shape(&ignit::twod::shape::generate_rect(
             200.0,
             350.0,
             150.0,
@@ -194,7 +194,7 @@ impl Module for Scene2DModule {
 
         // Cyan polygon (hexagon) at (600, 300)
         let hex = ShapeDescriptor::solid_polygon(6, [0.2, 0.8, 0.8, 1.0]);
-        let mut hex_verts = orbital::twod::shape::generate_shape_vertices(&hex, 60.0, 60.0);
+        let mut hex_verts = ignit::twod::shape::generate_shape_vertices(&hex, 60.0, 60.0);
         for v in &mut hex_verts {
             v.position[0] += 600.0;
             v.position[1] += 300.0;
@@ -217,12 +217,12 @@ impl Module for Scene2DModule {
         let format = ecs
             .get_resource::<SurfaceFormatResource>()
             .map(|f| f.0)
-            .unwrap_or(orbital::wgpu::TextureFormat::Bgra8UnormSrgb);
+            .unwrap_or(ignit::wgpu::TextureFormat::Bgra8UnormSrgb);
 
-        let device = match ecs.get_resource::<orbital::ecs_bridge::DeviceResource>() {
+        let device = match ecs.get_resource::<ignit::ecs_bridge::DeviceResource>() {
             Some(d) => d,
             None => {
-                orbital::logging::warn!(
+                ignit::logging::warn!(
                     "Scene2DModule: no DeviceResource, skipping overlay registration"
                 );
                 return;

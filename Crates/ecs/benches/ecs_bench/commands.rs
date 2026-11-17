@@ -1,5 +1,5 @@
 use criterion::Criterion;
-use orbital_ecs::Commands;
+use ignit_ecs::Commands;
 
 use super::common::{Pos, setup_dense_world};
 

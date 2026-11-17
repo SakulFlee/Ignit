@@ -1,0 +1,33 @@
+[package]
+name = "ignit_renderer"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ignit_2d = { path = "../2d" }
+ignit_camera = { path = "../camera" }
+ignit_cull = { path = "../cull" }
+ignit_ecs = { path = "../ecs" }
+ignit_ecs_bridge = { path = "../ecs_bridge" }
+ignit_ibl_brdf = { path = "../ibl_brdf" }
+ignit_light = { path = "../light" }
+ignit_material_shader = { path = "../material_shader" }
+ignit_model = { path = "../model" }
+ignit_render_graph = { path = "../render_graph" }
+ignit_shader_engine = { path = "../shader_engine" }
+ignit_shader_math = { path = "../shader_math" }
+ignit_shader_pbr = { path = "../shader_pbr" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor" }
+ignit_shadow = { path = "../shadow" }
+ignit_text = { path = "../text" }
+ignit_texture = { path = "../texture" }
+ignit_world_environment = { path = "../world_environment" }
+wgpu = { workspace = true }
+cgmath = { workspace = true }
+
+[dev-dependencies]
+wgpu = { workspace = true, features = ["noop"] }

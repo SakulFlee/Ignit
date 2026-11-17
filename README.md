@@ -1,14 +1,14 @@
 <div align="center">
 
-<img src=".github/logo/Orbital.svg" alt="Orbital Engine Logo" width="200"/>
+<img src=".github/logo/Orbital_Logo.svg" alt="Ignit Engine Logo" width="200"/>
 
-# 🛰️ Orbital Engine & Framework
+# 🛰️ Ignit Engine & Framework
 
 
-![](https://img.shields.io/badge/Forgejo-Origin-orange?style=for-the-badge&logo=forgejo&logoSize=auto&link=https%3A%2F%2Fforgejo.sakul-flee.de%2FSakulFlee%2FOrbital%2F)
-![](https://img.shields.io/badge/GitHub-Mirror-blue?style=for-the-badge&logo=github&logoSize=auto&link=https%3A%2F%2Fgithub.com%2FSakulFlee%2FOrbital)
+![](https://img.shields.io/badge/Forgejo-Origin-orange?style=for-the-badge&logo=forgejo&logoSize=auto&link=https%3A%2F%2Fforgejo.sakul-flee.de%2FSakulFlee%2FIgnit%2F)
+![](https://img.shields.io/badge/GitHub-Mirror-blue?style=for-the-badge&logo=github&logoSize=auto&link=https%3A%2F%2Fgithub.com%2FSakulFlee%2FIgnit)
 
-_Orbital_ is a cross-platform real-time graphical rendering engine & framework written in Rust.
+_Ignit_ is a cross-platform real-time graphical rendering engine & framework written in Rust.
 The goal of this project is to bridge well established industry-standard techniques with upcoming (next-gen) and experimental techniques to form a robust new foundation for next-gen visual computing.
 
 </div>
@@ -62,7 +62,7 @@ The goal of this project is to bridge well established industry-standard techniq
 ## Getting Started
 
 The official project templates live in the `Examples/` directory. They are
-workspace members and mirror the templates used by `orbital init`:
+workspace members and mirror the templates used by `ignit init`:
 
 - **minimal-3d**: A small procedural 3D scene with a camera and a spotlight
 - **all-in-one**: Procedural scene, glTF import, lighting, shadows, UI, and overlays
@@ -87,27 +87,27 @@ cargo run -p template_minimal_2d
 `minimal-3d` and `minimal-2d` need no asset files. `all-in-one` ships the scene and helmet
 model it uses in `Examples/all-in-one/Assets/`.
 
-To create a standalone project from one of these templates, use the Orbital CLI:
+To create a standalone project from one of these templates, use the Ignit CLI:
 
 ```shell
-orbital init my-game --template all-in-one
+ignit init my-game --template all-in-one
 ```
 
 To use the engine in your own project, add the following to your `Cargo.toml`:
 
 ```toml
-orbital = { path = "./Runtime" }
+ignit = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit.git", branch = "main" }
 ```
 
 ## Nix
 
-The flake packages the `orbital` CLI. It provides no dev shell — install the
+The flake packages the `ignit` CLI. It provides no dev shell — install the
 binary and let Cargo build your project:
 
 ```shell
-nix shell github:SakulFlee/Orbital#orbital-cli
+nix shell github:SakulFlee/Ignit#ignit-cli
 # or
-nix profile install github:SakulFlee/Orbital#orbital-cli
+nix profile install github:SakulFlee/Ignit#ignit-cli
 ```
 
 On NixOS, build from a shell that provides the engine's system libraries, and
@@ -115,7 +115,7 @@ enable `hardware.graphics` for the Vulkan drivers:
 
 ```shell
 nix-shell -p cargo pkg-config systemd wayland libxkbcommon vulkan-loader mesa \
-  --run 'orbital build'
+  --run 'ignit build'
 ```
 
 Android builds need a container or `programs.nix-ld`, because the CLI-managed
@@ -145,18 +145,19 @@ The world manages resource stores (models, cameras, environments, lights), handl
 
 ## History
 
-The Orbital engine has a rich history spanning multiple iterations and rewrites. The project originally started as "Akimo" and was written in Java as a pure CPU renderer for 2D graphics. Over the years, it evolved through multiple iterations:
+Ignit has a rich history spanning multiple iterations and rewrites. The project originally started as "Akimo" and was written in Java as a pure CPU renderer for 2D graphics. Over the years, it evolved through multiple iterations:
 
 - **Akimo (Java)**: Started as a CPU-based 2D renderer, then upgraded to use LWJGL for OpenGL and Vulkan support
 - **Akimo (C++)**: A complete rewrite in C++ with Vulkan bindings, still under the "Akimo" name
 - **Orbital (Rust/Vulkan)**: A rewrite in Rust but still using Vulkan bindings
-- **Orbital (Rust/WGPU/WGSL)**: The current iteration using Rust with WGPU and WGSL, moving away from GLSL to a more modern shader language
+- **Orbital (Rust/WGPU/WGSL)**: The previous Rust/WGPU iteration, renamed to Ignit
+- **Ignit (Rust/WGPU/WGSL)**: The current iteration, renamed from Orbital for v1.6.0
 
-Each version learned from the previous ones, with the current implementation built in Rust leveraging the WGPU graphics API abstraction layer for cross-platform support.
+Each version learned from the previous ones. The current Ignit implementation is built in Rust and uses the WGPU graphics API abstraction layer for cross-platform support.
 
 ## Contributing
 
-[Forgejo](https://forgejo.sakul-flee.de/SakulFlee/Orbital) is the canonical repository; GitHub is a mirror.
+[Forgejo](https://forgejo.sakul-flee.de/SakulFlee/Ignit) is the canonical repository; GitHub is a mirror.
 Please open pull requests on Forgejo.
 If you can only use GitHub, treat a GitHub pull request as a proposal that will be ported to Forgejo before merge.
 
@@ -181,5 +182,5 @@ For templates/examples we recommend to also dual-licensing.
 
 > We highly encourage everyone to share their sub-crates with the community so that others can benefit from it too!
 
-[Orbital]: https://github.com/SakulFlee/Orbital
+[Ignit]: https://github.com/SakulFlee/Ignit
 [WGPU]: https://wgpu.rs/

@@ -1,0 +1,13 @@
+[package]
+name = "ignit_shader_engine"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ignit_shader_preprocessor = { path = "../shader_preprocessor" }
+ignit_shader_math = { path = "../shader_math" }
+log = { workspace = true }

@@ -96,7 +96,7 @@ jobs:
           version="${{ inputs.version }}"
           version="${version#v}"
           target="${{ matrix.target }}"
-          archive="orbital-examples-$version-$target"
+          archive="ignit-examples-$version-$target"
           out="dist/$archive"
 
           mkdir -p "$out"
@@ -115,7 +115,7 @@ jobs:
           cp Examples/all-in-one/Assets/Scenes/procgeo_demo.ron "$out/template_all_in_one/Assets/Scenes/"
           cp Examples/all-in-one/Assets/Models/DamagedHelmet.glb "$out/template_all_in_one/Assets/Models/"
           {
-            printf 'Orbital examples %s (%s).\n\n' "$version" "$target"
+            printf 'Ignit examples %s (%s).\n\n' "$version" "$target"
             printf 'Each example lives in its own directory. Run it from that directory:\n'
             printf '  cd template_minimal_3d\n'
             printf '  ./template_minimal_3d\n\n'
@@ -126,10 +126,10 @@ jobs:
 
           if [ "$target" = "x86_64-pc-windows-gnu" ]; then
             (cd dist && zip -qr "$archive.zip" "$archive")
-            cp "target/$target/release/orbital.exe" "dist/orbital-cli-$version-$target.exe"
+            cp "target/$target/release/ignit.exe" "dist/ignit-cli-$version-$target.exe"
           else
             (cd dist && tar -czf "$archive.tar.gz" "$archive")
-            cp "target/$target/release/orbital" "dist/orbital-cli-$version-$target"
+            cp "target/$target/release/ignit" "dist/ignit-cli-$version-$target"
           fi
           rm -rf "$out"
       - name: Upload artifacts (GitHub)
@@ -174,7 +174,7 @@ jobs:
           version="${{ inputs.version }}"
           version="${version#v}"
           target="${{ matrix.target }}"
-          archive="orbital-examples-$version-$target"
+          archive="ignit-examples-$version-$target"
           out="dist/$archive"
 
           mkdir -p "$out"
@@ -189,7 +189,7 @@ jobs:
           cp Examples/all-in-one/Assets/Scenes/procgeo_demo.ron "$out/template_all_in_one/Assets/Scenes/"
           cp Examples/all-in-one/Assets/Models/DamagedHelmet.glb "$out/template_all_in_one/Assets/Models/"
           {
-            printf 'Orbital examples %s (%s).\n\n' "$version" "$target"
+            printf 'Ignit examples %s (%s).\n\n' "$version" "$target"
             printf 'Each example lives in its own directory. Run it from that directory:\n'
             printf '  cd template_minimal_3d\n'
             printf '  ./template_minimal_3d\n\n'
@@ -199,7 +199,7 @@ jobs:
 
 
           (cd dist && tar -czf "$archive.tar.gz" "$archive")
-          cp "target/$target/release/orbital" "dist/orbital-cli-$version-$target"
+          cp "target/$target/release/ignit" "dist/ignit-cli-$version-$target"
           rm -rf "$out"
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
@@ -234,7 +234,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: |
-            /root/.cache/Orbital/android-sdk
+            /root/.cache/Ignit/android-sdk
             /root/.gradle
           key: android-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
@@ -244,13 +244,13 @@ jobs:
         uses: https://code.forgejo.org/actions/cache@v6
         with:
           path: |
-            /root/.cache/Orbital/android-sdk
+            /root/.cache/Ignit/android-sdk
             /root/.gradle
           key: android-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             android-
       - name: Build host CLI
-        run: cargo build --release -p orbital-cli
+        run: cargo build --release -p ignit-cli
       - name: Build template APKs
         shell: bash
         run: |
@@ -268,7 +268,7 @@ jobs:
             exit 1
           fi
 
-          cli="$PWD/target/release/orbital"
+          cli="$PWD/target/release/ignit"
           work="$(mktemp -d)"
           trap 'rm -rf "$work"' EXIT
 
@@ -286,11 +286,11 @@ jobs:
               --template "$template" \
               --project-path "$project" \
               --engine-path "$PWD" \
-              --package "de.sakulflee.orbital.$suffix"
+              --package "de.sakulflee.ignit.$suffix"
 
             # Keep the universal APK to the two ABIs that matter for phones
             # and emulators; the CLI default also builds 32-bit x86 and ARM.
-            sed -i 's/^targets = .*/targets = ["arm64-v8a", "x86_64"]/' "$project/Orbital.toml"
+            sed -i 's/^targets = .*/targets = ["arm64-v8a", "x86_64"]/' "$project/Ignit.toml"
 
             (
               cd "$project"
@@ -302,7 +302,7 @@ jobs:
               echo "No APK produced for template '$template'" >&2
               exit 1
             fi
-            cp "$apk" "dist/orbital-template-$template-$version-universal.apk"
+            cp "$apk" "dist/ignit-template-$template-$version-universal.apk"
           done
       - name: Upload artifacts (GitHub)
         if: github.server_url == 'https://github.com'

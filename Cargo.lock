@@ -1884,6 +1884,623 @@ dependencies = [
 ]
 
 [[package]]
+name = "ignit"
+version = "1.6.0"
+dependencies = [
+ "android_logger",
+ "cgmath",
+ "gilrs",
+ "gltf",
+ "hashbrown 0.17.1",
+ "ignit_2d",
+ "ignit_app",
+ "ignit_billboard",
+ "ignit_camera",
+ "ignit_core",
+ "ignit_debug_render",
+ "ignit_debug_ui",
+ "ignit_ecs",
+ "ignit_ecs_bridge",
+ "ignit_file_manager",
+ "ignit_iced",
+ "ignit_importer_gltf",
+ "ignit_input",
+ "ignit_macros",
+ "ignit_procgeo",
+ "ignit_renderer",
+ "ignit_resources",
+ "ignit_shader_preprocessor",
+ "ignit_text",
+ "ignit_touch_ui",
+ "ignit_ui",
+ "image",
+ "log",
+ "rand 0.10.4",
+ "rayon",
+ "serde",
+ "ulid",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
+name = "ignit-cli"
+version = "1.6.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dirs",
+ "flate2",
+ "indicatif",
+ "inquire",
+ "serde",
+ "serde_json",
+ "tar",
+ "toml",
+ "ureq",
+ "xz2",
+ "zip",
+]
+
+[[package]]
+name = "ignit_2d"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_app"
+version = "1.6.0"
+dependencies = [
+ "android_logger",
+ "cgmath",
+ "gilrs",
+ "ignit_camera",
+ "ignit_core",
+ "ignit_cull",
+ "ignit_ecs",
+ "ignit_ecs_bridge",
+ "ignit_file_manager",
+ "ignit_ibl_brdf",
+ "ignit_input",
+ "ignit_instance",
+ "ignit_light",
+ "ignit_material_shader",
+ "ignit_model",
+ "ignit_renderer",
+ "ignit_shader_core",
+ "ignit_shader_engine",
+ "ignit_shader_math",
+ "ignit_shader_pbr",
+ "ignit_shader_preprocessor",
+ "ignit_shadow",
+ "ignit_texture",
+ "ignit_world_environment",
+ "jni",
+ "libc",
+ "libloading 0.9.1",
+ "log",
+ "objc2-game-controller",
+ "serde_json",
+ "sysinfo",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
+name = "ignit_billboard"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "ignit_app",
+ "ignit_ecs",
+ "ignit_ecs_bridge",
+ "ignit_material_shader",
+ "ignit_math",
+ "ignit_mesh",
+ "ignit_shader_core",
+ "ignit_shader_pbr",
+ "ignit_text",
+ "ignit_texture",
+ "ignit_vertex",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_camera"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "ignit_math",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_core"
+version = "1.6.0"
+dependencies = [
+ "android_logger",
+ "cgmath",
+ "fern",
+ "hashbrown 0.17.1",
+ "humantime",
+ "ignit_file_manager",
+ "log",
+ "pollster",
+]
+
+[[package]]
+name = "ignit_cull"
+version = "1.6.0"
+dependencies = [
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_debug_render"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "ignit_app",
+ "ignit_camera",
+ "ignit_core",
+ "ignit_ecs",
+ "ignit_ecs_bridge",
+ "ignit_instance",
+ "ignit_light",
+ "ignit_shadow",
+ "ignit_vertex",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
+name = "ignit_debug_ui"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "iced_core",
+ "iced_wgpu",
+ "iced_widget",
+ "iced_winit",
+ "ignit_app",
+ "ignit_billboard",
+ "ignit_camera",
+ "ignit_core",
+ "ignit_debug_render",
+ "ignit_ecs",
+ "ignit_ecs_bridge",
+ "ignit_iced",
+ "ignit_material_shader",
+ "ignit_mesh",
+ "ignit_renderer",
+ "log",
+ "winit",
+]
+
+[[package]]
+name = "ignit_ecs"
+version = "1.6.0"
+dependencies = [
+ "criterion",
+ "rand 0.10.4",
+ "rayon",
+ "wasm-bindgen-rayon",
+]
+
+[[package]]
+name = "ignit_ecs_bridge"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "hashbrown 0.17.1",
+ "ignit_camera",
+ "ignit_core",
+ "ignit_cull",
+ "ignit_ecs",
+ "ignit_ibl_brdf",
+ "ignit_importer_gltf",
+ "ignit_input",
+ "ignit_light",
+ "ignit_macros",
+ "ignit_material_shader",
+ "ignit_math",
+ "ignit_mesh",
+ "ignit_model",
+ "ignit_shadow",
+ "ignit_world_environment",
+ "ulid",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
+name = "ignit_file_manager"
+version = "1.6.0"
+dependencies = [
+ "dirs",
+ "log",
+ "ndk",
+ "objc2 0.6.5",
+ "objc2-foundation 0.3.2",
+]
+
+[[package]]
+name = "ignit_ibl_brdf"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "ignit_texture",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_iced"
+version = "1.6.0"
+dependencies = [
+ "iced_core",
+ "iced_graphics",
+ "iced_runtime",
+ "iced_wgpu",
+ "iced_widget",
+ "iced_winit",
+ "ignit_app",
+ "ignit_ecs",
+ "ignit_ecs_bridge",
+ "log",
+ "pollster",
+ "raw-window-handle",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
+name = "ignit_importer_gltf"
+version = "1.6.0"
+dependencies = [
+ "base64 0.23.1",
+ "cgmath",
+ "gltf",
+ "hashbrown 0.17.1",
+ "ignit_camera",
+ "ignit_core",
+ "ignit_file_manager",
+ "ignit_light",
+ "ignit_material_shader",
+ "ignit_math",
+ "ignit_mesh",
+ "ignit_model",
+ "ignit_shader_pbr",
+ "ignit_texture",
+ "image",
+ "log",
+ "rayon",
+ "serde_json",
+ "ulid",
+ "urlencoding",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_input"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "gilrs",
+ "hashbrown 0.17.1",
+ "log",
+ "winit",
+]
+
+[[package]]
+name = "ignit_instance"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "ignit_math",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_light"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+]
+
+[[package]]
+name = "ignit_macros"
+version = "1.6.0"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
+
+[[package]]
+name = "ignit_material_shader"
+version = "1.6.0"
+dependencies = [
+ "ignit_core",
+ "ignit_instance",
+ "ignit_shader_core",
+ "ignit_shader_preprocessor",
+ "ignit_texture",
+ "ignit_vertex",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_math"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+]
+
+[[package]]
+name = "ignit_mesh"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "ignit_core",
+ "ignit_vertex",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_model"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "hashbrown 0.17.1",
+ "ignit_core",
+ "ignit_instance",
+ "ignit_material_shader",
+ "ignit_math",
+ "ignit_mesh",
+ "ulid",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_procgeo"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "ignit_file_manager",
+ "ignit_material_shader",
+ "ignit_math",
+ "ignit_mesh",
+ "ignit_shader_debug",
+ "ignit_shader_pbr",
+ "ignit_texture",
+ "log",
+ "ron",
+ "serde",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_render_graph"
+version = "0.1.0"
+dependencies = [
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_renderer"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "ignit_2d",
+ "ignit_camera",
+ "ignit_cull",
+ "ignit_ecs",
+ "ignit_ecs_bridge",
+ "ignit_ibl_brdf",
+ "ignit_light",
+ "ignit_material_shader",
+ "ignit_model",
+ "ignit_render_graph",
+ "ignit_shader_engine",
+ "ignit_shader_math",
+ "ignit_shader_pbr",
+ "ignit_shader_preprocessor",
+ "ignit_shadow",
+ "ignit_text",
+ "ignit_texture",
+ "ignit_world_environment",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_resources"
+version = "1.6.0"
+dependencies = [
+ "ignit_camera",
+ "ignit_cull",
+ "ignit_ibl_brdf",
+ "ignit_instance",
+ "ignit_light",
+ "ignit_material_shader",
+ "ignit_math",
+ "ignit_mesh",
+ "ignit_model",
+ "ignit_shader_core",
+ "ignit_shader_engine",
+ "ignit_shader_math",
+ "ignit_shader_pbr",
+ "ignit_shader_preprocessor",
+ "ignit_shadow",
+ "ignit_texture",
+ "ignit_vertex",
+ "ignit_world_environment",
+ "naga",
+]
+
+[[package]]
+name = "ignit_shader_2d"
+version = "1.6.0"
+dependencies = [
+ "ignit_shader_preprocessor",
+]
+
+[[package]]
+name = "ignit_shader_core"
+version = "1.6.0"
+dependencies = [
+ "ignit_shader_preprocessor",
+ "ignit_texture",
+ "log",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_shader_debug"
+version = "1.6.0"
+dependencies = [
+ "ignit_material_shader",
+ "ignit_shader_core",
+ "ignit_shader_engine",
+ "ignit_shader_math",
+ "ignit_shader_preprocessor",
+ "log",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_shader_engine"
+version = "1.6.0"
+dependencies = [
+ "ignit_shader_math",
+ "ignit_shader_preprocessor",
+ "log",
+]
+
+[[package]]
+name = "ignit_shader_math"
+version = "1.6.0"
+dependencies = [
+ "ignit_shader_preprocessor",
+ "log",
+]
+
+[[package]]
+name = "ignit_shader_pbr"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "ignit_material_shader",
+ "ignit_shader_core",
+ "ignit_shader_engine",
+ "ignit_shader_math",
+ "ignit_shader_preprocessor",
+ "ignit_texture",
+ "log",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_shader_preprocessor"
+version = "1.6.0"
+dependencies = [
+ "ignit_file_manager",
+ "log",
+]
+
+[[package]]
+name = "ignit_shadow"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "ignit_camera",
+ "ignit_instance",
+ "ignit_material_shader",
+ "ignit_math",
+ "ignit_model",
+ "ignit_texture",
+ "ignit_vertex",
+ "log",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_text"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "fontdue",
+ "ignit_2d",
+ "log",
+]
+
+[[package]]
+name = "ignit_texture"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "ignit_core",
+ "ignit_file_manager",
+ "image",
+ "log",
+ "serde",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_touch_ui"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "ignit_app",
+ "ignit_core",
+ "ignit_ecs",
+ "ignit_ecs_bridge",
+ "ignit_input",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_ui"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "ignit_2d",
+ "ignit_ecs",
+ "ignit_text",
+ "log",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_vertex"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "wgpu",
+]
+
+[[package]]
+name = "ignit_world_environment"
+version = "1.6.0"
+dependencies = [
+ "cgmath",
+ "ignit_file_manager",
+ "ignit_material_shader",
+ "ignit_shader_engine",
+ "ignit_shader_math",
+ "ignit_shader_preprocessor",
+ "ignit_texture",
+ "image",
+ "log",
+ "serde",
+ "wgpu",
+]
+
+[[package]]
 name = "image"
 version = "0.25.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3024,623 +3641,6 @@ checksum = "5df339f526ea9a60e371768d50efc2f2508c7203290731565d1f7a6f71d21747"
 dependencies = [
  "libc",
  "libredox",
-]
-
-[[package]]
-name = "orbital"
-version = "1.6.0"
-dependencies = [
- "android_logger",
- "cgmath",
- "gilrs",
- "gltf",
- "hashbrown 0.17.1",
- "image",
- "log",
- "orbital_2d",
- "orbital_app",
- "orbital_billboard",
- "orbital_camera",
- "orbital_core",
- "orbital_debug_render",
- "orbital_debug_ui",
- "orbital_ecs",
- "orbital_ecs_bridge",
- "orbital_file_manager",
- "orbital_iced",
- "orbital_importer_gltf",
- "orbital_input",
- "orbital_macros",
- "orbital_procgeo",
- "orbital_renderer",
- "orbital_resources",
- "orbital_shader_preprocessor",
- "orbital_text",
- "orbital_touch_ui",
- "orbital_ui",
- "rand 0.10.4",
- "rayon",
- "serde",
- "ulid",
- "wgpu",
- "winit",
-]
-
-[[package]]
-name = "orbital-cli"
-version = "1.6.0"
-dependencies = [
- "anyhow",
- "clap",
- "dirs",
- "flate2",
- "indicatif",
- "inquire",
- "serde",
- "serde_json",
- "tar",
- "toml",
- "ureq",
- "xz2",
- "zip",
-]
-
-[[package]]
-name = "orbital_2d"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_app"
-version = "1.6.0"
-dependencies = [
- "android_logger",
- "cgmath",
- "gilrs",
- "jni",
- "libc",
- "libloading 0.9.1",
- "log",
- "objc2-game-controller",
- "orbital_camera",
- "orbital_core",
- "orbital_cull",
- "orbital_ecs",
- "orbital_ecs_bridge",
- "orbital_file_manager",
- "orbital_ibl_brdf",
- "orbital_input",
- "orbital_instance",
- "orbital_light",
- "orbital_material_shader",
- "orbital_model",
- "orbital_renderer",
- "orbital_shader_core",
- "orbital_shader_engine",
- "orbital_shader_math",
- "orbital_shader_pbr",
- "orbital_shader_preprocessor",
- "orbital_shadow",
- "orbital_texture",
- "orbital_world_environment",
- "serde_json",
- "sysinfo",
- "wgpu",
- "winit",
-]
-
-[[package]]
-name = "orbital_billboard"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "orbital_app",
- "orbital_ecs",
- "orbital_ecs_bridge",
- "orbital_material_shader",
- "orbital_math",
- "orbital_mesh",
- "orbital_shader_core",
- "orbital_shader_pbr",
- "orbital_text",
- "orbital_texture",
- "orbital_vertex",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_camera"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "orbital_math",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_core"
-version = "1.6.0"
-dependencies = [
- "android_logger",
- "cgmath",
- "fern",
- "hashbrown 0.17.1",
- "humantime",
- "log",
- "orbital_file_manager",
- "pollster",
-]
-
-[[package]]
-name = "orbital_cull"
-version = "1.6.0"
-dependencies = [
- "wgpu",
-]
-
-[[package]]
-name = "orbital_debug_render"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "orbital_app",
- "orbital_camera",
- "orbital_core",
- "orbital_ecs",
- "orbital_ecs_bridge",
- "orbital_instance",
- "orbital_light",
- "orbital_shadow",
- "orbital_vertex",
- "wgpu",
- "winit",
-]
-
-[[package]]
-name = "orbital_debug_ui"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "iced_core",
- "iced_wgpu",
- "iced_widget",
- "iced_winit",
- "log",
- "orbital_app",
- "orbital_billboard",
- "orbital_camera",
- "orbital_core",
- "orbital_debug_render",
- "orbital_ecs",
- "orbital_ecs_bridge",
- "orbital_iced",
- "orbital_material_shader",
- "orbital_mesh",
- "orbital_renderer",
- "winit",
-]
-
-[[package]]
-name = "orbital_ecs"
-version = "1.6.0"
-dependencies = [
- "criterion",
- "rand 0.10.4",
- "rayon",
- "wasm-bindgen-rayon",
-]
-
-[[package]]
-name = "orbital_ecs_bridge"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "hashbrown 0.17.1",
- "orbital_camera",
- "orbital_core",
- "orbital_cull",
- "orbital_ecs",
- "orbital_ibl_brdf",
- "orbital_importer_gltf",
- "orbital_input",
- "orbital_light",
- "orbital_macros",
- "orbital_material_shader",
- "orbital_math",
- "orbital_mesh",
- "orbital_model",
- "orbital_shadow",
- "orbital_world_environment",
- "ulid",
- "wgpu",
- "winit",
-]
-
-[[package]]
-name = "orbital_file_manager"
-version = "1.6.0"
-dependencies = [
- "dirs",
- "log",
- "ndk",
- "objc2 0.6.5",
- "objc2-foundation 0.3.2",
-]
-
-[[package]]
-name = "orbital_ibl_brdf"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "orbital_texture",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_iced"
-version = "1.6.0"
-dependencies = [
- "iced_core",
- "iced_graphics",
- "iced_runtime",
- "iced_wgpu",
- "iced_widget",
- "iced_winit",
- "log",
- "orbital_app",
- "orbital_ecs",
- "orbital_ecs_bridge",
- "pollster",
- "raw-window-handle",
- "wgpu",
- "winit",
-]
-
-[[package]]
-name = "orbital_importer_gltf"
-version = "1.6.0"
-dependencies = [
- "base64 0.23.1",
- "cgmath",
- "gltf",
- "hashbrown 0.17.1",
- "image",
- "log",
- "orbital_camera",
- "orbital_core",
- "orbital_file_manager",
- "orbital_light",
- "orbital_material_shader",
- "orbital_math",
- "orbital_mesh",
- "orbital_model",
- "orbital_shader_pbr",
- "orbital_texture",
- "rayon",
- "serde_json",
- "ulid",
- "urlencoding",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_input"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "gilrs",
- "hashbrown 0.17.1",
- "log",
- "winit",
-]
-
-[[package]]
-name = "orbital_instance"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "orbital_math",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_light"
-version = "1.6.0"
-dependencies = [
- "cgmath",
-]
-
-[[package]]
-name = "orbital_macros"
-version = "1.6.0"
-dependencies = [
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn 3.0.10",
-]
-
-[[package]]
-name = "orbital_material_shader"
-version = "1.6.0"
-dependencies = [
- "orbital_core",
- "orbital_instance",
- "orbital_shader_core",
- "orbital_shader_preprocessor",
- "orbital_texture",
- "orbital_vertex",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_math"
-version = "1.6.0"
-dependencies = [
- "cgmath",
-]
-
-[[package]]
-name = "orbital_mesh"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "orbital_core",
- "orbital_vertex",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_model"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "hashbrown 0.17.1",
- "orbital_core",
- "orbital_instance",
- "orbital_material_shader",
- "orbital_math",
- "orbital_mesh",
- "ulid",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_procgeo"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "log",
- "orbital_file_manager",
- "orbital_material_shader",
- "orbital_math",
- "orbital_mesh",
- "orbital_shader_debug",
- "orbital_shader_pbr",
- "orbital_texture",
- "ron",
- "serde",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_render_graph"
-version = "0.1.0"
-dependencies = [
- "wgpu",
-]
-
-[[package]]
-name = "orbital_renderer"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "orbital_2d",
- "orbital_camera",
- "orbital_cull",
- "orbital_ecs",
- "orbital_ecs_bridge",
- "orbital_ibl_brdf",
- "orbital_light",
- "orbital_material_shader",
- "orbital_model",
- "orbital_render_graph",
- "orbital_shader_engine",
- "orbital_shader_math",
- "orbital_shader_pbr",
- "orbital_shader_preprocessor",
- "orbital_shadow",
- "orbital_text",
- "orbital_texture",
- "orbital_world_environment",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_resources"
-version = "1.6.0"
-dependencies = [
- "naga",
- "orbital_camera",
- "orbital_cull",
- "orbital_ibl_brdf",
- "orbital_instance",
- "orbital_light",
- "orbital_material_shader",
- "orbital_math",
- "orbital_mesh",
- "orbital_model",
- "orbital_shader_core",
- "orbital_shader_engine",
- "orbital_shader_math",
- "orbital_shader_pbr",
- "orbital_shader_preprocessor",
- "orbital_shadow",
- "orbital_texture",
- "orbital_vertex",
- "orbital_world_environment",
-]
-
-[[package]]
-name = "orbital_shader_2d"
-version = "1.6.0"
-dependencies = [
- "orbital_shader_preprocessor",
-]
-
-[[package]]
-name = "orbital_shader_core"
-version = "1.6.0"
-dependencies = [
- "log",
- "orbital_shader_preprocessor",
- "orbital_texture",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_shader_debug"
-version = "1.6.0"
-dependencies = [
- "log",
- "orbital_material_shader",
- "orbital_shader_core",
- "orbital_shader_engine",
- "orbital_shader_math",
- "orbital_shader_preprocessor",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_shader_engine"
-version = "1.6.0"
-dependencies = [
- "log",
- "orbital_shader_math",
- "orbital_shader_preprocessor",
-]
-
-[[package]]
-name = "orbital_shader_math"
-version = "1.6.0"
-dependencies = [
- "log",
- "orbital_shader_preprocessor",
-]
-
-[[package]]
-name = "orbital_shader_pbr"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "log",
- "orbital_material_shader",
- "orbital_shader_core",
- "orbital_shader_engine",
- "orbital_shader_math",
- "orbital_shader_preprocessor",
- "orbital_texture",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_shader_preprocessor"
-version = "1.6.0"
-dependencies = [
- "log",
- "orbital_file_manager",
-]
-
-[[package]]
-name = "orbital_shadow"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "log",
- "orbital_camera",
- "orbital_instance",
- "orbital_material_shader",
- "orbital_math",
- "orbital_model",
- "orbital_texture",
- "orbital_vertex",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_text"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "fontdue",
- "log",
- "orbital_2d",
-]
-
-[[package]]
-name = "orbital_texture"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "image",
- "log",
- "orbital_core",
- "orbital_file_manager",
- "serde",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_touch_ui"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "orbital_app",
- "orbital_core",
- "orbital_ecs",
- "orbital_ecs_bridge",
- "orbital_input",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_ui"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "log",
- "orbital_2d",
- "orbital_ecs",
- "orbital_text",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_vertex"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "wgpu",
-]
-
-[[package]]
-name = "orbital_world_environment"
-version = "1.6.0"
-dependencies = [
- "cgmath",
- "image",
- "log",
- "orbital_file_manager",
- "orbital_material_shader",
- "orbital_shader_engine",
- "orbital_shader_math",
- "orbital_shader_preprocessor",
- "orbital_texture",
- "serde",
- "wgpu",
 ]
 
 [[package]]
@@ -4799,21 +4799,21 @@ dependencies = [
 name = "template_all_in_one"
 version = "1.6.0"
 dependencies = [
- "orbital",
+ "ignit",
 ]
 
 [[package]]
 name = "template_minimal_2d"
 version = "1.6.0"
 dependencies = [
- "orbital",
+ "ignit",
 ]
 
 [[package]]
 name = "template_minimal_3d"
 version = "1.6.0"
 dependencies = [
- "orbital",
+ "ignit",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-use orbital_ecs::World;
+use ignit_ecs::World;
 
 // ---------------------------------------------------------------------------
 // Component types for benchmarks

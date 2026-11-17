@@ -1,27 +1,27 @@
 use std::sync::Arc;
 
-use orbital::app::{App, AppSettings, Module, sys_camera_controller, sys_ortho_dolly};
-use orbital::cgmath::{InnerSpace, Point3, Rad, Vector3};
-use orbital::ecs::{System, World};
-use orbital::ecs_bridge::{
+use ignit::app::{App, AppSettings, Module, sys_camera_controller, sys_ortho_dolly};
+use ignit::cgmath::{InnerSpace, Point3, Rad, Vector3};
+use ignit::ecs::{System, World};
+use ignit::ecs_bridge::{
     ActiveCamera, CameraDescriptor, CursorGrabConfig, EnvironmentDescriptorResource,
     LightDescriptor, LightDirty, ModelDescriptor, ModelDirty, ModelInstances, Position, Rotation,
 };
-use orbital::logging::{self, error, info};
-use orbital::procgeo::scene::{
+use ignit::logging::{self, error, info};
+use ignit::procgeo::scene::{
     EntityDescriptor, SceneBuilder, SceneMaterial, SceneShape, TransformDef,
 };
-use orbital::resources::{
+use ignit::resources::{
     GeneratedSkyParameters, SamplingType, ShadowCaster, WorldEnvironmentDescriptor,
 };
 
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
-#[orbital::main]
+#[ignit::main]
 pub fn entrypoint(
     event_loop_result: Result<
-        orbital::winit::event_loop::EventLoop<()>,
-        orbital::winit::error::EventLoopError,
+        ignit::winit::event_loop::EventLoop<()>,
+        ignit::winit::error::EventLoopError,
     >,
 ) {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -38,8 +38,8 @@ pub fn entrypoint(
 
     match App::new()
         .add_module(GameModule)
-        .add_module(orbital::debug_ui::DebugUiModule::new())
-        .add_module(orbital::touch_ui::TouchUiModule)
+        .add_module(ignit::debug_ui::DebugUiModule::new())
+        .add_module(ignit::touch_ui::TouchUiModule)
         .liftoff(event_loop, app_settings)
     {
         Ok(()) => info!("Cleanly exited!"),
@@ -53,8 +53,8 @@ impl Module for GameModule {
     fn setup(
         &self,
         ecs: &mut World,
-        _device: &orbital::wgpu::Device,
-        _queue: &orbital::wgpu::Queue,
+        _device: &ignit::wgpu::Device,
+        _queue: &ignit::wgpu::Queue,
     ) -> Vec<Box<dyn System>> {
         // Spawn camera looking at the scene
         let camera = ecs.spawn_entity();

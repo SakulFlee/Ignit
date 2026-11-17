@@ -1,0 +1,31 @@
+[package]
+name = "ignit_resources"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ignit_camera = { path = "../camera" }
+ignit_cull = { path = "../cull" }
+ignit_ibl_brdf = { path = "../ibl_brdf" }
+ignit_instance = { path = "../instance" }
+ignit_light = { path = "../light" }
+ignit_material_shader = { path = "../material_shader" }
+ignit_math = { path = "../math" }
+ignit_mesh = { path = "../mesh" }
+ignit_model = { path = "../model" }
+ignit_shader_core = { path = "../shader_core" }
+ignit_shader_pbr = { path = "../shader_pbr" }
+ignit_shadow = { path = "../shadow" }
+ignit_texture = { path = "../texture" }
+ignit_vertex = { path = "../vertex" }
+ignit_world_environment = { path = "../world_environment" }
+
+[dev-dependencies]
+ignit_shader_engine = { path = "../shader_engine" }
+ignit_shader_math = { path = "../shader_math" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor" }
+naga = { version = "30.0.0", default-features = false, features = ["wgsl-in"] }

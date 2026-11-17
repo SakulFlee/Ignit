@@ -3,9 +3,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CARGO_TARGET_ROOT="${CARGO_TARGET_DIR:-$ROOT/target}"
-CLI="$CARGO_TARGET_ROOT/debug/orbital"
+CLI="$CARGO_TARGET_ROOT/debug/ignit"
 TEMPLATE_TARGET_DIR="$CARGO_TARGET_ROOT/template-check"
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/orbital-templates.XXXXXX")"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/ignit-templates.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
 
@@ -21,8 +21,8 @@ for asset in "${required_example_assets[@]}"; do
     fi
 done
 
-echo "Building the orbital CLI..."
-cargo build --manifest-path "$ROOT/Cargo.toml" -p orbital-cli
+echo "Building the ignit CLI..."
+cargo build --manifest-path "$ROOT/Cargo.toml" -p ignit-cli
 
 for template in minimal-3d all-in-one minimal-2d; do
     project="$TMP/$template"
@@ -34,7 +34,7 @@ for template in minimal-3d all-in-one minimal-2d; do
         --project-path "$project" \
         --engine-path "$ROOT"
 
-    for file in Cargo.toml Orbital.toml src/lib.rs src/main.rs Assets/.gitkeep; do
+    for file in Cargo.toml Ignit.toml src/lib.rs src/main.rs Assets/.gitkeep; do
         if [[ ! -e "$project/$file" ]]; then
             echo "Missing generated file: $project/$file" >&2
             exit 1
