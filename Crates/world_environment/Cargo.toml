@@ -1,0 +1,21 @@
+[package]
+name = "ignit_world_environment"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ignit_texture = { path = "../texture" }
+ignit_material_shader = { path = "../material_shader" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor" }
+ignit_shader_engine = { path = "../shader_engine" }
+ignit_shader_math = { path = "../shader_math" }
+ignit_file_manager = { path = "../file_manager" }
+cgmath = { workspace = true }
+image = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
+wgpu = { workspace = true }

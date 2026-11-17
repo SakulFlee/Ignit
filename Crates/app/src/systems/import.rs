@@ -1,0 +1,218 @@
+//! Import system — polls glTF importer and spawns ECS entities for results.
+//!
+//! Uses direct `&mut World` access (not IntoSystem) because it needs to
+//! spawn entities and attach multiple component types.
+
+use std::sync::Arc;
+
+use cgmath::{InnerSpace, Point3, Quaternion, Rotation3, Vector3};
+use ignit_camera::Camera;
+use ignit_ecs::World;
+use ignit_ecs_bridge::{
+    ActiveCamera, CameraDescriptor, CameraDirty, CameraRealization, CameraStore, DeviceResource,
+    ImportQueueResource, ImporterResource, LightDescriptor, LightDirty, ModelDescriptor,
+    ModelDirty, ModelInstances, Position, QueueResource, Rotation,
+};
+use ignit_shadow::ShadowCaster;
+use log::warn;
+
+/// Poll the importer for completed results and spawn ECS entities.
+///
+/// This system:
+/// 1. Drains the ImportQueueResource and submits tasks to the Importer
+/// 2. Polls the Importer for completed results (EVERY frame, even when queue is empty)
+/// 3. Spawns ECS entities for each imported model and camera
+pub fn sys_poll_importer(ecs: &mut World) {
+    // Step 1: Drain queue and submit tasks to importer
+    // Extract tasks first, then submit (avoids nested mutable borrows)
+    let tasks: Vec<_> = {
+        match ecs.get_resource_mut::<ImportQueueResource>() {
+            Some(mut q) => std::mem::take(&mut q.0),
+            None => Vec::new(),
+        }
+    };
+
+    if !tasks.is_empty()
+        && let Some(mut importer) = ecs.get_resource_mut::<ImporterResource>()
+    {
+        for task in tasks {
+            importer.0.register_task(task);
+        }
+    }
+
+    // Step 2: ALWAYS poll for completed results (even when queue was empty)
+    let results = {
+        let mut importer = match ecs.get_resource_mut::<ImporterResource>() {
+            Some(i) => i,
+            None => return,
+        };
+        importer.0.update()
+    };
+
+    if results.is_empty() {
+        return;
+    }
+
+    // Get device/queue for camera realization
+    let (device, queue) = {
+        let d = match ecs.get_resource::<DeviceResource>() {
+            Some(d) => d.0.clone(),
+            None => return,
+        };
+        let q = match ecs.get_resource::<QueueResource>() {
+            Some(q) => q.0.clone(),
+            None => return,
+        };
+        (d, q)
+    };
+
+    // Step 3: Spawn entities for each import result
+    for result in results {
+        // Spawn model entities
+        for model_desc in result.models {
+            let entity = ecs.spawn_entity();
+
+            let desc = ModelDescriptor {
+                label: model_desc.label.clone(),
+                mesh: model_desc.mesh.clone(),
+                materials: model_desc.materials.clone(),
+            };
+            if let Err(e) = ecs.attach_component(&entity, desc) {
+                warn!("Failed to attach ModelDescriptor: {:?}", e);
+                continue;
+            }
+
+            let first_position = model_desc
+                .transforms
+                .values()
+                .next()
+                .map(|t| Position(Point3::new(t.position.x, t.position.y, t.position.z)));
+
+            let instances = ModelInstances(model_desc.transforms);
+            if let Err(e) = ecs.attach_component(&entity, instances) {
+                warn!("Failed to attach ModelInstances: {:?}", e);
+            }
+
+            if let Err(e) = ecs.attach_component(&entity, ModelDirty(true)) {
+                warn!("Failed to attach ModelDirty: {:?}", e);
+            }
+
+            // Set initial position from first transform if available
+            if let Some(pos) = first_position
+                && let Err(e) = ecs.attach_component(&entity, pos)
+            {
+                warn!("Failed to attach Position: {:?}", e);
+            }
+        }
+
+        // Spawn camera entities
+        for cam_desc in result.cameras {
+            let entity = ecs.spawn_entity();
+
+            let pos = Position(Point3::new(
+                cam_desc.position.x,
+                cam_desc.position.y,
+                cam_desc.position.z,
+            ));
+            if let Err(e) = ecs.attach_component(&entity, pos) {
+                warn!("Failed to attach Position for camera: {:?}", e);
+                continue;
+            }
+
+            // Convert yaw/pitch/roll to quaternion
+            let q_yaw = Quaternion::from_axis_angle(Vector3::unit_y(), cgmath::Rad(cam_desc.yaw));
+            let q_pitch =
+                Quaternion::from_axis_angle(Vector3::unit_z(), cgmath::Rad(cam_desc.pitch));
+            let q_roll = Quaternion::from_axis_angle(Vector3::unit_x(), cgmath::Rad(cam_desc.roll));
+            let rotation = Rotation((q_yaw * q_pitch * q_roll).normalize());
+
+            if let Err(e) = ecs.attach_component(&entity, rotation) {
+                warn!("Failed to attach Rotation for camera: {:?}", e);
+                continue;
+            }
+
+            let desc = CameraDescriptor {
+                label: cam_desc.label.clone(),
+                aspect: cam_desc.aspect,
+                fovy: cgmath::Rad::from(cgmath::Deg(cam_desc.fovy)),
+                projection_mode: cam_desc.projection_mode,
+                ortho_height: cam_desc.ortho_height,
+                near: cam_desc.near,
+                far: cam_desc.far,
+                global_gamma: cam_desc.global_gamma,
+            };
+            if let Err(e) = ecs.attach_component(&entity, desc) {
+                warn!("Failed to attach CameraDescriptor: {:?}", e);
+                continue;
+            }
+
+            // Realize GPU camera immediately
+            let gpu_camera = Camera::new_with_projection(
+                pos.0,
+                rotation.0,
+                cam_desc.projection(),
+                cam_desc.near,
+                cam_desc.far,
+                cam_desc.global_gamma,
+                &device,
+                &queue,
+            );
+            if let Err(e) = ecs.attach_component(&entity, CameraRealization) {
+                warn!("Failed to attach CameraRealization marker: {:?}", e);
+                continue;
+            }
+
+            // Store GPU camera in CameraStore
+            if let Some(mut store) = ecs.get_resource_mut::<CameraStore>() {
+                store.insert(entity.index, Arc::new(std::sync::RwLock::new(gpu_camera)));
+            }
+
+            if let Err(e) = ecs.attach_component(&entity, CameraDirty(true)) {
+                warn!("Failed to attach CameraDirty: {:?}", e);
+            }
+
+            // Set as active camera
+            ecs.insert_resource(ActiveCamera(entity));
+        }
+
+        // Spawn light entities (KHR_lights_punctual).
+        //
+        // Position comes from the light's node transform; type/color/direction
+        // (already converted from glTF's -Z convention by the importer) go into
+        // the descriptor component. A default ShadowCaster makes imported
+        // lights cast shadows right away (one slot each for point/spot,
+        // `cascade_count` slots for directional).
+        for light_desc in result.lights {
+            let entity = ecs.spawn_entity();
+
+            let desc = LightDescriptor {
+                light_type: light_desc.light_type.clone(),
+                color: light_desc.color,
+                direction: light_desc.direction,
+                range: light_desc.range,
+            };
+            if let Err(e) = ecs.attach_component(&entity, desc) {
+                warn!("Failed to attach LightDescriptor: {:?}", e);
+                continue;
+            }
+
+            let pos = Position(Point3::new(
+                light_desc.position.x,
+                light_desc.position.y,
+                light_desc.position.z,
+            ));
+            if let Err(e) = ecs.attach_component(&entity, pos) {
+                warn!("Failed to attach Position for light: {:?}", e);
+                continue;
+            }
+
+            if let Err(e) = ecs.attach_component(&entity, ShadowCaster::default()) {
+                warn!("Failed to attach ShadowCaster for light: {:?}", e);
+            }
+
+            if let Err(e) = ecs.attach_component(&entity, LightDirty(true)) {
+                warn!("Failed to attach LightDirty: {:?}", e);
+            }
+        }
+    }
+}

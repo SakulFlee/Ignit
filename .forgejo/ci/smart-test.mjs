@@ -7,7 +7,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = process.cwd();
-const MARKER = '<!-- orbital-ci-test-results -->';
+const MARKER = '<!-- ignit-ci-test-results -->';
 const REPORT_DIR = path.join(ROOT, 'target', 'ci');
 const LOG_PATH = path.join(REPORT_DIR, 'test-output.log');
 const JUNIT_PATH = path.join(ROOT, 'target', 'nextest', 'ci', 'junit.xml');
@@ -21,7 +21,7 @@ const FULL_PATHS = new Set([
   'rust-toolchain',
   'rust-toolchain.toml',
   'renovate.json',
-  'Orbital.toml',
+  'Ignit.toml',
 ]);
 
 const FULL_PREFIXES = [

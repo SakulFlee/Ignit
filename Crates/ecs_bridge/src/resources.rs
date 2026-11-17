@@ -1,0 +1,2034 @@
+//! Engine state resources for ECS integration.
+//!
+//! Each type in this module represents a piece of engine state that can be
+//! stored in the ECS world as a **resource**. The runtime writes into these
+//! before running ECS schedules each frame, meaning every system sees a
+//! consistent snapshot of frame-computed and event-driven state.
+//!
+//! All types implement `Component` via the blanket impl in `ignit_ecs`:
+//! `impl<T: Any + Debug + Send + Sync> Component for T {}`
+
+use std::collections::VecDeque;
+use std::sync::Arc;
+
+use cgmath::Vector2;
+use hashbrown::HashMap;
+use ignit_core::logging::info;
+
+// ---------------------------------------------------------------------------
+// Frame timing
+// ---------------------------------------------------------------------------
+
+/// Number of frames rendered since the application started.
+///
+/// Updated by the core schedule at the start of every redraw cycle.
+/// Starts at 0 and monotonically increases.
+#[derive(Debug, Clone, Copy)]
+pub struct FrameCounter(pub u64);
+
+/// Frame-rate statistics updated every second by the runtime.
+///
+/// Written by `ModuleRuntime::update()` alongside the optional `info!()` log
+/// line controlled by [`PerformanceLogConfig`]. Read by HUD overlays (e.g. the
+/// all-in-one template) to display live performance metrics on screen.
+#[derive(Debug, Clone, Copy)]
+pub struct FpsStats {
+    /// Frames rendered in the last complete FPS window.
+    pub fps: u64,
+    /// Elapsed time covered by that window (seconds). This can exceed one
+    /// second when a single frame or stall closes the window.
+    pub total_delta_time: f64,
+    /// Delta time of the most recent frame (seconds), clamped for gameplay.
+    pub cycle_delta_time: f64,
+}
+
+impl Default for FpsStats {
+    fn default() -> Self {
+        Self {
+            fps: 0,
+            total_delta_time: 0.0,
+            cycle_delta_time: 0.0,
+        }
+    }
+}
+
+/// Time elapsed since the previous frame, in seconds.
+///
+/// Measured as wall-clock time between consecutive `tick()` calls in the
+/// event loop. **Includes** GPU present wait and event processing time
+/// from the previous frame. Clamped to `[0.0, 1.0]` to prevent physics
+/// explosions after stalls.
+///
+/// Written by the runtime just before the core schedule runs.
+#[derive(Debug, Clone, Copy)]
+pub struct DeltaTime(pub f64);
+
+/// Total accumulated time since the application started, in seconds.
+///
+/// Updated each frame: `TotalTime += DeltaTime`. Unlike `DeltaTime` which
+/// is overwritten each frame, this accumulates frame-over-frame.
+#[derive(Debug, Clone, Copy)]
+pub struct TotalTime(pub f64);
+
+/// One stage of the render frame.
+///
+/// The runtime measures a fixed set of stages between surface acquisition and
+/// present; each becomes one `TimingSample` in [`FrameTimings`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TimingSample {
+    /// Stable identifier for the stage, e.g. `"render"`.
+    pub name: &'static str,
+    /// The most recent frame's duration, in milliseconds.
+    pub last_ms: f64,
+    /// Mean duration over the accumulation window, in milliseconds.
+    pub avg_ms: f64,
+    /// Smallest duration seen in the current window, in milliseconds.
+    pub min_ms: f64,
+    /// Largest duration seen in the current window, in milliseconds.
+    pub max_ms: f64,
+}
+
+/// Distribution of every stage over one timing window.
+///
+/// The CSV capture uses this to write mean, min, max and p95 columns instead
+/// of only the per-window average.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TimingWindow {
+    /// Per-stage mean over the window, in milliseconds.
+    pub averages: Vec<f64>,
+    /// Per-stage minimum over the window, in milliseconds.
+    pub min: Vec<f64>,
+    /// Per-stage maximum over the window, in milliseconds.
+    pub max: Vec<f64>,
+    /// Per-stage 95th percentile over the window, in milliseconds.
+    pub p95: Vec<f64>,
+    /// Frames recorded in the window.
+    pub frames: u64,
+    /// Mean wall-clock frame delta over the window, in milliseconds.
+    pub cdt_mean_ms: f64,
+    /// Smallest wall-clock frame delta in the window, in milliseconds.
+    pub cdt_min_ms: f64,
+    /// Largest wall-clock frame delta in the window, in milliseconds.
+    pub cdt_max_ms: f64,
+    /// 95th percentile wall-clock frame delta in the window, in milliseconds.
+    pub cdt_p95_ms: f64,
+}
+
+/// The stage identifiers the runtime measures, in the order they occur in a
+/// frame. The GPU stages are derived from timestamp query results read back
+/// from the renderer, and are only meaningful on backends that support
+/// timestamp queries; elsewhere they stay at zero.
+pub const TIMING_STAGES: [&str; 47] = [
+    "surface_acq",
+    "update",
+    "ui_events",
+    "input",
+    "core schedule",
+    "importer poll",
+    "game_schedule",
+    "engine events",
+    "realize",
+    "realize cameras",
+    "realize lights",
+    "realize models",
+    "realize env",
+    "stagger",
+    "cull+extract",
+    "bind+models",
+    "volumetrics",
+    "scene encode",
+    "scene submit",
+    "timestamp readback",
+    "overlay main",
+    "overlay layers",
+    "iced draw",
+    "iced submit",
+    "present",
+    "render_total",
+    "frame limiter",
+    "frame gap",
+    "surface lock",
+    "surface acquire",
+    "surface view",
+    "gpu complete",
+    "gpu shadow",
+    "gpu skybox",
+    "gpu gbuffer",
+    "gpu light culling",
+    "gpu deferred",
+    "gpu models",
+    "gpu transparent",
+    "gpu volumetric inject",
+    "gpu volumetric accumulate",
+    "gpu volumetric integrate",
+    "gpu volumetric composite",
+    "gpu scene total",
+    "gpu volumetrics",
+    "gpu tonemap",
+    "gpu aa",
+];
+
+/// Stage indices, named so the runtime cannot silently drift from
+/// [`TIMING_STAGES`].
+pub const STAGE_SURFACE_ACQ: usize = 0;
+pub const STAGE_UPDATE: usize = 1;
+pub const STAGE_UI_EVENTS: usize = 2;
+pub const STAGE_INPUT: usize = 3;
+pub const STAGE_CORE_SCHEDULE: usize = 4;
+pub const STAGE_IMPORTER_POLL: usize = 5;
+pub const STAGE_GAME_SCHEDULE: usize = 6;
+pub const STAGE_ENGINE_EVENTS: usize = 7;
+pub const STAGE_REALIZE: usize = 8;
+pub const STAGE_REALIZE_CAMERAS: usize = 9;
+pub const STAGE_REALIZE_LIGHTS: usize = 10;
+pub const STAGE_REALIZE_MODELS: usize = 11;
+pub const STAGE_REALIZE_ENV: usize = 12;
+pub const STAGE_STAGGER: usize = 13;
+pub const STAGE_CULL_EXTRACT: usize = 14;
+pub const STAGE_BIND_MODELS: usize = 15;
+pub const STAGE_VOLUMETRICS: usize = 16;
+pub const STAGE_SCENE_ENCODE: usize = 17;
+pub const STAGE_SCENE_SUBMIT: usize = 18;
+pub const STAGE_TIMESTAMP_READBACK: usize = 19;
+pub const STAGE_OVERLAY_MAIN: usize = 20;
+pub const STAGE_OVERLAY_LAYERS: usize = 21;
+pub const STAGE_ICED_DRAW: usize = 22;
+pub const STAGE_ICED_SUBMIT: usize = 23;
+pub const STAGE_PRESENT: usize = 24;
+/// The renderer-only span from the end of update/surface acquisition to the
+/// end of present. This is not the wall-clock frame period; see
+/// [`RENDER_TOTAL_STAGE_INDEX`] and the `cdt_ms` timing window field.
+pub const STAGE_RENDER_TOTAL: usize = 25;
+pub const STAGE_FRAME_LIMITER: usize = 26;
+pub const STAGE_FRAME_GAP: usize = 27;
+pub const STAGE_SURFACE_LOCK: usize = 28;
+pub const STAGE_SURFACE_ACQUIRE: usize = 29;
+pub const STAGE_SURFACE_VIEW: usize = 30;
+pub const STAGE_GPU_COMPLETE: usize = 31;
+pub const STAGE_GPU_SHADOW: usize = 32;
+pub const STAGE_GPU_SKYBOX: usize = 33;
+pub const STAGE_GPU_GBUFFER: usize = 34;
+pub const STAGE_GPU_LIGHT_CULLING: usize = 35;
+pub const STAGE_GPU_DEFERRED: usize = 36;
+pub const STAGE_GPU_MODELS: usize = 37;
+pub const STAGE_GPU_TRANSPARENT: usize = 38;
+pub const STAGE_GPU_VOLUMETRIC_INJECT: usize = 39;
+pub const STAGE_GPU_VOLUMETRIC_ACCUMULATE: usize = 40;
+pub const STAGE_GPU_VOLUMETRIC_INTEGRATE: usize = 41;
+pub const STAGE_GPU_VOLUMETRIC_COMPOSITE: usize = 42;
+pub const STAGE_GPU_SCENE_TOTAL: usize = 43;
+pub const STAGE_GPU_VOLUMETRICS: usize = 44;
+pub const STAGE_GPU_TONEMAP: usize = 45;
+pub const STAGE_GPU_AA: usize = 46;
+
+/// The index of the `render_total` stage, which is the renderer-only duration
+/// after surface acquisition and update. Add `update`, `surface_acq`,
+/// `frame_limiter`, and `frame_gap` for the wall-clock frame period, or read
+/// the `cdt_ms` timing-window field directly.
+pub const RENDER_TOTAL_STAGE_INDEX: usize = STAGE_RENDER_TOTAL;
+
+/// The first GPU stage. Stages at or after this index are invalid when the
+/// backend does not support timestamp queries.
+pub const GPU_STAGE_START: usize = STAGE_GPU_SHADOW;
+
+impl TimingSample {
+    /// A zeroed sample for `index` into [`TIMING_STAGES`].
+    ///
+    /// # Panics
+    /// If `index` is out of bounds.
+    pub fn empty(index: usize) -> Self {
+        Self {
+            name: TIMING_STAGES[index],
+            last_ms: 0.0,
+            avg_ms: 0.0,
+            min_ms: 0.0,
+            max_ms: 0.0,
+        }
+    }
+}
+
+/// Controls whether [`FrameTimings`] retains graph history, and for how long.
+///
+/// The debug overlay updates this resource while its Performance window is
+/// visible. When disabled, the next recorded frame clears the retained graph
+/// history instead of growing it.
+#[derive(Debug, Clone, Copy)]
+pub struct TimingsHistoryConfig {
+    /// Whether graph history should be retained.
+    pub enabled: bool,
+    /// How many seconds of history to keep.
+    pub window_secs: f64,
+}
+
+/// Controls periodic performance logging.
+///
+/// When enabled, the runtime emits one FPS line and one timing/cache summary
+/// per second. The debug UI exposes this as a toggle so the console can stay
+/// quiet during normal play. Programmatic users can override the resource
+/// after module setup, or insert it before the runtime starts.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PerformanceLogConfig {
+    /// Whether to write FPS, timing and cache summaries to the log.
+    pub console: bool,
+    /// Whether to append one CSV row per timing window.
+    pub csv: bool,
+}
+
+impl PerformanceLogConfig {
+    /// The runtime's startup defaults: CSV capture is on in debug builds and
+    /// off in release builds.
+    ///
+    /// `IGNIT_PERF_CSV=0` opts out in debug builds, while
+    /// `IGNIT_PERF_CSV=1` opts a release build in. `IGNIT_PERF_CONSOLE`
+    /// controls the corresponding console summaries independently.
+    pub fn for_current_build() -> Self {
+        Self {
+            console: env_flag("IGNIT_PERF_CONSOLE").unwrap_or(false),
+            csv: env_flag("IGNIT_PERF_CSV").unwrap_or(cfg!(debug_assertions)),
+        }
+    }
+}
+
+/// Parses an environment switch, treating common false spellings as disabled.
+fn env_flag(name: &str) -> Option<bool> {
+    let value = std::env::var_os(name)?;
+    Some(parse_env_flag(&value.to_string_lossy()))
+}
+
+fn parse_env_flag(value: &str) -> bool {
+    !matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "" | "0" | "false" | "no" | "off"
+    )
+}
+
+impl Default for TimingsHistoryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            window_secs: 10.0,
+        }
+    }
+}
+
+/// Health of the asynchronous GPU timestamp readback.
+///
+/// The renderer only advances its timestamp generation when a new readback
+/// completes. Track how many consecutive frames have seen the same generation
+/// so the debug UI can distinguish unavailable timestamps from a sample that
+/// has gone stale because the GPU is behind.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GpuTimestampHealth {
+    supported: bool,
+    last_generation: Option<u64>,
+    stale_frames: u32,
+}
+
+impl GpuTimestampHealth {
+    /// Records the timestamp support and generation for one frame.
+    pub fn update(&mut self, supported: bool, generation: u64) {
+        self.supported = supported;
+
+        if !supported {
+            self.last_generation = None;
+            self.stale_frames = 0;
+            return;
+        }
+
+        if self.last_generation == Some(generation) {
+            self.stale_frames = self.stale_frames.saturating_add(1);
+        } else {
+            self.stale_frames = 0;
+        }
+        self.last_generation = Some(generation);
+    }
+
+    /// Whether the backend supports timestamp queries.
+    pub fn supported(&self) -> bool {
+        self.supported
+    }
+
+    /// Number of consecutive frames without a new timestamp generation.
+    pub fn stale_frames(&self) -> u32 {
+        self.stale_frames
+    }
+
+    /// Whether timestamps are supported but the latest sample is stale.
+    pub fn is_stale(&self) -> bool {
+        self.supported && self.stale_frames > 0
+    }
+}
+
+/// Per-stage frame timings plus a rolling history, for debug overlays.
+///
+/// The runtime writes this resource at the end of every redraw, right after
+/// present. Unlike the `info!` timing line it replaces, the statistics are
+/// *not* reset on print: `avg_ms`/`min_ms`/`max_ms` keep accumulating until
+/// [`Self::clear`] is called, and a bounded history is retained so a graph can
+/// plot recent frames.
+#[derive(Debug, Clone)]
+pub struct FrameTimings {
+    samples: Vec<TimingSample>,
+    /// Running totals backing `avg_ms`, reset by [`Self::clear`].
+    totals: Vec<f64>,
+    count: u64,
+    /// Renderer-only total per frame, oldest first.
+    ///
+    /// This is the `render_total` stage, not the wall-clock frame period. Use
+    /// `cdt_history` (or the frame-gap/update/surface stages) for the full
+    /// period.
+    render_ms: VecDeque<f32>,
+    /// Per-stage durations over time, oldest first. One entry per frame, each
+    /// holding one value per stage in [`TIMING_STAGES`] order.
+    history: VecDeque<Vec<f64>>,
+    /// Time of each retained graph frame, oldest first. Parallel to `history`
+    /// and `render_ms`.
+    history_times: VecDeque<f64>,
+    /// Wall-clock frame delta per retained graph frame, in milliseconds.
+    cdt_history: VecDeque<f32>,
+    /// Totals for the current one-second log window only. Independent of
+    /// `totals`, so emitting the summary never disturbs the overlay.
+    window_totals: Vec<f64>,
+    /// Per-stage samples for the current window, used for percentiles.
+    window_values: Vec<Vec<f64>>,
+    window_min: Vec<f64>,
+    window_max: Vec<f64>,
+    window_cdt_total: f64,
+    window_cdt_values: Vec<f64>,
+    window_count: u64,
+    last_print: std::time::Instant,
+    gpu_timestamp_health: GpuTimestampHealth,
+}
+
+impl FrameTimings {
+    /// Hard cap on retained graph frames.
+    ///
+    /// The selected time window normally evicts much earlier; this bounds
+    /// memory if the renderer runs at an extreme frame rate.
+    pub const HISTORY_LEN: usize = 16_384;
+
+    /// How often the `info!` timing summary is emitted, in seconds.
+    const LOG_INTERVAL_SECS: f64 = 1.0;
+
+    /// A fresh, empty set of timings.
+    pub fn new() -> Self {
+        let stages = TIMING_STAGES.len();
+
+        Self {
+            samples: (0..stages).map(TimingSample::empty).collect(),
+            totals: vec![0.0; stages],
+            count: 0,
+            render_ms: VecDeque::with_capacity(256),
+            history: VecDeque::with_capacity(256),
+            history_times: VecDeque::with_capacity(256),
+            cdt_history: VecDeque::with_capacity(256),
+            window_totals: vec![0.0; stages],
+            window_values: (0..stages).map(|_| Vec::with_capacity(256)).collect(),
+            window_min: vec![0.0; stages],
+            window_max: vec![0.0; stages],
+            window_cdt_total: 0.0,
+            window_cdt_values: Vec::with_capacity(256),
+            window_count: 0,
+            last_print: std::time::Instant::now(),
+            gpu_timestamp_health: GpuTimestampHealth::default(),
+        }
+    }
+
+    /// Health of the asynchronous GPU timestamp readback.
+    pub fn gpu_timestamp_health(&self) -> GpuTimestampHealth {
+        self.gpu_timestamp_health
+    }
+
+    /// Updates the GPU timestamp health from the renderer's latest generation.
+    pub fn update_gpu_timestamp_health(&mut self, supported: bool, generation: u64) {
+        self.gpu_timestamp_health.update(supported, generation);
+    }
+
+    /// The per-stage samples, in frame order.
+    pub fn samples(&self) -> &[TimingSample] {
+        &self.samples
+    }
+
+    /// The number of frames accumulated since the last [`Self::clear`].
+    pub fn frame_count(&self) -> u64 {
+        self.count
+    }
+
+    /// Renderer-only total per frame, oldest first.
+    pub fn render_ms(&self) -> &VecDeque<f32> {
+        &self.render_ms
+    }
+
+    /// Per-stage durations over time, oldest first.
+    pub fn history(&self) -> &VecDeque<Vec<f64>> {
+        &self.history
+    }
+
+    /// Timestamps of the retained graph frames, oldest first.
+    pub fn history_times(&self) -> &VecDeque<f64> {
+        &self.history_times
+    }
+
+    /// Wall-clock frame delta per retained graph frame, in milliseconds.
+    pub fn cdt_history(&self) -> &VecDeque<f32> {
+        &self.cdt_history
+    }
+
+    /// The first index of the retained frames that fall within the last
+    /// `seconds` seconds.
+    pub fn window_start(&self, seconds: f64) -> usize {
+        let Some(latest) = self.history_times.back().copied() else {
+            return 0;
+        };
+
+        if !seconds.is_finite() {
+            return 0;
+        }
+
+        let cutoff = latest - seconds.max(0.0);
+
+        self.history_times
+            .iter()
+            .position(|time| *time >= cutoff)
+            .unwrap_or(self.history_times.len())
+    }
+
+    /// Records one frame's worth of stage durations, in [`TIMING_STAGES`]
+    /// order.
+    ///
+    /// This keeps graph history enabled indefinitely and is primarily useful
+    /// for tests and simple callers. The runtime uses
+    /// [`Self::record_at`] with a [`TimingsHistoryConfig`].
+    ///
+    /// `durations` must have exactly [`TIMING_STAGES`] entries; anything else
+    /// is ignored, so a mismatch in the runtime can't corrupt the history.
+    pub fn record(&mut self, durations: &[f64]) {
+        let elapsed = self.count as f64 / 60.0;
+
+        self.record_at(
+            durations,
+            elapsed,
+            0.0,
+            TimingsHistoryConfig {
+                enabled: true,
+                window_secs: f64::INFINITY,
+            },
+        );
+    }
+
+    /// Records one frame's stage durations and graph metrics.
+    ///
+    /// The cumulative statistics always update. Graph history only grows while
+    /// `config.enabled` is set; otherwise any retained graph history is
+    /// cleared. When enabled, frames older than `config.window_secs` are
+    /// evicted.
+    pub fn record_at(
+        &mut self,
+        durations: &[f64],
+        elapsed: f64,
+        cdt_ms: f64,
+        config: TimingsHistoryConfig,
+    ) {
+        if durations.len() != self.samples.len() {
+            return;
+        }
+
+        let first_window_sample = self.window_count == 0;
+        self.count += 1;
+        self.window_count += 1;
+        self.window_cdt_total += cdt_ms;
+        self.window_cdt_values.push(cdt_ms);
+
+        // Seed cumulative min/max from the first sample, and window min/max
+        // from the first sample of each window. Starting them at 0.0 would
+        // pin `min_ms` at 0 forever, since durations are never negative.
+        let first_overall = self.count == 1;
+
+        for (index, &duration) in durations.iter().enumerate() {
+            self.totals[index] += duration;
+            self.window_totals[index] += duration;
+            self.window_values[index].push(duration);
+
+            if first_window_sample {
+                self.window_min[index] = duration;
+                self.window_max[index] = duration;
+            } else {
+                self.window_min[index] = self.window_min[index].min(duration);
+                self.window_max[index] = self.window_max[index].max(duration);
+            }
+
+            let sample = &mut self.samples[index];
+            sample.last_ms = duration;
+
+            if first_overall {
+                sample.min_ms = duration;
+                sample.max_ms = duration;
+            } else {
+                sample.min_ms = sample.min_ms.min(duration);
+                sample.max_ms = sample.max_ms.max(duration);
+            }
+        }
+
+        let n = self.count as f64;
+        for (index, sample) in self.samples.iter_mut().enumerate() {
+            sample.avg_ms = self.totals[index] / n;
+        }
+
+        if !config.enabled {
+            if !self.history.is_empty() {
+                self.history.clear();
+                self.render_ms.clear();
+                self.history_times.clear();
+                self.cdt_history.clear();
+            }
+
+            return;
+        }
+
+        self.history_times.push_back(elapsed);
+        self.render_ms
+            .push_back(durations[RENDER_TOTAL_STAGE_INDEX] as f32);
+        self.cdt_history.push_back(cdt_ms as f32);
+        self.history.push_back(durations.to_vec());
+
+        while self.history.len() > Self::HISTORY_LEN {
+            self.history.pop_front();
+            self.render_ms.pop_front();
+            self.history_times.pop_front();
+            self.cdt_history.pop_front();
+        }
+
+        if config.window_secs.is_finite() {
+            let cutoff = elapsed - config.window_secs.max(0.0);
+
+            while self
+                .history_times
+                .front()
+                .is_some_and(|time| *time < cutoff)
+            {
+                self.history.pop_front();
+                self.render_ms.pop_front();
+                self.history_times.pop_front();
+                self.cdt_history.pop_front();
+            }
+        }
+    }
+
+    /// Resets the accumulating statistics, keeping the history and `last_ms`.
+    ///
+    /// `avg_ms`/`min_ms`/`max_ms` are re-derived from the first frame recorded
+    /// after this call, so they read as zero in the meantime.
+    pub fn clear(&mut self) {
+        self.totals.iter_mut().for_each(|total| *total = 0.0);
+        self.count = 0;
+        self.samples.iter_mut().for_each(|sample| {
+            sample.avg_ms = 0.0;
+            sample.min_ms = 0.0;
+            sample.max_ms = 0.0;
+        });
+        self.gpu_timestamp_health = GpuTimestampHealth::default();
+    }
+
+    /// Emits the `info!` timing summary at most once per second, returning the
+    /// per-stage averages over that window.
+    ///
+    /// The accumulating statistics are untouched, so the summary and a debug
+    /// overlay reading [`Self::samples`] never interfere.
+    pub fn try_log(&mut self) -> Option<Vec<f64>> {
+        self.try_log_if(true)
+    }
+
+    /// Like [`Self::try_log`], but only emits the summary when `enabled` is
+    /// set.
+    ///
+    /// The one-second window is reset either way, so enabling logging starts
+    /// with a fresh sample rather than a backlog accumulated while it was off.
+    /// The return value is `Some` only when a line was emitted.
+    pub fn try_log_if(&mut self, enabled: bool) -> Option<Vec<f64>> {
+        self.try_log_window(enabled)
+            .and_then(|averages| enabled.then_some(averages))
+    }
+
+    /// Takes the current one-second window, optionally emitting the console
+    /// summary.
+    ///
+    /// The returned value contains per-stage mean/min/max/p95 plus wall-clock
+    /// frame-delta statistics. Unlike [`Self::try_log_if`], it returns the
+    /// window even when the console line is suppressed.
+    pub fn take_window(&mut self, console: bool) -> Option<TimingWindow> {
+        if self.window_count == 0
+            || self.last_print.elapsed().as_secs_f64() < Self::LOG_INTERVAL_SECS
+        {
+            return None;
+        }
+
+        let n = self.window_count as f64;
+        let averages = self
+            .window_totals
+            .iter()
+            .map(|total| total / n)
+            .collect::<Vec<_>>();
+        let min = self.window_min.clone();
+        let max = self.window_max.clone();
+        let p95 = self
+            .window_values
+            .iter()
+            .map(|values| percentile(values, 0.95))
+            .collect::<Vec<_>>();
+
+        let mut cdt_values = self.window_cdt_values.clone();
+        cdt_values.sort_by(|a, b| a.total_cmp(b));
+        let cdt_mean_ms = self.window_cdt_total / n;
+        let cdt_min_ms = cdt_values.first().copied().unwrap_or(0.0);
+        let cdt_max_ms = cdt_values.last().copied().unwrap_or(0.0);
+        let cdt_p95_ms = percentile_sorted(&cdt_values, 0.95);
+
+        let window = TimingWindow {
+            averages: averages.clone(),
+            min,
+            max,
+            p95,
+            frames: self.window_count,
+            cdt_mean_ms,
+            cdt_min_ms,
+            cdt_max_ms,
+            cdt_p95_ms,
+        };
+
+        if console {
+            let mut line = format!("TIMING avg({} frames):", self.window_count);
+            for (index, name) in TIMING_STAGES.iter().enumerate() {
+                if index == GPU_STAGE_START {
+                    line.push_str(" |");
+                }
+                line.push_str(&format!(" {name}={:.2}ms", averages[index]));
+            }
+            info!("{line}");
+        }
+
+        self.window_totals.iter_mut().for_each(|total| *total = 0.0);
+        self.window_values
+            .iter_mut()
+            .for_each(|values| values.clear());
+        self.window_cdt_total = 0.0;
+        self.window_cdt_values.clear();
+        self.window_count = 0;
+        self.last_print = std::time::Instant::now();
+
+        Some(window)
+    }
+
+    /// Takes the current window and returns only the per-stage means.
+    ///
+    /// Kept for callers that do not need the distribution columns.
+    pub fn try_log_window(&mut self, console: bool) -> Option<Vec<f64>> {
+        self.take_window(console).map(|window| window.averages)
+    }
+}
+
+/// 95th percentile of `values`, ignoring sort order.
+fn percentile(values: &[f64], q: f64) -> f64 {
+    let mut values = values.to_vec();
+    values.sort_by(|a, b| a.total_cmp(b));
+    percentile_sorted(&values, q)
+}
+
+fn percentile_sorted(values: &[f64], q: f64) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+
+    let index = ((values.len() - 1) as f64 * q.clamp(0.0, 1.0)).round() as usize;
+    values[index]
+}
+
+impl Default for FrameTimings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Input & window
+// ---------------------------------------------------------------------------
+
+/// Current mouse cursor position in window coordinates, as reported by the
+/// most recent `CursorMoved` event.
+///
+/// Written from the winit event handler (at event time), potentially
+/// multiple times between redraws. Systems that read this see the *latest*
+/// position at the start of the frame.
+#[derive(Debug, Clone, Copy)]
+pub struct CursorPosition(pub Vector2<f64>);
+
+/// Current window dimensions in logical pixels.
+///
+/// Written from the `Resized` winit event handler. Updated asynchronously
+/// relative to the frame loop.
+#[derive(Debug, Clone, Copy)]
+pub struct WindowSize(pub Vector2<u32>);
+
+/// Controls whether the mouse cursor is grabbed and hidden on startup.
+///
+/// Set this resource during `Module::setup()` to have the engine
+/// automatically grab the cursor — no need to push `CursorGrabbed` events.
+#[derive(Debug, Clone, Copy)]
+pub struct CursorGrabConfig(pub bool);
+
+/// Live cursor grab state — updated by [`CursorToggle`](ignit_app::systems::CursorToggle)
+/// and read by the camera controller to skip mouse rotation when the cursor is free.
+#[derive(Debug, Clone, Copy)]
+pub struct CursorGrabState(pub bool);
+
+/// A snapshot of the engine's aggregated input state at the start of the
+/// current frame.
+///
+/// Cloned from `AppRuntime::input_state` just before schedules run, so
+/// systems see a deterministic input state for the entire frame even if
+/// more input events arrive during system execution.
+#[derive(Debug, Clone)]
+pub struct InputSnapshot(pub ignit_input::InputState);
+
+// ---------------------------------------------------------------------------
+// GPU device / queue wrappers
+// ---------------------------------------------------------------------------
+
+/// Shared reference to the wgpu [`Device`].
+///
+/// Wrapped in `Arc` because `Device` implements neither `Clone` nor `Copy`,
+/// but systems only need shared access for resource creation / queries
+/// (all `Device` methods take `&self`).
+#[derive(Debug, Clone)]
+pub struct DeviceResource(pub Arc<wgpu::Device>);
+
+/// Shared reference to the wgpu [`Queue`].
+///
+/// Wrapped in `Arc` — `Queue::write_buffer` and friends take `&self`,
+/// so shared access suffices for most use cases.
+#[derive(Debug, Clone)]
+pub struct QueueResource(pub Arc<wgpu::Queue>);
+
+/// Shared reference to the wgpu [`Adapter`].
+///
+/// Needed by iced's `Engine::new()` to construct its renderer.
+#[derive(Debug, Clone)]
+pub struct AdapterResource(pub Arc<wgpu::Adapter>);
+
+/// An owned window event relevant to iced UI processing.
+///
+/// Stored in [`IcedEventQueue`] so the iced overlay can consume events
+/// without lifetime issues from `winit::event::WindowEvent<'_>`.
+#[derive(Debug, Clone)]
+pub enum IcedWindowEvent {
+    CursorMoved {
+        position: winit::dpi::PhysicalPosition<f64>,
+    },
+    MouseInput {
+        state: winit::event::ElementState,
+        button: winit::event::MouseButton,
+    },
+    MouseWheel {
+        delta: winit::event::MouseScrollDelta,
+    },
+    KeyboardInput {
+        event: winit::event::KeyEvent,
+        is_synthetic: bool,
+    },
+    ModifiersChanged(winit::keyboard::ModifiersState),
+    Resized(winit::dpi::PhysicalSize<u32>),
+    Focused(bool),
+    RedrawRequested,
+    /// A touch event. On Android (and other touch-only platforms) winit emits
+    /// *only* `WindowEvent::Touch` — no synthetic mouse events — so this is the
+    /// sole pointer input iced can consume there.
+    Touch(winit::event::Touch),
+}
+
+/// Queue of winit events to be forwarded to iced UI overlays.
+///
+/// Populated each frame by `module_runtime.rs` before overlay rendering.
+/// Consumed by `IcedLayerRenderer::render()` and drained.
+pub struct IcedEventQueue {
+    pub events: Vec<IcedWindowEvent>,
+    pub cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
+    pub modifiers: winit::keyboard::ModifiersState,
+    pub scale_factor: f64,
+}
+
+impl Default for IcedEventQueue {
+    fn default() -> Self {
+        Self {
+            events: Vec::new(),
+            cursor_position: None,
+            modifiers: winit::keyboard::ModifiersState::empty(),
+            scale_factor: 1.0,
+        }
+    }
+}
+
+impl IcedEventQueue {
+    pub fn push(&mut self, event: IcedWindowEvent) {
+        match &event {
+            IcedWindowEvent::CursorMoved { position } => {
+                self.cursor_position = Some(*position);
+            }
+            // Like `iced_winit::window::State::update`, a touch updates the
+            // cursor position too — otherwise the cursor stays `Unavailable`
+            // on touch-only platforms and *all* hit-testing fails.
+            IcedWindowEvent::Touch(touch) => {
+                self.cursor_position = Some(touch.location);
+            }
+            IcedWindowEvent::ModifiersChanged(mods) => {
+                self.modifiers = *mods;
+            }
+            _ => {}
+        }
+        self.events.push(event);
+    }
+
+    pub fn set_scale_factor(&mut self, scale: f64) {
+        self.scale_factor = scale;
+    }
+
+    pub fn drain(&mut self) -> Vec<IcedWindowEvent> {
+        std::mem::take(&mut self.events)
+    }
+}
+
+/// Winit touch ids currently **captured** by an iced UI overlay.
+///
+/// Populated by the iced overlay renderers (`ignit_iced`): whenever a
+/// `WindowEvent::Touch` is converted and handed to iced and the widget tree
+/// consumes it (`event::Status::Captured` — e.g. a button press, a
+/// `FloatingPanel` title-bar drag or a slider), the touch id is inserted
+/// here. Lifted/lost fingers are removed again so stale ids cannot
+/// accumulate.
+///
+/// `module_runtime.rs` consults this resource *before* feeding touch events
+/// into the engine's game-input path (`ignit_input::InputState`), so that
+/// touches interacting with UI panels don't also drive the virtual joystick
+/// or the drag-to-look camera. The iced event queue itself keeps receiving
+/// every touch event regardless — capture only masks the game-input path.
+///
+/// Mirrors [`IcedEventQueue`]: populated during the render pass (iced
+/// consumes events *while* rendering), which means capture information for a
+/// freshly pressed finger is one frame late. The consumer compensates by
+/// synthesizing a `TouchPhase::Cancelled` for the finger once, fully
+/// releasing it from the game-input state.
+#[derive(Debug, Clone, Default)]
+pub struct IcedCapturedTouches(pub hashbrown::HashSet<u64>);
+
+impl IcedCapturedTouches {
+    /// Whether the given winit touch id is currently captured by the UI.
+    pub fn contains(&self, touch_id: u64) -> bool {
+        self.0.contains(&touch_id)
+    }
+
+    /// Mark a touch id as captured by the UI. Returns `true` if the id was
+    /// newly inserted (i.e. it wasn't captured already).
+    pub fn capture(&mut self, touch_id: u64) -> bool {
+        self.0.insert(touch_id)
+    }
+
+    /// Release a touch id (finger lifted/lost/cancelled).
+    pub fn release(&mut self, touch_id: u64) {
+        self.0.remove(&touch_id);
+    }
+
+    /// Whether any finger is currently captured by the UI.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+/// Whether the current mouse-button drag is owned by the iced UI.
+///
+/// Set when iced reports `Status::Captured` for a primary-button press
+/// (the press started on a widget), cleared when the button is released
+/// or focus is lost. The mouse-event path itself is not masked — the
+/// camera controller reads this to keep drag-to-look from also firing
+/// while the user is dragging a UI element.
+///
+/// Mirrors [`IcedCapturedTouches`]: populated during
+/// `process_events()`. Unlike touch capture there is no need to defer
+/// game input — the camera system runs after `process_events()` within
+/// the same update, so the verdict is always current when look deltas
+/// are consumed.
+#[derive(Debug, Clone, Default)]
+pub struct IcedCapturedMouseDrag(pub bool);
+
+impl IcedCapturedMouseDrag {
+    /// Mark the current mouse drag as captured by the UI.
+    pub fn capture(&mut self) {
+        self.0 = true;
+    }
+
+    /// End capture (button released or focus lost).
+    pub fn release(&mut self) {
+        self.0 = false;
+    }
+}
+
+/// Whether an iced overlay captured the mouse wheel during the current update.
+///
+/// A wheel is an instantaneous event rather than a gesture, so the runtime
+/// clears this before `process_events()` and each renderer sets it when the
+/// wheel's event status is `Status::Captured`. The runtime then decides whether
+/// the wheel events it deferred in `window_event` reach the game's input state.
+#[derive(Debug, Clone, Default)]
+pub struct IcedCapturedMouseWheel(pub bool);
+
+/// Whether a text input in an iced overlay currently has keyboard focus.
+///
+/// The overlay renderers set this each update by probing the widget tree. The
+/// runtime suppresses game input while it is set, so typing into a debug field
+/// cannot also move the player or rotate the camera.
+#[derive(Debug, Clone, Default)]
+pub struct IcedTextInputFocus(pub bool);
+
+// ---------------------------------------------------------------------------
+// Engine events (replace AppEvent)
+// ---------------------------------------------------------------------------
+
+/// Engine-level events that systems can emit and the runtime processes.
+///
+/// Systems push events into the `EngineEvents` resource during their execution.
+/// After all schedules run, the runtime drains and processes them.
+#[derive(Debug, Clone)]
+pub enum EngineEvent {
+    /// Grab or release the mouse cursor.
+    CursorGrabbed(bool),
+    /// Show or hide the mouse cursor.
+    CursorVisible(bool),
+    /// Request application closure (graceful exit).
+    RequestClose,
+    /// Force application closure with an exit code.
+    ForceClose { exit_code: i32 },
+    /// Request a window redraw.
+    RequestRedraw,
+}
+
+/// Collection of engine events emitted by systems during the current frame.
+///
+/// Inserted as an ECS resource. Systems push events via `ResMut<EngineEvents>`.
+/// The runtime drains this after schedules finish and processes each event.
+#[derive(Debug, Clone, Default)]
+pub struct EngineEvents(pub Vec<EngineEvent>);
+
+impl EngineEvents {
+    pub fn push(&mut self, event: EngineEvent) {
+        self.0.push(event);
+    }
+
+    pub fn drain(&mut self) -> Vec<EngineEvent> {
+        std::mem::take(&mut self.0)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A frame whose CPU stages each took `cpu_total`, with no GPU timestamps.
+    fn frame(cpu_total: f64) -> Vec<f64> {
+        let mut durations = vec![cpu_total; STAGE_RENDER_TOTAL];
+        durations.resize(TIMING_STAGES.len(), 0.0);
+        durations[RENDER_TOTAL_STAGE_INDEX] = cpu_total;
+        durations
+    }
+
+    #[test]
+    fn frame_timings_starts_with_healthy_gpu_timestamps() {
+        let timings = FrameTimings::new();
+        let health = timings.gpu_timestamp_health();
+
+        assert!(!health.supported());
+        assert!(!health.is_stale());
+        assert_eq!(health.stale_frames(), 0);
+    }
+
+    #[test]
+    fn gpu_timestamp_health_counts_repeated_generations() {
+        let mut health = GpuTimestampHealth::default();
+
+        health.update(true, 0);
+        assert!(health.supported());
+        assert!(!health.is_stale(), "the first sample cannot be stale");
+
+        health.update(true, 0);
+        assert!(health.is_stale());
+        assert_eq!(health.stale_frames(), 1);
+
+        health.update(true, 0);
+        assert_eq!(health.stale_frames(), 2);
+
+        health.update(true, 7);
+        assert!(!health.is_stale(), "a new generation refreshes the sample");
+        assert_eq!(health.stale_frames(), 0);
+
+        health.update(false, 7);
+        assert!(!health.supported());
+        assert!(!health.is_stale());
+        assert_eq!(health.stale_frames(), 0);
+    }
+
+    #[test]
+    fn frame_timings_starts_zeroed_with_named_stages() {
+        let timings = FrameTimings::new();
+
+        assert_eq!(timings.samples().len(), TIMING_STAGES.len());
+        assert_eq!(timings.frame_count(), 0);
+        assert!(timings.render_ms().is_empty());
+        assert!(timings.history().is_empty());
+
+        for (index, sample) in timings.samples().iter().enumerate() {
+            assert_eq!(sample.name, TIMING_STAGES[index]);
+            assert_eq!(sample.last_ms, 0.0);
+            assert_eq!(sample.avg_ms, 0.0);
+        }
+    }
+
+    #[test]
+    fn frame_timings_tracks_last_avg_min_max() {
+        let mut timings = FrameTimings::new();
+
+        for value in [2.0, 4.0, 6.0] {
+            timings.record(&frame(value));
+        }
+
+        assert_eq!(timings.frame_count(), 3);
+
+        for index in 0..STAGE_RENDER_TOTAL {
+            let sample = timings.samples()[index];
+            assert_eq!(sample.last_ms, 6.0, "stage {index}");
+            assert_eq!(sample.avg_ms, 4.0, "stage {index}");
+            assert_eq!(sample.min_ms, 2.0, "stage {index}");
+            assert_eq!(sample.max_ms, 6.0, "stage {index}");
+        }
+
+        // The GPU stages were left at zero because no timestamps were supplied.
+        for index in GPU_STAGE_START..TIMING_STAGES.len() {
+            let sample = timings.samples()[index];
+            assert_eq!(sample.last_ms, 0.0, "stage {index}");
+            assert_eq!(sample.max_ms, 0.0, "stage {index}");
+        }
+    }
+
+    #[test]
+    fn frame_timings_ignores_malformed_frames() {
+        let mut timings = FrameTimings::new();
+
+        timings.record(&[1.0, 2.0]);
+        timings.record(&vec![1.0; TIMING_STAGES.len() + 1]);
+        timings.record(&[]);
+
+        assert_eq!(timings.frame_count(), 0);
+        assert!(timings.history().is_empty());
+    }
+
+    #[test]
+    fn frame_timings_history_is_capped_and_oldest_first() {
+        let mut timings = FrameTimings::new();
+
+        let total = FrameTimings::HISTORY_LEN + 10;
+        for index in 0..total {
+            timings.record(&frame(index as f64));
+        }
+
+        assert_eq!(timings.frame_count(), total as u64);
+        assert_eq!(timings.render_ms().len(), FrameTimings::HISTORY_LEN);
+        assert_eq!(timings.history().len(), FrameTimings::HISTORY_LEN);
+
+        // Oldest retained sample is 10 frames back, newest is the last one.
+        let render_ms = timings.render_ms();
+        assert_eq!(*render_ms.front().expect("non-empty"), 10.0);
+        assert_eq!(*render_ms.back().expect("non-empty"), (total - 1) as f32);
+
+        let history = timings.history();
+        assert_eq!(history[0][0], 10.0);
+        assert_eq!(history[0].len(), TIMING_STAGES.len());
+    }
+
+    #[test]
+    fn graph_history_respects_the_selected_window() {
+        let mut timings = FrameTimings::new();
+        let config = TimingsHistoryConfig {
+            enabled: true,
+            window_secs: 1.0,
+        };
+
+        for index in 0..10 {
+            timings.record_at(&frame(index as f64), index as f64 * 0.5, 16.0, config);
+        }
+
+        // Times are 0.0, 0.5, ... 4.5. A 1s window keeps 3.5, 4.0 and 4.5.
+        assert_eq!(timings.history().len(), 3);
+        assert_eq!(timings.render_ms().len(), 3);
+        assert_eq!(timings.cdt_history().len(), 3);
+        assert_eq!(
+            timings.history_times().front().copied(),
+            Some(3.5),
+            "older frames are evicted"
+        );
+        assert_eq!(timings.cdt_history().back().copied(), Some(16.0));
+    }
+
+    #[test]
+    fn disabling_graph_history_clears_it() {
+        let mut timings = FrameTimings::new();
+        let config = TimingsHistoryConfig {
+            enabled: true,
+            window_secs: 10.0,
+        };
+
+        timings.record_at(&frame(1.0), 0.0, 16.0, config);
+        assert_eq!(timings.history().len(), 1);
+
+        timings.record_at(
+            &frame(2.0),
+            1.0,
+            16.0,
+            TimingsHistoryConfig {
+                enabled: false,
+                window_secs: 10.0,
+            },
+        );
+
+        assert!(timings.history().is_empty());
+        assert!(timings.render_ms().is_empty());
+        assert!(timings.history_times().is_empty());
+        assert!(timings.cdt_history().is_empty());
+        assert_eq!(timings.frame_count(), 2, "cumulative stats still update");
+    }
+
+    #[test]
+    fn window_start_returns_the_first_frame_inside_the_window() {
+        let mut timings = FrameTimings::new();
+        let config = TimingsHistoryConfig {
+            enabled: true,
+            window_secs: 10.0,
+        };
+
+        for index in 0..4 {
+            timings.record_at(&frame(index as f64), index as f64 * 0.5, 0.0, config);
+        }
+
+        // Latest time is 1.5.
+        assert_eq!(timings.window_start(10.0), 0);
+        assert_eq!(timings.window_start(1.0), 1, "0.5 is the first >= 0.5");
+        assert_eq!(timings.window_start(0.25), 3, "1.5 is the first >= 1.25");
+    }
+
+    #[test]
+    fn frame_timings_clear_resets_stats_but_keeps_history() {
+        let mut timings = FrameTimings::new();
+
+        timings.record(&frame(2.0));
+        timings.record(&frame(4.0));
+        assert_eq!(timings.render_ms().len(), 2);
+
+        timings.clear();
+
+        assert_eq!(timings.frame_count(), 0);
+        assert_eq!(timings.render_ms().len(), 2, "history should survive clear");
+        assert_eq!(timings.samples()[0].avg_ms, 0.0);
+        assert_eq!(timings.samples()[0].min_ms, 0.0);
+        assert_eq!(timings.samples()[0].max_ms, 0.0);
+        assert_eq!(timings.samples()[0].last_ms, 4.0, "last is untouched");
+
+        // A fresh window restarts min/max from the first frame in it, rather
+        // than carrying the previous window's extremes forward.
+        timings.record(&frame(1.0));
+        let sample = timings.samples()[0];
+        assert_eq!(sample.avg_ms, 1.0);
+        assert_eq!(sample.min_ms, 1.0);
+        assert_eq!(sample.max_ms, 1.0);
+
+        timings.record(&frame(3.0));
+        let sample = timings.samples()[0];
+        assert_eq!(sample.avg_ms, 2.0);
+        assert_eq!(sample.min_ms, 1.0);
+        assert_eq!(sample.max_ms, 3.0);
+    }
+
+    #[test]
+    fn frame_timings_log_window_is_independent_of_accumulated_stats() {
+        let mut timings = FrameTimings::new();
+
+        // Not enough wall-clock time has passed, so nothing is logged yet.
+        timings.record(&frame(2.0));
+        assert!(timings.try_log().is_none());
+        assert_eq!(timings.frame_count(), 1, "logging must not reset the stats");
+
+        // Backdate the window so the next call logs.
+        timings.last_print = std::time::Instant::now() - std::time::Duration::from_secs(2);
+        let logged = timings.try_log().expect("should log after the interval");
+
+        assert_eq!(logged.len(), TIMING_STAGES.len());
+        // The CPU stages were recorded; the GPU ones had no timestamps.
+        for value in &logged[..STAGE_RENDER_TOTAL] {
+            assert!(*value > 0.0);
+        }
+        for value in &logged[GPU_STAGE_START..] {
+            assert_eq!(*value, 0.0);
+        }
+
+        // Window resets, accumulated statistics do not.
+        assert_eq!(timings.window_count, 0);
+        assert_eq!(timings.frame_count(), 1);
+        assert_eq!(timings.samples()[0].avg_ms, 2.0);
+
+        // And it won't log again until another second has passed.
+        assert!(timings.try_log().is_none());
+    }
+
+    #[test]
+    fn frame_timings_window_reports_distributions_and_cdt() {
+        let mut timings = FrameTimings::new();
+
+        for value in [1.0, 2.0, 3.0, 4.0, 100.0] {
+            timings.record_at(
+                &frame(value),
+                value,
+                value * 2.0,
+                TimingsHistoryConfig::default(),
+            );
+        }
+        timings.last_print = std::time::Instant::now() - std::time::Duration::from_secs(2);
+
+        let window = timings.take_window(false).expect("window is ready");
+        assert_eq!(window.frames, 5);
+        assert_eq!(window.averages[0], 22.0);
+        assert_eq!(window.min[0], 1.0);
+        assert_eq!(window.max[0], 100.0);
+        assert_eq!(window.p95[0], 100.0);
+        assert_eq!(window.cdt_mean_ms, 44.0);
+        assert_eq!(window.cdt_min_ms, 2.0);
+        assert_eq!(window.cdt_max_ms, 200.0);
+        assert_eq!(window.cdt_p95_ms, 200.0);
+        assert_eq!(timings.window_count, 0);
+    }
+
+    #[test]
+    fn frame_timings_window_is_available_without_console_logging() {
+        let mut timings = FrameTimings::new();
+
+        timings.record(&frame(2.0));
+        timings.last_print = std::time::Instant::now() - std::time::Duration::from_secs(2);
+
+        let averages = timings
+            .try_log_window(false)
+            .expect("CSV capture should receive the window");
+        assert_eq!(averages[0], 2.0);
+        assert_eq!(timings.window_count, 0);
+    }
+
+    #[test]
+    fn frame_timings_disabled_log_resets_the_window_without_logging() {
+        let mut timings = FrameTimings::new();
+
+        timings.record(&frame(2.0));
+        timings.last_print = std::time::Instant::now() - std::time::Duration::from_secs(2);
+
+        assert!(timings.try_log_if(false).is_none());
+        assert_eq!(timings.window_count, 0, "disabled logging still resets");
+        assert_eq!(timings.frame_count(), 1, "accumulated stats are untouched");
+
+        // Re-enabling starts a fresh one-second window rather than logging the
+        // sample collected while logging was disabled.
+        timings.record(&frame(4.0));
+        assert!(timings.try_log_if(true).is_none());
+
+        timings.last_print = std::time::Instant::now() - std::time::Duration::from_secs(2);
+        let logged = timings
+            .try_log_if(true)
+            .expect("should log after re-enabling");
+        assert_eq!(logged[0], 4.0);
+    }
+
+    #[test]
+    fn engine_events_push_drain() {
+        let mut events = EngineEvents::default();
+        events.push(EngineEvent::RequestClose);
+        events.push(EngineEvent::CursorGrabbed(true));
+
+        let drained = events.drain();
+        assert_eq!(drained.len(), 2);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn engine_events_is_empty() {
+        let mut events = EngineEvents::default();
+        assert!(events.is_empty());
+
+        events.push(EngineEvent::RequestRedraw);
+        assert!(!events.is_empty());
+
+        events.drain();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn engine_events_drain_takes_all() {
+        let mut events = EngineEvents::default();
+        for i in 0..10 {
+            events.push(EngineEvent::ForceClose { exit_code: i });
+        }
+        let drained = events.drain();
+        assert_eq!(drained.len(), 10);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn iced_captured_touches_lifecycle() {
+        let mut captured = IcedCapturedTouches::default();
+        assert!(captured.is_empty());
+        assert!(!captured.contains(42));
+
+        // A widget captures the finger...
+        captured.capture(42);
+        assert!(captured.contains(42));
+        assert!(!captured.is_empty());
+
+        // ...and the finger is eventually lifted.
+        captured.release(42);
+        assert!(!captured.contains(42));
+        assert!(captured.is_empty());
+    }
+
+    #[test]
+    fn iced_captured_touches_track_multiple_fingers() {
+        let mut captured = IcedCapturedTouches::default();
+
+        captured.capture(1);
+        captured.capture(2);
+        assert!(captured.contains(1) && captured.contains(2));
+
+        // Releasing one finger must not disturb the other (multi-touch:
+        // one finger on the UI while another drives the camera).
+        captured.release(1);
+        assert!(!captured.contains(1));
+        assert!(captured.contains(2));
+
+        // Capturing again is idempotent.
+        captured.capture(2);
+        assert!(captured.contains(2));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared caches for model realization (mesh + material deduplication)
+// ---------------------------------------------------------------------------
+
+/// Shared mesh cache — maps `Arc<MeshDescriptor>` → `Mesh`.
+/// Used by the model realization system to avoid re-uploading identical meshes.
+/// Wrapped in `Arc` so it can be cloned for use in `Model::from_descriptor`.
+pub type MeshCacheResource = Arc<
+    std::sync::RwLock<
+        ignit_core::cache::Cache<std::sync::Arc<ignit_mesh::MeshDescriptor>, ignit_mesh::Mesh>,
+    >,
+>;
+
+/// Shared material cache — maps `Arc<MaterialShaderDescriptor>` → `MaterialShader`.
+/// Used by the model realization system to avoid re-creating identical materials.
+/// Wrapped in `Arc` so it can be cloned for use in `Model::from_descriptor`.
+pub type MaterialCacheResource = Arc<
+    std::sync::RwLock<
+        ignit_core::cache::Cache<
+            std::sync::Arc<ignit_material_shader::MaterialShaderDescriptor>,
+            ignit_material_shader::MaterialShader,
+        >,
+    >,
+>;
+
+/// Device-wide render pipeline cache shared by realized materials.
+#[derive(Debug, Clone, Default)]
+pub struct PipelineCacheResource(pub Arc<std::sync::Mutex<ignit_material_shader::PipelineCache>>);
+
+/// Current surface texture format (set on resume/resize).
+#[derive(Debug, Clone, Copy)]
+pub struct SurfaceFormatResource(pub wgpu::TextureFormat);
+
+/// Unified light GPU buffer — all lights packed into a single storage buffer.
+/// Rebuilt by `realize_lights` when any light is dirty.
+#[derive(Debug, Clone)]
+pub struct LightBufferResource(pub Option<Arc<wgpu::Buffer>>);
+
+/// Current world environment descriptor (singleton).
+/// Set by the environment system when the user changes the HDRI/skybox.
+#[derive(Debug, Clone)]
+pub struct EnvironmentDescriptorResource(
+    pub Option<ignit_world_environment::WorldEnvironmentDescriptor>,
+);
+
+/// Realized world environment GPU state (IBL textures, skybox).
+/// Created by `realize_environment` from the descriptor.
+#[derive(Debug, Clone)]
+pub struct EnvironmentGpuResource(pub Option<Arc<ignit_world_environment::WorldEnvironment>>);
+
+/// GPU camera store — flat Vec indexed by entity.index.
+/// CameraRealization on entities holds the index into this store.
+/// This avoids the temporary-borrow problem with get_component_store.
+pub struct CameraStore {
+    cameras: Vec<Option<Arc<std::sync::RwLock<ignit_camera::Camera>>>>,
+}
+
+impl CameraStore {
+    pub fn new() -> Self {
+        Self {
+            cameras: Vec::new(),
+        }
+    }
+
+    pub fn insert(
+        &mut self,
+        entity_idx: usize,
+        camera: Arc<std::sync::RwLock<ignit_camera::Camera>>,
+    ) -> usize {
+        if entity_idx >= self.cameras.len() {
+            self.cameras.resize_with(entity_idx + 1, || None);
+        }
+        self.cameras[entity_idx] = Some(camera);
+        entity_idx
+    }
+
+    pub fn get(&self, entity_idx: usize) -> Option<&Arc<std::sync::RwLock<ignit_camera::Camera>>> {
+        self.cameras.get(entity_idx)?.as_ref()
+    }
+
+    pub fn remove(&mut self, entity_idx: usize) {
+        if let Some(slot) = self.cameras.get_mut(entity_idx) {
+            *slot = None;
+        }
+    }
+}
+
+impl Default for CameraStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Debug for CameraStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CameraStore")
+            .field("len", &self.cameras.len())
+            .finish()
+    }
+}
+
+/// IBL BRDF lookup texture — generated once, reused every frame.
+/// Stored as the IblBrdf generator itself so we can borrow the texture ref.
+pub struct IblBrdfResource(pub Option<ignit_ibl_brdf::IblBrdf>);
+
+impl Clone for IblBrdfResource {
+    fn clone(&self) -> Self {
+        Self(None)
+    }
+}
+
+impl std::fmt::Debug for IblBrdfResource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IblBrdfResource")
+            .field("has_brdf", &self.0.is_some())
+            .finish()
+    }
+}
+
+/// GPU culling state managed by the culling system.
+///
+/// `Some` holds the [`CullResources`] instance (GPU buffers + pipelines)
+/// after the first frame of culling. `None` means culling is not active.
+///
+/// The renderer reads from this resource to issue indirect draws.
+#[derive(Debug)]
+pub struct CullResource(pub Option<ignit_cull::CullResources>);
+
+/// Queue of pending import tasks (glTF files to load).
+#[derive(Debug, Default)]
+pub struct ImportQueueResource(pub Vec<ignit_importer_gltf::ImportTask>);
+
+impl ImportQueueResource {
+    pub fn push(&mut self, task: ignit_importer_gltf::ImportTask) {
+        self.0.push(task);
+    }
+}
+
+/// Results from completed imports, ready to be spawned as ECS entities.
+#[derive(Debug, Default)]
+pub struct ImportResultsResource(pub Vec<ignit_importer_gltf::ImportResult>);
+
+/// The glTF importer — owns the rayon thread pool and mpsc channels.
+/// Inserted as an ECS resource by the module during setup.
+pub struct ImporterResource(pub ignit_importer_gltf::Importer);
+
+impl ImporterResource {
+    pub fn new(allowed_parallel_tasks: u8) -> Self {
+        Self(ignit_importer_gltf::Importer::new(allowed_parallel_tasks))
+    }
+}
+
+// SAFETY: Importer wraps Mutex<Receiver> + Sender + ThreadPool, all Send+Sync.
+unsafe impl Send for ImporterResource {}
+unsafe impl Sync for ImporterResource {}
+
+impl std::fmt::Debug for ImporterResource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImporterResource").finish()
+    }
+}
+
+/// The frustum data captured when freezing.
+///
+/// See [`FrozenFrustum`].
+#[derive(Debug, Clone)]
+pub struct FrozenFrustumData {
+    pub frustum: ignit_camera::Frustum,
+    /// Stored so the debug overlay can draw the frozen frustum wireframe
+    /// without recomputing it from the planes.
+    pub perspective_view_projection_matrix: cgmath::Matrix4<f32>,
+}
+
+/// A frozen frustum captured at a specific camera position.
+///
+/// When `Some`, [`sys_frustum_cull`] uses it instead of the live camera
+/// frustum. This lets you move the camera around and see exactly which
+/// instances are culled.
+///
+/// Press F4 (in the main loop) to toggle capture.
+#[derive(Debug, Clone)]
+pub struct FrozenFrustum(pub Option<FrozenFrustumData>);
+
+/// Entity currently selected in the ECS debug panel.
+///
+/// The debug renderer uses it for the optional selection highlight. It is a
+/// separate resource so `ignit_debug_render` does not need to depend on
+/// `ignit_debug_ui`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DebugSelectedEntity(pub Option<ignit_ecs::Entity>);
+
+/// Shadow slot data from the previous shadow pass, for debug visualisation.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ShadowDebugData(pub ignit_shadow::ShadowGpuData);
+
+// ---------------------------------------------------------------------------
+// Light scheduling & shadow caching
+// ---------------------------------------------------------------------------
+
+/// Maximum number of lights in the GPU storage buffer.
+/// Buffer is pre-allocated at MAX_LIGHTS * 64 bytes.
+pub const MAX_LIGHTS: u32 = 256;
+
+/// Default maximum number of shadow-casting lights to update per frame.
+/// Configurable via [`StaggeredLightConfig`].
+pub const DEFAULT_MAX_UPDATES_PER_FRAME: u32 = 1;
+
+/// Tracks stable slot assignments for light entities in the GPU buffer.
+///
+/// When a light is first realized, it gets assigned the next free slot.
+/// When removed, its slot is returned to the free list and the slot is
+/// zeroed out (intensity=0) to disable it in the shader.
+#[derive(Debug, Clone)]
+pub struct LightSlotTracker {
+    pub entity_to_slot: Vec<Option<u32>>,
+    pub free_slots: Vec<u32>,
+    pub slot_count: u32,
+}
+
+impl LightSlotTracker {
+    pub fn new() -> Self {
+        Self {
+            entity_to_slot: Vec::new(),
+            free_slots: Vec::new(),
+            slot_count: 0,
+        }
+    }
+
+    pub fn allocate(&mut self, entity_id: usize) -> u32 {
+        if let Some(slot) = self.free_slots.pop() {
+            self.ensure_entity_idx(entity_id);
+            self.entity_to_slot[entity_id] = Some(slot);
+            slot
+        } else {
+            let slot = self.slot_count;
+            self.slot_count += 1;
+            self.ensure_entity_idx(entity_id);
+            self.entity_to_slot[entity_id] = Some(slot);
+            slot
+        }
+    }
+
+    pub fn free(&mut self, entity_id: usize) {
+        if entity_id < self.entity_to_slot.len()
+            && let Some(slot) = self.entity_to_slot[entity_id].take()
+        {
+            self.free_slots.push(slot);
+        }
+    }
+
+    pub fn get(&self, entity_id: usize) -> Option<u32> {
+        self.entity_to_slot.get(entity_id).copied().flatten()
+    }
+
+    fn ensure_entity_idx(&mut self, entity_id: usize) {
+        if entity_id >= self.entity_to_slot.len() {
+            self.entity_to_slot.resize(entity_id + 1, None);
+        }
+    }
+}
+
+impl Default for LightSlotTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Cached shadow-casting light state used for change detection.
+///
+/// Before rendering shadow maps, the current light state is compared
+/// against this cache. If nothing changed, the shadow map is reused.
+#[derive(Debug, Clone)]
+pub struct ShadowCachedLightState {
+    pub position: cgmath::Vector3<f32>,
+    pub direction: cgmath::Vector3<f32>,
+    pub light_type: u32,
+    pub outer_cone_angle: f32,
+    pub bias: f32,
+    pub cascade_count: u32,
+    pub cascade_split_lambda: f32,
+}
+
+/// Range of shadow slots occupied by a single light.
+///
+/// Point lights consume 1 slot (with 6 cube faces handled internally),
+/// directional lights consume `cascade_count` slots (CSM),
+/// spot lights consume 1 slot.
+#[derive(Debug, Clone, Copy)]
+pub struct ShadowSlotRange {
+    pub first_slot: u32,
+    pub slot_count: u32,
+    pub first_cube: u32,
+}
+
+/// Cross-frame cache of shadow slot assignments.
+///
+/// Maps `light_slot_index` → which shadow slots (and cube layers) the
+/// light occupies. Also stores the last-known light state for change
+/// detection — if nothing changed, the shadow map is reused without
+/// re-rendering.
+#[derive(Debug, Clone)]
+pub struct ShadowMapCache {
+    pub light_to_slots: HashMap<u32, ShadowSlotRange>,
+    pub last_state: HashMap<u32, ShadowCachedLightState>,
+}
+
+impl ShadowMapCache {
+    pub fn new() -> Self {
+        Self {
+            light_to_slots: HashMap::new(),
+            last_state: HashMap::new(),
+        }
+    }
+}
+
+impl Default for ShadowMapCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Configures the per-frame budget for staggered light and shadow updates.
+///
+/// Insert as an ECS resource. Set `max_updates_per_frame` to control how
+/// many shadow-casting lights are processed each frame. Remaining dirty
+/// lights are deferred to subsequent frames.
+#[derive(Debug, Clone)]
+pub struct StaggeredLightConfig {
+    pub max_updates_per_frame: u32,
+}
+
+impl Default for StaggeredLightConfig {
+    fn default() -> Self {
+        Self {
+            max_updates_per_frame: DEFAULT_MAX_UPDATES_PER_FRAME,
+        }
+    }
+}
+
+/// Round-robin cursor for staggered light/shadow update processing.
+/// Managed internally by the stagger system.
+#[derive(Debug, Clone, Default)]
+pub struct StaggerState {
+    pub round_robin_pos: usize,
+    pub dirty_queue: Vec<usize>,
+}
+
+/// Set by `realize_lights` when new shadow-casting lights are created.
+/// The module runtime reads this to inform the stagger system it should
+/// perform a full bootstrap pass (all shadows dirty) that frame.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NewLightBootstrap(pub bool);
+
+// ---------------------------------------------------------------------------
+// Volumetrics
+// ---------------------------------------------------------------------------
+
+/// Target world-space spacing between froxel depth slices for the desktop
+/// quality tiers. Short light cones should not pop between slices as the
+/// camera moves.
+const TARGET_DEPTH_SLICE_SPACING: f32 = 0.15;
+/// Upper bound for adaptive depth slices. The X/Y grid still follows the
+/// selected quality tier.
+const MAX_DEPTH_SLICES: u32 = 192;
+/// Upper bound for the pre-integrated composite depth resolution. The froxel
+/// grid is capped well below this; the extra headroom only applies to custom
+/// quality tiers that ask for finer integration than their grid.
+const MAX_INTEGRATION_STEPS: u32 = 512;
+
+/// Froxel grid quality tier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VolumetricQuality {
+    Low,
+    #[default]
+    Medium,
+    High,
+    /// Reduced grid for mobile GPUs. The X/Y grid is deliberately coarser
+    /// than Low, adaptive depth slicing is disabled at 48 slices, and the
+    /// composite requests a minimum of 8 integration steps.
+    Mobile,
+    /// Explicit grid dimensions and minimum composite integration steps.
+    Custom {
+        grid_x: u32,
+        grid_y: u32,
+        grid_z: u32,
+        composite_steps: u32,
+    },
+}
+
+impl VolumetricQuality {
+    /// Grid dimensions for a render resolution before adaptive depth slicing.
+    ///
+    /// Prefer [`Self::resolved_grid`] when the grid is needed for capture
+    /// metadata or diagnostics: it applies the same depth-slice rule as the
+    /// renderer.
+    pub fn grid(self, width: u32, height: u32) -> [u32; 3] {
+        match self {
+            Self::Low => [(width / 12).max(16), (height / 12).max(9), 64],
+            Self::Medium => [(width / 8).max(24), (height / 8).max(14), 64],
+            Self::High => [(width / 4).max(48), (height / 4).max(27), 64],
+            Self::Mobile => [(width / 20).max(32), (height / 20).max(20), 48],
+            Self::Custom {
+                grid_x,
+                grid_y,
+                grid_z,
+                ..
+            } => [grid_x.max(1), grid_y.max(1), grid_z.max(1)],
+        }
+    }
+
+    /// Grid dimensions the renderer actually uses for a render resolution
+    /// and integration distance.
+    ///
+    /// Desktop tiers scale depth slices with [`max_distance`](Self::grid) so
+    /// short light cones keep the same sampling density over a longer range.
+    /// Mobile and custom tiers keep their explicit depth resolution.
+    pub fn resolved_grid(self, width: u32, height: u32, max_distance: f32) -> [u32; 3] {
+        let mut grid = self.grid(width, height);
+        if !matches!(self, Self::Custom { .. } | Self::Mobile) {
+            let target = (max_distance.max(0.1) / TARGET_DEPTH_SLICE_SPACING).ceil() as u32;
+            grid[2] = grid[2].max(target);
+        }
+        [
+            grid[0].clamp(1, 512),
+            grid[1].clamp(1, 512),
+            grid[2].clamp(1, MAX_DEPTH_SLICES),
+        ]
+    }
+
+    /// Minimum depth integration steps for the pre-integrated composite.
+    ///
+    /// The renderer integrates at least at the froxel grid's native depth
+    /// resolution, so this only raises the resolution for grids that are
+    /// coarser than the tier's requested step count.
+    pub fn composite_steps(self) -> u32 {
+        match self {
+            Self::Low => 32,
+            Self::Medium => 48,
+            Self::High => 64,
+            Self::Mobile => 8,
+            Self::Custom {
+                composite_steps, ..
+            } => composite_steps.max(1),
+        }
+    }
+
+    /// Depth integration resolution used by the pre-integrated composite.
+    pub fn integration_steps(self, width: u32, height: u32, max_distance: f32) -> u32 {
+        self.resolved_grid(width, height, max_distance)[2]
+            .max(self.composite_steps())
+            .min(MAX_INTEGRATION_STEPS)
+    }
+}
+
+/// Height fog plus froxel volumetric lighting settings.
+///
+/// Insert this resource into the ECS world to enable volumetrics. It is
+/// disabled unless present and `enabled` is true.
+#[derive(Debug, Clone, Copy)]
+pub struct VolumetricSettings {
+    pub enabled: bool,
+    /// Uniform base density.
+    pub density: f32,
+    /// Inscattering coefficient.
+    pub scattering: f32,
+    /// Extinction coefficient.
+    pub extinction: f32,
+    /// Henyey-Greenstein anisotropy in `[-0.95, 0.95]`.
+    pub anisotropy: f32,
+    /// World-space Y coordinate where the height fog layer starts. The layer
+    /// has `height_density` at and below this height and decays above it.
+    pub height_base: f32,
+    /// Exponential falloff with height, in inverse world units.
+    pub height_falloff: f32,
+    /// Additional density at `height_base`.
+    pub height_density: f32,
+    /// Ambient fog color.
+    pub ambient_color: [f32; 3],
+    /// Multiplier for diffuse sky/IBL radiance added to the ambient fog term.
+    pub environment_intensity: f32,
+    /// Blend previous-frame froxel history to reduce temporal shimmer.
+    pub temporal_history: bool,
+    /// Stop integrating after this distance.
+    pub max_distance: f32,
+    pub quality: VolumetricQuality,
+}
+
+impl Default for VolumetricSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            density: 0.015,
+            scattering: 1.0,
+            extinction: 1.0,
+            anisotropy: 0.4,
+            height_base: 0.0,
+            height_falloff: 0.15,
+            height_density: 0.03,
+            ambient_color: [0.6, 0.7, 0.9],
+            environment_intensity: 1.0,
+            temporal_history: true,
+            max_distance: 200.0,
+            quality: VolumetricQuality::Medium,
+        }
+    }
+}
+
+#[cfg(test)]
+mod performance_config_tests {
+    use super::*;
+
+    #[test]
+    fn environment_switches_accept_common_spellings() {
+        for enabled in ["1", "true", "yes", "on", "anything"] {
+            assert!(parse_env_flag(enabled), "{enabled} should be enabled");
+        }
+        for disabled in ["", "0", "false", "no", "off", "  OFF  "] {
+            assert!(!parse_env_flag(disabled), "{disabled:?} should be disabled");
+        }
+    }
+}
+
+#[cfg(test)]
+mod volumetric_tests {
+    use super::*;
+
+    #[test]
+    fn quality_tiers_scale_with_resolution() {
+        assert_eq!(VolumetricQuality::Low.grid(1920, 1080), [160, 90, 64]);
+        assert_eq!(VolumetricQuality::Medium.grid(1920, 1080), [240, 135, 64]);
+        assert_eq!(VolumetricQuality::High.grid(1920, 1080), [480, 270, 64]);
+        assert_eq!(VolumetricQuality::Mobile.grid(1920, 1080), [96, 54, 48]);
+        assert_eq!(VolumetricQuality::Medium.composite_steps(), 48);
+        assert_eq!(VolumetricQuality::Mobile.composite_steps(), 8);
+    }
+
+    #[test]
+    fn integration_steps_never_undersample_the_froxel_grid() {
+        // The resolved grid has 192 depth slices at this range, so the
+        // composite integrates at that resolution instead of its 32-step
+        // minimum.
+        assert_eq!(
+            VolumetricQuality::Low.integration_steps(1920, 1080, 30.0),
+            192
+        );
+        // A short range leaves the Low grid at 64 slices, which still beats
+        // the tier's minimum.
+        assert_eq!(
+            VolumetricQuality::Low.integration_steps(1920, 1080, 8.0),
+            64
+        );
+        // Custom tiers can ask for more steps than their grid provides.
+        assert_eq!(
+            VolumetricQuality::Custom {
+                grid_x: 64,
+                grid_y: 36,
+                grid_z: 8,
+                composite_steps: 24,
+            }
+            .integration_steps(1920, 1080, 30.0),
+            24
+        );
+    }
+
+    #[test]
+    fn resolved_grid_scales_depth_with_distance() {
+        // 30 world units at the target 0.15 slice spacing needs 200 slices,
+        // which is capped at the 192-slice maximum.
+        assert_eq!(
+            VolumetricQuality::Low.resolved_grid(1920, 1080, 30.0),
+            [160, 90, 192]
+        );
+        // A short range keeps the tier's base depth resolution.
+        assert_eq!(
+            VolumetricQuality::Low.resolved_grid(1920, 1080, 8.0),
+            [160, 90, 64]
+        );
+        // Mobile and custom tiers keep their explicit depth resolution.
+        assert_eq!(
+            VolumetricQuality::Mobile.resolved_grid(1920, 1080, 30.0),
+            [96, 54, 48]
+        );
+        assert_eq!(
+            VolumetricQuality::Custom {
+                grid_x: 0,
+                grid_y: 12,
+                grid_z: 7,
+                composite_steps: 0,
+            }
+            .resolved_grid(1920, 1080, 30.0),
+            [1, 12, 7]
+        );
+    }
+
+    #[test]
+    fn custom_quality_uses_explicit_grid_and_steps() {
+        let quality = VolumetricQuality::Custom {
+            grid_x: 0,
+            grid_y: 12,
+            grid_z: 7,
+            composite_steps: 0,
+        };
+        assert_eq!(quality.grid(1920, 1080), [1, 12, 7]);
+        assert_eq!(quality.composite_steps(), 1);
+    }
+
+    #[test]
+    fn settings_are_disabled_by_default() {
+        assert!(!VolumetricSettings::default().enabled);
+    }
+}

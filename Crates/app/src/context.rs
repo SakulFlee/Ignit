@@ -1,0 +1,393 @@
+use std::{error::Error, sync::Arc};
+
+use ignit_core::wgpu_util::block_on;
+use log::{debug, error, info, warn};
+use wgpu::{
+    Adapter, BackendOptions, Backends, CompositeAlphaMode, CreateSurfaceError,
+    CurrentSurfaceTexture, Device, DeviceDescriptor, ExperimentalFeatures, Features, Instance,
+    InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints,
+    PowerPreference, PresentMode, Queue, RequestAdapterError, RequestAdapterOptions,
+    RequestDeviceError, Surface, SurfaceCapabilities, SurfaceColorSpace, SurfaceConfiguration,
+    TextureFormat, TextureUsages, Trace,
+};
+use winit::{
+    dpi::Size,
+    error::OsError,
+    event_loop::{ActiveEventLoop, OwnedDisplayHandle},
+    window::{Fullscreen, Window},
+};
+
+use crate::AppSettings;
+
+pub type AppCtx = AppContext;
+
+#[derive(Debug)]
+pub struct AppContext {
+    /// Shared with the surface, which keeps the native window alive for as
+    /// long as the surface exists.
+    window: Arc<Window>,
+    instance: Instance,
+    adapter: Adapter,
+    device: Device,
+    queue: Queue,
+    /// The GPU surface. `None` while the app is suspended on Android (the
+    /// native window was destroyed) and recreated on resume.
+    surface: Option<Surface<'static>>,
+}
+
+impl AppContext {
+    pub fn new(
+        event_loop: &ActiveEventLoop,
+        settings: &AppSettings,
+    ) -> Result<Self, Box<dyn Error>> {
+        let window = Arc::new(Self::make_window(
+            event_loop,
+            settings.size,
+            &settings.name,
+            settings.fullscreen,
+        )?);
+        debug!("Window: {:?}", window);
+
+        let owned_display_handle = event_loop.owned_display_handle();
+        let instance = Self::make_instance(owned_display_handle);
+        debug!("Instance: {:?}", instance);
+
+        // `create_surface` takes ownership of the window handle inside the
+        // surface. Passing a cloned `Arc<Window>` therefore produces a
+        // genuinely `'static` surface without a self-referential lifetime or
+        // an unsafe lifetime extension.
+        let surface = Self::make_surface(&instance, Arc::clone(&window))?;
+        debug!("Surface: {:?}", surface);
+
+        let adapter = Self::make_adapter(&instance, &surface)?;
+        debug!("Adapter: {:?}", adapter);
+
+        let adapter_info = adapter.get_info();
+        log::info!("[ignit] Selected adapter: {}", adapter_info.name);
+        log::info!("[ignit]   backend:    {:?}", adapter_info.backend);
+        log::info!("[ignit]   device type: {:?}", adapter_info.device_type);
+        log::info!("[ignit]   vendor ID:  0x{:04X}", adapter_info.vendor);
+        log::info!("[ignit]   device ID:  0x{:04X}", adapter_info.device);
+
+        log::info!("[ignit] All available adapters:");
+        let all_adapters = block_on(instance.enumerate_adapters(Backends::all()));
+        for adapter in all_adapters {
+            let info = adapter.get_info();
+            log::info!(
+                "[ignit]   - {} (backend: {:?}, type: {:?})",
+                info.name,
+                info.backend,
+                info.device_type,
+            );
+        }
+
+        let (device, queue) = Self::make_device_and_queue(&adapter)?;
+        debug!("Device: {:?}", device);
+        debug!("Queue: {:?}", queue);
+
+        // Surface wgpu errors through the `log` crate so they appear in logcat
+        // (`rust_std_out` tag) instead of a panic whose output gets filtered.
+        device.on_uncaptured_error(Arc::new(|err| {
+            error!("wgpu uncaptured error: {err:?}");
+        }));
+
+        let ctx = Self {
+            window,
+            instance,
+            adapter,
+            device,
+            queue,
+            surface: Some(surface),
+        };
+
+        let surface_configuration =
+            ctx.make_surface_configuration(settings.vsync_enabled, settings.present_mode);
+        ctx.reconfigure_surface(&surface_configuration);
+
+        Ok(ctx)
+    }
+
+    fn make_window<S: Into<String>>(
+        event_loop: &ActiveEventLoop,
+        inner_size: Size,
+        title: S,
+        fullscreen: bool,
+    ) -> Result<Window, OsError> {
+        let attributes = Window::default_attributes()
+            .with_active(true)
+            .with_inner_size(inner_size)
+            .with_title(title);
+        let attributes = if fullscreen {
+            attributes.with_fullscreen(Some(Fullscreen::Borderless(None)))
+        } else {
+            attributes
+        };
+        event_loop.create_window(attributes)
+    }
+
+    fn make_instance(owned_display_handle: OwnedDisplayHandle) -> Instance {
+        #[cfg(target_os = "windows")]
+        unsafe {
+            // VK_LAYER_AMD_switchable_graphics hangs vkEnumeratePhysicalDevices
+            // on some AMD driver versions. Disable the implicit layer.
+            std::env::set_var("DISABLE_LAYER_AMD_SWITCHABLE_GRAPHICS_1", "1");
+        }
+
+        Instance::new(InstanceDescriptor {
+            backends: Backends::from_env().unwrap_or(Backends::all()),
+            flags: InstanceFlags::from_build_config(),
+            backend_options: BackendOptions::from_env_or_default(),
+            memory_budget_thresholds: MemoryBudgetThresholds::default(),
+            display: Some(Box::new(owned_display_handle)),
+        })
+    }
+
+    fn make_surface(
+        instance: &Instance,
+        window: Arc<Window>,
+    ) -> Result<Surface<'static>, CreateSurfaceError> {
+        instance.create_surface(window)
+    }
+
+    fn make_adapter(
+        instance: &Instance,
+        surface: &Surface,
+    ) -> Result<Adapter, RequestAdapterError> {
+        block_on(instance.request_adapter(&RequestAdapterOptions {
+            power_preference: PowerPreference::HighPerformance,
+            force_fallback_adapter: false,
+            compatible_surface: Some(surface),
+            apply_limit_buckets: false,
+        }))
+    }
+
+    fn make_device_and_queue(adapter: &Adapter) -> Result<(Device, Queue), RequestDeviceError> {
+        // Only request features the adapter actually reports. In particular
+        // `POLYGON_MODE_LINE` is commonly missing on mobile GPUs (Android), and
+        // requesting unsupported features makes `request_device` fail outright.
+        //
+        // iced's quad shader uses `unpack2x16float`, which needs
+        // `SHADER_F16` (its `SHADER_FLOAT16_IN_FLOAT32` capability). The iced
+        // compositor requests it itself, but an embedded renderer has to
+        // request it from the shared device.
+        let mut features = Features::default();
+        for feature in [
+            Features::POLYGON_MODE_LINE,
+            Features::TIMESTAMP_QUERY,
+            Features::TIMESTAMP_QUERY_INSIDE_ENCODERS,
+            Features::SHADER_F16,
+        ] {
+            if adapter.features().contains(feature) {
+                features |= feature;
+            }
+        }
+
+        block_on(adapter.request_device(&DeviceDescriptor {
+            label: Some("Ignit GPU"),
+            required_features: features,
+            required_limits: Limits::default(),
+            memory_hints: MemoryHints::Performance,
+            trace: Trace::Off,
+            experimental_features: ExperimentalFeatures::disabled(),
+        }))
+    }
+
+    fn make_view_formats(
+        capabilities: &SurfaceCapabilities,
+    ) -> (TextureFormat, Vec<TextureFormat>) {
+        let first_format = capabilities
+            .formats
+            .first()
+            .expect("There must be at least one surface format!");
+        let srgb_format = first_format.add_srgb_suffix();
+
+        let base = srgb_format.remove_srgb_suffix();
+        let view_formats: Vec<TextureFormat> = capabilities
+            .formats
+            .iter()
+            .filter(|f| f.remove_srgb_suffix() == base)
+            .copied()
+            .collect();
+
+        (srgb_format, view_formats)
+    }
+
+    pub fn adapter_features(&self) -> wgpu::Features {
+        self.adapter.features()
+    }
+
+    pub fn get_first_view_format(&self) -> TextureFormat {
+        self.surface
+            .as_ref()
+            .expect("Surface must be present (app not suspended)!")
+            .get_configuration()
+            .expect("Surface must be configured first!")
+            .format
+    }
+
+    pub fn make_surface_configuration(
+        &self,
+        vsync: bool,
+        requested_present_mode: Option<PresentMode>,
+    ) -> SurfaceConfiguration {
+        let surface = self
+            .surface
+            .as_ref()
+            .expect("Surface must be present (app not suspended)!");
+        let capabilities = surface.get_capabilities(&self.adapter);
+
+        let fallback = match vsync {
+            true => PresentMode::AutoVsync,
+            // Note: `Auto*` modes gracefully fall back to a supported mode
+            // inside wgpu (AutoNoVsync -> Immediate -> Mailbox -> Fifo),
+            // while bare `Immediate`/`Mailbox`/`FifoRelaxed` fail validation
+            // on surfaces that don't advertise them (e.g. Android).
+            false => PresentMode::AutoNoVsync,
+        };
+        let present_mode = match requested_present_mode {
+            Some(mode) if capabilities.present_modes.contains(&mode) => mode,
+            Some(mode) => {
+                warn!(
+                    "[Surface] Requested present mode {mode:?} is unsupported; using {fallback:?}"
+                );
+                fallback
+            }
+            None => fallback,
+        };
+
+        info!(
+            "[Surface] Supported present modes: {:?}, selected: {:?} (vsync={})",
+            capabilities.present_modes, present_mode, vsync
+        );
+
+        let window_size = self.window.inner_size();
+
+        let (srgb_format, view_formats) = Self::make_view_formats(&capabilities);
+
+        // Some adapters (e.g. the Android emulator's Vulkan backend) do not
+        // support `SURFACE_VIEW_FORMATS`; configuring a surface with a
+        // non-empty `view_formats` list fails with `MissingDownlevelFlags`.
+        // Only request them when the adapter supports the flag.
+        let supports_view_formats = self
+            .adapter
+            .get_downlevel_capabilities()
+            .flags
+            .contains(wgpu::DownlevelFlags::SURFACE_VIEW_FORMATS);
+        if !supports_view_formats {
+            warn!(
+                "[Surface] SURFACE_VIEW_FORMATS not supported; configuring surface without view_formats"
+            );
+        }
+
+        let mut default_config = surface
+            .get_default_config(&self.adapter, window_size.width, window_size.height)
+            .unwrap_or(SurfaceConfiguration {
+                usage: TextureUsages::empty(),
+                format: TextureFormat::Rgba8UnormSrgb,
+                width: 100,
+                height: 100,
+                present_mode,
+                desired_maximum_frame_latency: 2,
+                alpha_mode: CompositeAlphaMode::Auto,
+                view_formats: vec![],
+                color_space: SurfaceColorSpace::Auto,
+            });
+
+        default_config.present_mode = present_mode;
+        default_config.alpha_mode = CompositeAlphaMode::Auto;
+        default_config.format = srgb_format;
+        default_config.usage = TextureUsages::RENDER_ATTACHMENT;
+        default_config.view_formats = if supports_view_formats {
+            view_formats
+        } else {
+            vec![]
+        };
+        default_config.width = window_size.width;
+        default_config.height = window_size.height;
+        default_config.desired_maximum_frame_latency = 2;
+
+        default_config
+    }
+
+    pub fn current_surface_texture(&self) -> CurrentSurfaceTexture {
+        self.surface().get_current_texture()
+    }
+
+    pub fn reconfigure_surface(&self, configuration: &SurfaceConfiguration) {
+        let surface = self
+            .surface
+            .as_ref()
+            .expect("Surface must be present (app not suspended)!");
+        surface.configure(&self.device, configuration);
+    }
+
+    /// Drops the GPU surface. Called on suspend on Android, where the native
+    /// window is destroyed; the surface must be recreated on resume.
+    pub fn drop_surface(&mut self) {
+        self.surface = None;
+    }
+
+    /// Recreates the GPU surface from the current (recreated) native window,
+    /// reconfigures it, and returns the resulting surface configuration.
+    /// Called on resume after [`AppContext::drop_surface`].
+    pub fn recreate_surface(
+        &mut self,
+        vsync: bool,
+        requested_present_mode: Option<PresentMode>,
+    ) -> SurfaceConfiguration {
+        let surface = Self::make_surface(&self.instance, Arc::clone(&self.window))
+            .expect("Failed to recreate surface on resume");
+        self.surface = Some(surface);
+        let config = self.make_surface_configuration(vsync, requested_present_mode);
+        self.reconfigure_surface(&config);
+        config
+    }
+
+    pub fn instance(&self) -> &Instance {
+        &self.instance
+    }
+
+    pub fn instance_mut(&mut self) -> &mut Instance {
+        &mut self.instance
+    }
+
+    pub fn adapter(&self) -> &Adapter {
+        &self.adapter
+    }
+
+    pub fn adapter_mut(&mut self) -> &mut Adapter {
+        &mut self.adapter
+    }
+
+    pub fn device(&self) -> &Device {
+        &self.device
+    }
+
+    pub fn device_mut(&mut self) -> &mut Device {
+        &mut self.device
+    }
+
+    pub fn queue(&self) -> &Queue {
+        &self.queue
+    }
+
+    pub fn queue_mut(&mut self) -> &mut Queue {
+        &mut self.queue
+    }
+
+    pub fn surface(&self) -> &Surface<'static> {
+        self.surface
+            .as_ref()
+            .expect("Surface must be present (app not suspended)!")
+    }
+
+    pub fn surface_mut(&mut self) -> &mut Surface<'static> {
+        self.surface
+            .as_mut()
+            .expect("Surface must be present (app not suspended)!")
+    }
+
+    pub fn window(&self) -> &Window {
+        &self.window
+    }
+}

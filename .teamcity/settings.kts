@@ -8,7 +8,7 @@ import jetbrains.buildServer.configs.kotlin.triggers.vcs
 version = "2026.1"
 
 project {
-    description = "Orbital (formerly: Akimo) is a cross-platform real-time graphical rendering engine & framework written in Rust. The goal of this project is to bridge well established industry-standard techniques with upcoming (next-gen) and experimental techniques to form a robust new foundation for next-gen visual computing."
+    description = "Ignit (formerly: Orbital, Akimo) is a cross-platform real-time graphical rendering engine & framework written in Rust. The goal of this project is to bridge well established industry-standard techniques with upcoming (next-gen) and experimental techniques to form a robust new foundation for next-gen visual computing."
 
     params {
         checkbox("teamcity.internal.pipelines.creation.enabled", "true",

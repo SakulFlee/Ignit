@@ -1,6 +1,6 @@
 //! Game-like movement simulation with multiple system stages.
 
-use orbital_ecs::{Schedule, World};
+use ignit_ecs::{Schedule, World};
 
 #[derive(Debug, Clone)]
 struct Pos(f32, f32);

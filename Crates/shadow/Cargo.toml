@@ -1,0 +1,20 @@
+[package]
+name = "ignit_shadow"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ignit_camera = { path = "../camera" }
+ignit_math = { path = "../math" }
+ignit_texture = { path = "../texture" }
+ignit_vertex = { path = "../vertex" }
+ignit_instance = { path = "../instance" }
+ignit_model = { path = "../model" }
+ignit_material_shader = { path = "../material_shader" }
+cgmath = { workspace = true }
+wgpu = { workspace = true }
+log = { workspace = true }

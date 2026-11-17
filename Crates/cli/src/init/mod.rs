@@ -1,0 +1,117 @@
+mod prompt;
+mod template;
+
+use std::path::PathBuf;
+
+use anyhow::Result;
+
+#[allow(clippy::too_many_arguments)]
+pub fn run(
+    name: Option<String>,
+    parent_path: Option<PathBuf>,
+    project_path: Option<PathBuf>,
+    package: Option<String>,
+    template: Option<String>,
+    android: Option<bool>,
+    engine_repo: Option<String>,
+    engine_branch: Option<String>,
+    engine_path: Option<PathBuf>,
+    yes: bool,
+    no_git: bool,
+) -> Result<()> {
+    if parent_path.is_some() && project_path.is_some() {
+        anyhow::bail!("--parent-path and --project-path are mutually exclusive");
+    }
+
+    let engine_path_str = engine_path.map(|p| {
+        p.into_os_string()
+            .into_string()
+            .expect("engine path contains invalid UTF-8")
+    });
+
+    let config = if yes {
+        // Non-interactive mode: use defaults or provided values
+        let android_flag = android.unwrap_or(false);
+        prompt::non_interactive(
+            name,
+            package,
+            template,
+            android_flag,
+            engine_repo,
+            engine_branch,
+            engine_path_str,
+        )?
+    } else {
+        // Interactive mode: prompt for all values
+        prompt::interactive(
+            name,
+            package,
+            template,
+            android,
+            engine_repo,
+            engine_branch,
+            engine_path_str,
+        )?
+    };
+
+    println!("\nGenerating project...");
+
+    // Create project directory
+    let project_dir = if let Some(parent) = parent_path {
+        parent.join(&config.project_name)
+    } else if let Some(project) = project_path {
+        project
+    } else {
+        std::env::current_dir()?.join(&config.project_name)
+    };
+    if project_dir.exists() {
+        anyhow::bail!(
+            "Directory '{}' already exists. Please choose a different name.",
+            config.project_name
+        );
+    }
+
+    std::fs::create_dir_all(&project_dir)?;
+
+    // Generate project files
+    template::generate_project(&project_dir, &config)?;
+
+    if no_git {
+        println!("Skipping Git repository initialization (--no-git).");
+    } else {
+        template::init_git(&project_dir)?;
+    }
+
+    println!("\nProject '{}' created successfully!", config.project_name);
+
+    // Auto-run init android if requested
+    if config.generate_android {
+        println!("\nInitializing Android project...");
+
+        // Save current directory and change to project directory
+        let original_dir = std::env::current_dir()?;
+        std::env::set_current_dir(&project_dir)?;
+
+        // Run init android
+        crate::android::project::init()?;
+
+        // Change back to original directory
+        std::env::set_current_dir(original_dir)?;
+    }
+
+    println!("\nNext steps:");
+    println!("  cd {}", project_dir.display());
+
+    if crate::tooling::is_nixos() {
+        println!("  # NixOS: build in a shell that provides the engine's system libraries, e.g.");
+        println!("  nix-shell -p cargo pkg-config systemd wayland libxkbcommon vulkan-loader mesa");
+    }
+
+    if config.generate_android {
+        println!("  ignit build android");
+    } else {
+        println!("  ignit build");
+    }
+
+    Ok(())
+}

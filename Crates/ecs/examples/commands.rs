@@ -1,7 +1,7 @@
 //! Deferred entity spawning via Commands buffer, driven by a system.
 //!
 //! Run: cargo run --example commands --release
-use orbital_ecs::{Commands, ResMut, Schedule, World};
+use ignit_ecs::{Commands, ResMut, Schedule, World};
 
 #[derive(Debug, Clone)]
 struct Name(String);

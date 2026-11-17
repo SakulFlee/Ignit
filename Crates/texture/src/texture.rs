@@ -1,0 +1,897 @@
+use std::cmp::Ordering;
+use std::ffi::OsString;
+use std::io::Cursor;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use cgmath::{Vector2, Vector4};
+use ignit_file_manager::FileManager;
+use image::ImageReader;
+use wgpu::wgt::PollType;
+use wgpu::{
+    AddressMode, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Device, Extent3d,
+    FilterMode as WFilterMode, MipmapFilterMode, Origin3d, Queue, Sampler, SamplerDescriptor,
+    TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture as WTexture,
+    TextureAspect, TextureDescriptor as WTextureDescriptor, TextureDimension, TextureFormat,
+    TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension,
+};
+
+use crate::{FilterMode, TextureDescriptor, TextureError, TextureSize};
+
+/// Maximum total time to spend polling for GPU work completion.
+const GPU_POLL_TIMEOUT: Duration = Duration::from_secs(120);
+/// Sleep duration between non-blocking poll checks.
+const GPU_POLL_INTERVAL: Duration = Duration::from_millis(15);
+
+/// Wait for all submitted GPU work to complete, without using
+/// `device.poll(Wait)` which can **panic** inside wgpu on device loss.
+///
+/// Uses `device.poll(Poll)` in a tight loop with `thread::sleep`, wrapped
+/// in `catch_unwind` to safely handle any panics from wgpu.
+fn poll_wait_texture(device: &Device, label: &str) -> Result<(), TextureError> {
+    let start = std::time::Instant::now();
+    loop {
+        if start.elapsed() > GPU_POLL_TIMEOUT {
+            return Err(TextureError::Readback(format!(
+                "{label} timed out after {}s",
+                GPU_POLL_TIMEOUT.as_secs()
+            )));
+        }
+
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| device.poll(PollType::Poll)))
+        {
+            Ok(Ok(wgpu::PollStatus::QueueEmpty | wgpu::PollStatus::WaitSucceeded)) => return Ok(()),
+            Ok(Ok(wgpu::PollStatus::Poll)) => {
+                std::thread::sleep(GPU_POLL_INTERVAL);
+            }
+            Ok(Err(error)) => {
+                return Err(TextureError::Readback(format!(
+                    "{label} poll error: {error:?}"
+                )));
+            }
+            Err(panic_payload) => {
+                let message = panic_payload
+                    .downcast_ref::<&str>()
+                    .copied()
+                    .or_else(|| panic_payload.downcast_ref::<String>().map(String::as_str))
+                    .unwrap_or("unknown panic");
+                return Err(TextureError::Readback(format!(
+                    "{label} poll panicked: {message}"
+                )));
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct Texture {
+    texture: WTexture,
+    view: TextureView,
+    sampler: Sampler,
+    view_dimension: TextureViewDimension,
+}
+
+/// Outcome of comparing a pixel buffer against the extent a `write_texture`
+/// call covers.
+#[derive(Debug, PartialEq, Eq)]
+enum DataSizeCheck {
+    /// The buffer matches the extent exactly.
+    Exact,
+    /// The buffer holds fewer bytes than the extent needs. Uploading it would
+    /// leave the tail of the texture undefined, so it is rejected.
+    Undersized { required: usize },
+    /// The buffer holds more than one layer needs. Legitimate, because callers
+    /// such as the cube-map IBL descriptors upload a whole mip chain.
+    Surplus { required: usize },
+    /// The required size is not representable as a `usize`, so the buffer
+    /// cannot be meaningfully validated.
+    Unvalidatable,
+}
+
+/// Compares the length of a pixel buffer against the number of bytes needed to
+/// cover mip level 0 of the given extent.
+///
+/// `write_texture` does not require 256-byte row alignment (unlike
+/// `copy_buffer_to_texture`), and it spans every array layer of the extent, so
+/// the requirement is exactly `width * bytes_per_pixel * height *
+/// depth_or_array_layers`. Computed in `usize` with `checked_mul` because the
+/// `u32` extents overflow for large textures.
+fn classify_data_size(
+    width: u32,
+    height: u32,
+    depth_or_array_layers: u32,
+    bytes_per_pixel: u32,
+    actual: usize,
+) -> DataSizeCheck {
+    let Some(required) = (width as usize)
+        .checked_mul(bytes_per_pixel as usize)
+        .and_then(|bytes_per_row| bytes_per_row.checked_mul(height as usize))
+        .and_then(|layer| layer.checked_mul(depth_or_array_layers as usize))
+    else {
+        return DataSizeCheck::Unvalidatable;
+    };
+
+    match actual.cmp(&required) {
+        Ordering::Less => DataSizeCheck::Undersized { required },
+        Ordering::Greater => DataSizeCheck::Surplus { required },
+        Ordering::Equal => DataSizeCheck::Exact,
+    }
+}
+
+/// Rejects a pixel buffer that is too small for the extent it is uploaded to.
+///
+/// Surplus data is only warned about: uploading a whole mip chain, as the
+/// cube-map IBL descriptors do, legitimately carries more than a single layer.
+fn validate_data_size(
+    width: u32,
+    height: u32,
+    depth_or_array_layers: u32,
+    bytes_per_pixel: u32,
+    format: TextureFormat,
+    actual: usize,
+) -> Result<(), TextureError> {
+    match classify_data_size(
+        width,
+        height,
+        depth_or_array_layers,
+        bytes_per_pixel,
+        actual,
+    ) {
+        DataSizeCheck::Undersized { required } => Err(TextureError::DataSizeMismatch {
+            expected: required,
+            actual,
+            width,
+            height,
+            depth_or_array_layers,
+            bytes_per_pixel,
+        }),
+        DataSizeCheck::Surplus { required } => {
+            log::warn!(
+                "Texture data surplus: expected {} bytes ({}x{}x{} @ {} bytes/pixel), \
+                 got {} bytes. Format: {:?}",
+                required,
+                width,
+                height,
+                depth_or_array_layers,
+                bytes_per_pixel,
+                actual,
+                format
+            );
+            Ok(())
+        }
+        DataSizeCheck::Exact | DataSizeCheck::Unvalidatable => Ok(()),
+    }
+}
+
+impl Texture {
+    pub fn from_descriptor(
+        descriptor: &TextureDescriptor,
+        device: &Device,
+        queue: &Queue,
+    ) -> Result<Self, TextureError> {
+        match descriptor {
+            TextureDescriptor::File { path, usages } => {
+                Self::from_path_srgb(path, *usages, device, queue)
+            }
+            TextureDescriptor::Data {
+                pixels,
+                size,
+                format,
+                usages,
+
+                texture_dimension,
+                texture_view_dimension,
+                filter_mode,
+            } => Self::from_data(
+                pixels,
+                size,
+                *usages,
+                *format,
+                *texture_dimension,
+                *texture_view_dimension,
+                *filter_mode,
+                device,
+                queue,
+            ),
+            TextureDescriptor::Custom {
+                texture_descriptor,
+                view_descriptor,
+                sampler_descriptor,
+                size,
+                data,
+            } => Self::from_descriptors_and_data(
+                texture_descriptor,
+                view_descriptor,
+                sampler_descriptor,
+                Some((data, *size)),
+                device,
+                queue,
+            ),
+        }
+    }
+
+    pub fn create_empty_cube_texture(
+        label: Option<&str>,
+        size: Vector2<u32>,
+        format: TextureFormat,
+        usage: TextureUsages,
+        mip_levels: u32,
+        device: &Device,
+    ) -> Texture {
+        let size = Extent3d {
+            width: size.x,
+            height: size.y,
+            // A cube has 6 sides, so we need 6 layers
+            depth_or_array_layers: 6,
+        };
+        let texture = device.create_texture(&WTextureDescriptor {
+            label,
+            size,
+            mip_level_count: mip_levels,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage,
+            view_formats: &[],
+        });
+
+        let view = texture.create_view(&TextureViewDescriptor {
+            label,
+            dimension: Some(TextureViewDimension::Cube),
+            array_layer_count: Some(6),
+            ..Default::default()
+        });
+
+        let sampler = device.create_sampler(&SamplerDescriptor {
+            label,
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            address_mode_w: AddressMode::ClampToEdge,
+            mag_filter: WFilterMode::Linear,
+            min_filter: WFilterMode::Linear,
+            mipmap_filter: MipmapFilterMode::Linear,
+            ..Default::default()
+        });
+
+        Texture::from_existing(texture, view, sampler, TextureViewDimension::Cube)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_binary_data(
+        data: &[u8],
+        label: Option<&str>,
+        size: Vector2<u32>,
+        format: TextureFormat,
+        usage: TextureUsages,
+        mip_levels: u32,
+        device: &Device,
+        queue: &Queue,
+    ) -> Self {
+        const ALIGN: u64 = 256;
+        const BYTES_PER_PIXEL: u64 = 8; // Rgba16Float format
+
+        let texture = Self::create_empty_cube_texture(
+            label,
+            size,
+            format,
+            usage | TextureUsages::COPY_DST,
+            mip_levels,
+            device,
+        );
+
+        let mut data_offset = 0;
+        for mip_level in 0..mip_levels {
+            let mip_size = Extent3d {
+                width: size.x >> mip_level,
+                height: size.y >> mip_level,
+                depth_or_array_layers: 6,
+            };
+
+            let bytes_per_row = BYTES_PER_PIXEL * (mip_size.width as u64);
+            let aligned_bytes_per_row = bytes_per_row.div_ceil(ALIGN) * ALIGN;
+
+            let rows_per_layer = mip_size.height as u64;
+            let bytes_per_layer = aligned_bytes_per_row * rows_per_layer;
+
+            for layer_start in (0..mip_size.depth_or_array_layers).step_by(1) {
+                let chunk_size = bytes_per_layer as usize;
+
+                queue.write_texture(
+                    TexelCopyTextureInfo {
+                        texture: texture.texture(),
+                        mip_level,
+                        origin: Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: layer_start,
+                        },
+                        aspect: TextureAspect::All,
+                    },
+                    &data[data_offset..data_offset + chunk_size],
+                    TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(aligned_bytes_per_row as u32),
+                        rows_per_image: Some(mip_size.height),
+                    },
+                    Extent3d {
+                        width: mip_size.width,
+                        height: mip_size.height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+
+                data_offset += chunk_size;
+            }
+        }
+
+        texture
+    }
+
+    pub fn from_path(
+        file_path: &OsString,
+        usages: TextureUsages,
+        format: TextureFormat,
+        device: &Device,
+        queue: &Queue,
+    ) -> Result<Self, TextureError> {
+        let path = file_path.to_string_lossy();
+
+        let file_manager = FileManager::global().map_err(TextureError::FsError)?;
+        let bytes = file_manager
+            .read_asset_bytes(&path)
+            .map_err(TextureError::FsError)?;
+
+        let img = ImageReader::new(Cursor::new(bytes))
+            .with_guessed_format()
+            .map_err(TextureError::IOError)?
+            .decode()
+            .map_err(TextureError::ImageError)?;
+
+        let data: Vec<u8> = img.to_rgba8().into_raw();
+
+        Self::from_descriptor(
+            &TextureDescriptor::Data {
+                pixels: data,
+                size: TextureSize {
+                    width: img.width(),
+                    height: img.height(),
+                    ..Default::default()
+                },
+                format,
+                usages,
+
+                texture_dimension: TextureDimension::D2,
+                texture_view_dimension: TextureViewDimension::D2,
+                filter_mode: FilterMode::default(),
+            },
+            device,
+            queue,
+        )
+    }
+
+    pub fn from_path_srgb(
+        file_path: &OsString,
+        usages: TextureUsages,
+        device: &Device,
+        queue: &Queue,
+    ) -> Result<Self, TextureError> {
+        Self::from_path(
+            file_path,
+            usages,
+            TextureFormat::Rgba8UnormSrgb,
+            device,
+            queue,
+        )
+    }
+
+    /// In case you want a uniform, one color, image.
+    /// This results in an 1-by-1 px, i.e. 4 bytes image.
+    ///
+    /// ⚠️ This can be used as an empty texture as there is as minimal
+    /// ⚠️ as possible data usage and this resource may not even arrive
+    /// ⚠️ in the shader _if_ it is not used.
+    pub fn uniform_color(
+        color: Vector4<u8>,
+        usages: TextureUsages,
+        format: TextureFormat,
+        device: &Device,
+        queue: &Queue,
+    ) -> Result<Self, TextureError> {
+        Self::from_data(
+            &[color.x, color.y, color.z, color.w],
+            &TextureSize {
+                width: 1,
+                height: 1,
+                ..Default::default()
+            },
+            usages,
+            format,
+            TextureDimension::D2,
+            TextureViewDimension::D2,
+            FilterMode::default(),
+            device,
+            queue,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_data(
+        pixels: &[u8],
+        size: &TextureSize,
+        usages: TextureUsages,
+        format: TextureFormat,
+        texture_dimension: TextureDimension,
+        texture_view_dimension: TextureViewDimension,
+        filter_mode: FilterMode,
+        device: &Device,
+        queue: &Queue,
+    ) -> Result<Self, TextureError> {
+        let texture_descriptor = wgpu::TextureDescriptor {
+            label: None,
+            size: Extent3d {
+                width: size.width,
+                height: size.height,
+                depth_or_array_layers: size.depth_or_array_layers,
+            },
+            format,
+            mip_level_count: size.mip_levels,
+            sample_count: 1,
+            dimension: texture_dimension,
+            usage: usages,
+            view_formats: &[],
+        };
+        let texture = device.create_texture(&texture_descriptor);
+
+        let texture_view_descriptor = wgpu::TextureViewDescriptor {
+            label: None,
+            format: None,
+            dimension: Some(texture_view_dimension),
+            aspect: TextureAspect::All,
+            base_mip_level: size.base_mip,
+            mip_level_count: size.mip_levels.gt(&1).then_some(size.mip_levels),
+            ..Default::default()
+        };
+        let texture_view = texture.create_view(&texture_view_descriptor);
+
+        let texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: None,
+            address_mode_u: AddressMode::Repeat,
+            address_mode_v: AddressMode::Repeat,
+            address_mode_w: AddressMode::Repeat,
+            mag_filter: filter_mode.mag,
+            min_filter: filter_mode.min,
+            mipmap_filter: filter_mode.mipmap,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 100.0,
+            ..Default::default()
+        });
+
+        let texture = Self::from_existing(
+            texture,
+            texture_view,
+            texture_sampler,
+            texture_view_dimension,
+        );
+
+        // Calculate bytes per row based on the format
+        // Manual calculation instead of target_pixel_byte_cost() to avoid potential bugs
+        let bytes_per_pixel = match format {
+            TextureFormat::R8Unorm
+            | TextureFormat::R8Snorm
+            | TextureFormat::R8Uint
+            | TextureFormat::R8Sint => 1,
+            TextureFormat::Rg8Unorm
+            | TextureFormat::Rg8Snorm
+            | TextureFormat::Rg8Uint
+            | TextureFormat::Rg8Sint => 2,
+            TextureFormat::Rgba8Unorm
+            | TextureFormat::Rgba8UnormSrgb
+            | TextureFormat::Rgba8Snorm
+            | TextureFormat::Rgba8Uint
+            | TextureFormat::Rgba8Sint => 4,
+            TextureFormat::R16Unorm
+            | TextureFormat::R16Snorm
+            | TextureFormat::R16Uint
+            | TextureFormat::R16Sint
+            | TextureFormat::R16Float => 2,
+            TextureFormat::Rg16Unorm
+            | TextureFormat::Rg16Snorm
+            | TextureFormat::Rg16Uint
+            | TextureFormat::Rg16Sint
+            | TextureFormat::Rg16Float => 4,
+            TextureFormat::Rgba16Unorm
+            | TextureFormat::Rgba16Snorm
+            | TextureFormat::Rgba16Uint
+            | TextureFormat::Rgba16Sint
+            | TextureFormat::Rgba16Float => 8,
+            TextureFormat::R32Uint | TextureFormat::R32Sint | TextureFormat::R32Float => 4,
+            TextureFormat::Rg32Uint | TextureFormat::Rg32Sint | TextureFormat::Rg32Float => 8,
+            TextureFormat::Rgba32Uint | TextureFormat::Rgba32Sint | TextureFormat::Rgba32Float => {
+                16
+            }
+            // Add other formats as needed
+            _ => {
+                // Fallback to the original method
+                format
+                    .target_pixel_byte_cost()
+                    .expect("Need to acquire target pixel byte cost for correct texture mapping!")
+            }
+        };
+        let calculated_bytes_per_row = size.width * bytes_per_pixel;
+
+        // Too little data: `write_texture` would leave the tail of the texture
+        // undefined, so refuse the upload instead of corrupting it.
+        validate_data_size(
+            size.width,
+            size.height,
+            size.depth_or_array_layers,
+            bytes_per_pixel,
+            format,
+            pixels.len(),
+        )?;
+
+        // Write the data into the texture buffer
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: texture.texture(),
+                aspect: TextureAspect::All,
+                origin: Origin3d::ZERO,
+                mip_level: 0,
+            },
+            pixels,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(calculated_bytes_per_row),
+                rows_per_image: Some(size.height),
+            },
+            Extent3d {
+                width: size.width,
+                height: size.height,
+                depth_or_array_layers: size.depth_or_array_layers,
+            },
+        );
+
+        Ok(texture)
+    }
+
+    pub fn depth_texture(size: &Vector2<u32>, device: &Device, queue: &Queue) -> Texture {
+        Self::from_descriptors_and_data(
+            &WTextureDescriptor {
+                label: Some("Depth Texture"),
+                size: Extent3d {
+                    width: size.x,
+                    height: size.y,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Depth32Float,
+                usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            &TextureViewDescriptor::default(),
+            &SamplerDescriptor {
+                address_mode_u: AddressMode::Repeat,
+                address_mode_v: AddressMode::Repeat,
+                address_mode_w: AddressMode::Repeat,
+                mag_filter: WFilterMode::Linear,
+                min_filter: WFilterMode::Linear,
+                mipmap_filter: MipmapFilterMode::Nearest,
+                lod_min_clamp: 0.0,
+                lod_max_clamp: 100.0,
+                ..Default::default()
+            },
+            None,
+            device,
+            queue,
+        )
+        // A depth texture is a pure render target: it is created without any
+        // pixel data, so the upload validation inside cannot fail.
+        .expect("depth textures carry no pixel data, so size validation cannot fail")
+    }
+
+    pub fn from_descriptors_and_data(
+        texture_descriptor: &WTextureDescriptor,
+        view_descriptor: &TextureViewDescriptor,
+        sampler_descriptor: &SamplerDescriptor,
+        data_and_size: Option<(&[u8], Extent3d)>,
+        device: &Device,
+        queue: &Queue,
+    ) -> Result<Self, TextureError> {
+        let texture_format = texture_descriptor.format;
+
+        let texture = device.create_texture(texture_descriptor);
+        let view = texture.create_view(view_descriptor);
+        let sampler = device.create_sampler(sampler_descriptor);
+
+        let view_dimension =
+            view_descriptor
+                .dimension
+                .unwrap_or(match texture_descriptor.dimension {
+                    TextureDimension::D1 => TextureViewDimension::D1,
+                    TextureDimension::D2 => TextureViewDimension::D2,
+                    TextureDimension::D3 => TextureViewDimension::D3,
+                });
+        let self_texture = Self::from_existing(texture, view, sampler, view_dimension);
+
+        if let Some((data, size)) = data_and_size {
+            let bytes_per_pixel = texture_format
+                .target_pixel_byte_cost()
+                .expect("Need to acquire target pixel byte cost for correct texture mapping!");
+
+            // Same guard as `from_data`: refuse an undersized upload rather
+            // than leaving the tail of the texture undefined.
+            validate_data_size(
+                size.width,
+                size.height,
+                size.depth_or_array_layers,
+                bytes_per_pixel,
+                texture_format,
+                data.len(),
+            )?;
+
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture: self_texture.texture(),
+                    aspect: TextureAspect::All,
+                    origin: Origin3d::ZERO,
+                    mip_level: 0,
+                },
+                data,
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(size.width * bytes_per_pixel),
+                    rows_per_image: Some(size.height),
+                },
+                size,
+            );
+        }
+
+        Ok(self_texture)
+    }
+
+    pub fn from_existing(
+        texture: WTexture,
+        view: TextureView,
+        sampler: Sampler,
+        view_dimension: TextureViewDimension,
+    ) -> Self {
+        Self {
+            texture,
+            view,
+            sampler,
+            view_dimension,
+        }
+    }
+
+    pub fn read_as_binary(&self, device: &Device, queue: &Queue) -> Result<Vec<u8>, TextureError> {
+        // 256MB, hard enforced by WGPU. A buffer cannot be bigger than this, thus we need to read in chunks.
+        const MAX_BUFFER_SIZE: u64 = 268_435_456;
+        // In WGPU a buffer has to be aligned with 2^8 bytes.
+        const ALIGN: u64 = 256;
+        // We use the Rgba16Float format, that's 16 bits per channel, thus 4 * 16 = 64 bits per whole pixel, which is 64 bits / 8 bits per byte = 8 bytes
+        const BYTES_PER_PIXEL: u64 = 8;
+
+        let mut final_data = Vec::new();
+        let mip_count = self.texture.mip_level_count();
+
+        for mip_level in 0..mip_count {
+            let mip_size = Extent3d {
+                width: self.texture.width() >> mip_level,
+                height: self.texture.height() >> mip_level,
+                depth_or_array_layers: self.texture.depth_or_array_layers(),
+            };
+
+            let bytes_per_row = BYTES_PER_PIXEL * (mip_size.width as u64);
+            let aligned_bytes_per_row = bytes_per_row.div_ceil(ALIGN) * ALIGN;
+
+            // Calculate how many complete layers we can fit in one buffer
+            let rows_per_layer = mip_size.height as u64;
+            let bytes_per_layer = aligned_bytes_per_row * rows_per_layer;
+            let layers_per_chunk = (MAX_BUFFER_SIZE / bytes_per_layer).max(1);
+
+            // Process layers in chunks
+            for layer_start in
+                (0..mip_size.depth_or_array_layers).step_by(layers_per_chunk as usize)
+            {
+                let layer_count = ((mip_size.depth_or_array_layers - layer_start) as u64)
+                    .min(layers_per_chunk) as u32;
+                let chunk_size = bytes_per_layer * layer_count as u64;
+
+                let buffer = device.create_buffer(&BufferDescriptor {
+                    label: Some("Texture Read Buffer"),
+                    size: chunk_size,
+                    usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+
+                let mut encoder =
+                    device.create_command_encoder(&CommandEncoderDescriptor { label: None });
+                encoder.copy_texture_to_buffer(
+                    TexelCopyTextureInfo {
+                        texture: &self.texture,
+                        mip_level,
+                        origin: Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: layer_start,
+                        },
+                        aspect: TextureAspect::All,
+                    },
+                    TexelCopyBufferInfo {
+                        buffer: &buffer,
+                        layout: TexelCopyBufferLayout {
+                            offset: 0,
+                            bytes_per_row: Some(aligned_bytes_per_row as u32),
+                            rows_per_image: Some(mip_size.height),
+                        },
+                    },
+                    Extent3d {
+                        width: mip_size.width,
+                        height: mip_size.height,
+                        depth_or_array_layers: layer_count,
+                    },
+                );
+
+                // Submit the "copy texture to buffer" command and wait for it to finish
+                queue.submit([encoder.finish()]);
+                poll_wait_texture(device, "Texture readback (copy to buffer)")?;
+
+                // Mark buffer as readable by mapping it and wait for it to finish.
+                // The callback result is captured because mapping can fail
+                // independently of the poll status.
+                let map_result = Arc::new(Mutex::new(None));
+                let map_result_callback = Arc::clone(&map_result);
+                buffer
+                    .slice(..)
+                    .map_async(wgpu::MapMode::Read, move |result| {
+                        *map_result_callback.lock().unwrap() = Some(result);
+                    });
+                poll_wait_texture(device, "Texture readback (map buffer)")?;
+
+                let map_result = map_result.lock().unwrap().take().ok_or_else(|| {
+                    TextureError::Readback("buffer mapping callback did not run".into())
+                })?;
+                map_result.map_err(|error| {
+                    TextureError::Readback(format!("buffer mapping failed: {error:?}"))
+                })?;
+
+                let mapped = buffer.slice(..).get_mapped_range().map_err(|error| {
+                    TextureError::Readback(format!("failed to access mapped buffer: {error:?}"))
+                })?;
+                final_data.extend_from_slice(&mapped);
+                drop(mapped);
+                buffer.unmap();
+            }
+        }
+
+        Ok(final_data)
+    }
+
+    pub fn texture(&self) -> &WTexture {
+        &self.texture
+    }
+
+    pub fn view(&self) -> &TextureView {
+        &self.view
+    }
+
+    pub fn sampler(&self) -> &Sampler {
+        &self.sampler
+    }
+
+    pub fn view_dimension(&self) -> &TextureViewDimension {
+        &self.view_dimension
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn classify(
+        width: u32,
+        height: u32,
+        depth_or_array_layers: u32,
+        bpp: u32,
+        actual: usize,
+    ) -> DataSizeCheck {
+        classify_data_size(width, height, depth_or_array_layers, bpp, actual)
+    }
+
+    #[test]
+    fn exact_match_is_accepted() {
+        // 4x4 Rgba8Unorm => 4 * 4 * 4 = 64 bytes for one layer.
+        assert_eq!(classify(4, 4, 1, 4, 64), DataSizeCheck::Exact);
+    }
+
+    #[test]
+    fn undersized_data_is_rejected() {
+        assert_eq!(
+            classify(4, 4, 1, 4, 63),
+            DataSizeCheck::Undersized { required: 64 }
+        );
+    }
+
+    #[test]
+    fn array_layers_are_included_in_the_requirement() {
+        // 2x2 Rgba8Unorm with 6 cube faces => 2 * 4 * 2 * 6 = 96 bytes.
+        assert_eq!(classify(2, 2, 6, 4, 96), DataSizeCheck::Exact);
+        // The old check ignored depth_or_array_layers and would have wrongly
+        // flagged this 96-byte upload as a mismatch against 16 bytes.
+        assert_eq!(
+            classify(2, 2, 6, 4, 95),
+            DataSizeCheck::Undersized { required: 96 }
+        );
+    }
+
+    #[test]
+    fn mip_chain_surplus_is_only_warned_about() {
+        // A full mip chain over 6 cube faces carries far more data than a single
+        // layer. This mirrors WorldEnvironment::textures_to_texture_descriptors,
+        // which feeds read_as_binary() output into TextureDescriptor::Data. It
+        // must stay a warning, not a hard error.
+        let required = 2 * 4 * 2 * 6;
+        let whole_chain = required * 3;
+        assert_eq!(
+            classify(2, 2, 6, 4, whole_chain),
+            DataSizeCheck::Surplus { required }
+        );
+        assert!(validate_data_size(2, 2, 6, 4, TextureFormat::Rgba8Unorm, whole_chain).is_ok());
+    }
+
+    #[test]
+    fn overflowing_extent_is_unvalidatable() {
+        // u32::MAX squared overflows usize-independent of the real allocation.
+        assert_eq!(
+            classify(u32::MAX, u32::MAX, u32::MAX, 4, 0),
+            DataSizeCheck::Unvalidatable
+        );
+    }
+
+    #[test]
+    fn validate_data_size_rejects_undersized_uploads() {
+        let err = validate_data_size(4, 4, 1, 4, TextureFormat::Rgba8Unorm, 16);
+        assert!(matches!(
+            err,
+            Err(TextureError::DataSizeMismatch {
+                expected: 64,
+                actual: 16,
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+                bytes_per_pixel: 4,
+            })
+        ));
+    }
+
+    #[test]
+    fn validate_data_size_accepts_exact_and_surplus_uploads() {
+        assert!(validate_data_size(4, 4, 1, 4, TextureFormat::Rgba8Unorm, 64).is_ok());
+        assert!(validate_data_size(4, 4, 1, 4, TextureFormat::Rgba8Unorm, 4096).is_ok());
+    }
+
+    #[test]
+    fn data_size_mismatch_error_message_reports_the_shortfall() {
+        let err = TextureError::DataSizeMismatch {
+            expected: 96,
+            actual: 16,
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 6,
+            bytes_per_pixel: 4,
+        };
+        let rendered = err.to_string();
+        assert!(rendered.contains("96"), "{rendered}");
+        assert!(rendered.contains("16"), "{rendered}");
+        assert!(rendered.contains("2x2x6"), "{rendered}");
+        assert!(std::error::Error::source(&err).is_none());
+    }
+
+    #[test]
+    fn wrapped_errors_expose_their_source() {
+        let io = std::io::Error::other("boom");
+        assert!(std::error::Error::source(&TextureError::IOError(io)).is_some());
+    }
+}

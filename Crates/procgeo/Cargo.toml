@@ -1,0 +1,22 @@
+[package]
+name = "ignit_procgeo"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ignit_mesh = { path = "../mesh" }
+ignit_math = { path = "../math" }
+ignit_material_shader = { path = "../material_shader" }
+ignit_shader_debug = { path = "../shader_debug" }
+ignit_shader_pbr = { path = "../shader_pbr" }
+ignit_texture = { path = "../texture" }
+ignit_file_manager = { path = "../file_manager" }
+cgmath = { workspace = true }
+wgpu = { workspace = true }
+serde = { workspace = true }
+ron = "0.12"
+log = { workspace = true }

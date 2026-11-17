@@ -1,5 +1,5 @@
 use criterion::Criterion;
-use orbital_ecs::{Query, Read, With, Without, Write};
+use ignit_ecs::{Query, Read, With, Without, Write};
 
 use super::common::{Frozen, Name, Pos, Score, Vel, setup_dense_world, setup_partial_world};
 

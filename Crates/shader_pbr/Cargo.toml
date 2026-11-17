@@ -1,0 +1,19 @@
+[package]
+name = "ignit_shader_pbr"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ignit_shader_core = { path = "../shader_core" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor" }
+ignit_shader_math = { path = "../shader_math" }
+ignit_shader_engine = { path = "../shader_engine" }
+ignit_material_shader = { path = "../material_shader" }
+ignit_texture = { path = "../texture" }
+cgmath = { workspace = true }
+wgpu = { workspace = true }
+log = { workspace = true }

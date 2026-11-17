@@ -1,0 +1,12 @@
+[package]
+name = "ignit_shader_preprocessor"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ignit_file_manager = { path = "../file_manager" }
+log = { workspace = true }

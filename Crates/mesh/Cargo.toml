@@ -1,0 +1,14 @@
+[package]
+name = "ignit_mesh"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ignit_core = { path = "../core" }
+ignit_vertex = { path = "../vertex" }
+cgmath = { workspace = true }
+wgpu = { workspace = true }

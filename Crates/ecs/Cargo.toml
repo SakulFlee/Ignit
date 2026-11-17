@@ -1,5 +1,5 @@
 [package]
-name = "orbital_ecs"
+name = "ignit_ecs"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

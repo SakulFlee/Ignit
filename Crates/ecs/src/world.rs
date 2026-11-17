@@ -895,10 +895,10 @@ mod tests {
         stores.sort_unstable_by_key(|(_, name, _)| *name);
 
         assert_eq!(stores[0].0, TypeId::of::<Health>());
-        assert_eq!(stores[0].1, "orbital_ecs::world::tests::Health");
+        assert_eq!(stores[0].1, "ignit_ecs::world::tests::Health");
         assert_eq!(stores[0].2, vec![e.index]);
         assert_eq!(stores[1].0, TypeId::of::<Position>());
-        assert_eq!(stores[1].1, "orbital_ecs::world::tests::Position");
+        assert_eq!(stores[1].1, "ignit_ecs::world::tests::Position");
         assert_eq!(stores[1].2, vec![e.index]);
 
         assert!(world.type_id_of::<Position>().is_some());
@@ -925,7 +925,7 @@ mod tests {
             world.entity_components(&e0),
             vec![(
                 TypeId::of::<Position>(),
-                "orbital_ecs::world::tests::Position"
+                "ignit_ecs::world::tests::Position"
             )]
         );
 
@@ -933,10 +933,10 @@ mod tests {
         assert_eq!(
             world.entity_components(&e1),
             vec![
-                (TypeId::of::<Health>(), "orbital_ecs::world::tests::Health"),
+                (TypeId::of::<Health>(), "ignit_ecs::world::tests::Health"),
                 (
                     TypeId::of::<Position>(),
-                    "orbital_ecs::world::tests::Position"
+                    "ignit_ecs::world::tests::Position"
                 ),
             ]
         );

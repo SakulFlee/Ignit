@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use criterion::Criterion;
-use orbital_ecs::World;
+use ignit_ecs::World;
 use rand::seq::SliceRandom;
 
 use super::common::setup_dense_world;
