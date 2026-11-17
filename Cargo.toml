@@ -116,7 +116,7 @@ wasmtimer = "0.4.2"
 wincode = "0.6"
 web-sys = "0.3"
 web-time = "1.1"
-winit = { package = "ignit-winit", git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit-Winit.git", branch = "main", default-features = false, features = [
+winit = { package = "ignit-winit", version = "0.30.8-ignit.1", default-features = false, features = [
   "rwh_06",
 ] }
 
