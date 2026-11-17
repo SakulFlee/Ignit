@@ -20,7 +20,7 @@ jobs:
     env:
       FORGEJO_REGISTRY: forgejo.sakul-flee.de
       OCI_PUSH_TOKEN: ${{ secrets.OCI_PUSH_TOKEN }}
-      IMAGE: orbital-ci-build-image
+      IMAGE: ignit-ci-build-image
     steps:
       - uses: https://code.forgejo.org/actions/checkout@v7
       - name: Build image
