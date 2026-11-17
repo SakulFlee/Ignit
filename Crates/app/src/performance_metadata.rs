@@ -30,20 +30,34 @@ pub fn collect(
     let monitor = window.current_monitor();
     let inner_size = window.inner_size();
 
-    let mut system = sysinfo::System::new();
-    system.refresh_cpu_all();
-    system.refresh_memory();
-    let cpu_brand = system
-        .cpus()
-        .first()
-        .map(|cpu| cpu.brand().trim().to_string())
-        .unwrap_or_default();
+    let mut system = match sysinfo::System::new() {
+        Ok(system) => Some(system),
+        Err(error) => {
+            log::warn!("performance metadata: sysinfo unavailable: {error}");
+            None
+        }
+    };
+    let (cpu_brand, physical_cores, total_memory_mb, available_memory_mb) =
+        if let Some(system) = system.as_mut() {
+            system.refresh_cpu_all();
+            system.refresh_memory();
+
+            (
+                system
+                    .cpus()
+                    .first()
+                    .map(|cpu| cpu.brand().trim().to_string())
+                    .unwrap_or_default(),
+                sysinfo::System::physical_core_count().unwrap_or(0),
+                system.total_memory() / (1024 * 1024),
+                system.available_memory() / (1024 * 1024),
+            )
+        } else {
+            (String::new(), 0, 0, 0)
+        };
     let logical_cores = std::thread::available_parallelism()
         .map(|count| count.get())
-        .unwrap_or_else(|_| system.cpus().len());
-    let physical_cores = sysinfo::System::physical_core_count();
-    let total_memory_mb = system.total_memory() / (1024 * 1024);
-    let available_memory_mb = system.available_memory() / (1024 * 1024);
+        .unwrap_or_else(|_| system.as_ref().map_or(0, |system| system.cpus().len()));
 
     let (monitor_name, monitor_refresh_mhz, monitor_width, monitor_height) = monitor
         .map(|monitor| {
@@ -122,8 +136,8 @@ pub fn collect(
             "debug_assertions": cfg!(debug_assertions),
             "os": std::env::consts::OS,
             "arch": std::env::consts::ARCH,
-            "os_version": sysinfo::System::long_os_version(),
-            "kernel_version": sysinfo::System::kernel_version(),
+            "os_version": sysinfo::System::long_os_version().unwrap_or_default(),
+            "kernel_version": sysinfo::System::kernel_version().unwrap_or_default(),
         },
         "cpu": {
             "brand": cpu_brand,
