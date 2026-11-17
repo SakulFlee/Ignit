@@ -64,27 +64,27 @@ The goal of this project is to bridge well established industry-standard techniq
 The official project templates live in the `Examples/` directory. They are
 workspace members and mirror the templates used by `orbital init`:
 
-- **minimal**: A small procedural scene with a camera and a spotlight
+- **minimal-3d**: A small procedural 3D scene with a camera and a spotlight
 - **all-in-one**: Procedural scene, glTF import, lighting, shadows, UI, and overlays
-- **2d**: A minimal 2D shape rendering example
+- **minimal-2d**: A minimal 2D shape rendering example
 
 The examples are self-contained and can be run from their own directories:
 
 ```shell
-(cd Examples/minimal && cargo run)
+(cd Examples/minimal-3d && cargo run)
 (cd Examples/all-in-one && cargo run)
-(cd Examples/2d && cargo run)
+(cd Examples/minimal-2d && cargo run)
 ```
 
 They can also be run from the repository root:
 
 ```shell
-cargo run -p template_minimal
+cargo run -p template_minimal_3d
 cargo run -p template_all_in_one
-cargo run -p template_2d
+cargo run -p template_minimal_2d
 ```
 
-`minimal` and `2d` need no asset files. `all-in-one` ships the scene and helmet
+`minimal-3d` and `minimal-2d` need no asset files. `all-in-one` ships the scene and helmet
 model it uses in `Examples/all-in-one/Assets/`.
 
 To create a standalone project from one of these templates, use the Orbital CLI:

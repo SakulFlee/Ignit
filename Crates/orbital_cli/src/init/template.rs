@@ -199,10 +199,12 @@ fn generate_lib_rs(project_dir: &Path, config: &ProjectConfig) -> Result<()> {
 /// Returns the embedded application source for a template.
 fn template_lib_source(template: &str) -> Result<&'static str> {
     match template {
-        "minimal" => Ok(MINIMAL_TEMPLATE),
+        "minimal-3d" => Ok(MINIMAL_3D_TEMPLATE),
         "all-in-one" => Ok(ALL_IN_ONE_TEMPLATE),
-        "2d" => Ok(TWO_D_TEMPLATE),
-        other => bail!("Unknown template '{other}'. Available templates: minimal, all-in-one, 2d"),
+        "minimal-2d" => Ok(MINIMAL_2D_TEMPLATE),
+        other => bail!(
+            "Unknown template '{other}'. Available templates: minimal-3d, all-in-one, minimal-2d"
+        ),
     }
 }
 
@@ -226,9 +228,9 @@ fn generate_main_rs(project_dir: &Path, config: &ProjectConfig) -> Result<()> {
 
 // The canonical template sources are workspace examples. Embedding them keeps
 // `orbital init` self-contained when the CLI is installed from git or a path.
-const MINIMAL_TEMPLATE: &str = include_str!(concat!(
+const MINIMAL_3D_TEMPLATE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../Examples/minimal/src/lib.rs"
+    "/../../Examples/minimal-3d/src/lib.rs"
 ));
 
 const ALL_IN_ONE_TEMPLATE: &str = include_str!(concat!(
@@ -251,7 +253,7 @@ const ALL_IN_ONE_CUSTOM_SHADER: &str = include_str!(concat!(
     "/../../Examples/all-in-one/src/custom_shader.wgsl"
 ));
 
-const TWO_D_TEMPLATE: &str = include_str!(concat!(
+const MINIMAL_2D_TEMPLATE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../Examples/2d/src/lib.rs"
+    "/../../Examples/minimal-2d/src/lib.rs"
 ));

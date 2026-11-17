@@ -117,8 +117,8 @@ jobs:
           {
             printf 'Orbital examples %s (%s).\n\n' "$version" "$target"
             printf 'Each example lives in its own directory. Run it from that directory:\n'
-            printf '  cd template_minimal\n'
-            printf '  ./template_minimal\n\n'
+            printf '  cd template_minimal_3d\n'
+            printf '  ./template_minimal_3d\n\n'
             printf 'template_all_in_one needs the Assets/ directory next to its executable.\n\n'
             printf 'On Windows, use the .exe files.\n'
           } > "$out/README.txt"
@@ -191,8 +191,8 @@ jobs:
           {
             printf 'Orbital examples %s (%s).\n\n' "$version" "$target"
             printf 'Each example lives in its own directory. Run it from that directory:\n'
-            printf '  cd template_minimal\n'
-            printf '  ./template_minimal\n\n'
+            printf '  cd template_minimal_3d\n'
+            printf '  ./template_minimal_3d\n\n'
             printf 'template_all_in_one needs the Assets/ directory next to its executable.\n\n'
             printf 'On Windows, use the .exe files.\n'
           } > "$out/README.txt"
@@ -272,10 +272,11 @@ jobs:
           work="$(mktemp -d)"
           trap 'rm -rf "$work"' EXIT
 
-          for template in minimal all-in-one 2d; do
+          for template in minimal-3d all-in-one minimal-2d; do
             case "$template" in
               all-in-one) suffix="allinone" ;;
-              2d) suffix="twod" ;;
+              minimal-2d) suffix="minimal2d" ;;
+              minimal-3d) suffix="minimal3d" ;;
               *) suffix="$template" ;;
             esac
 

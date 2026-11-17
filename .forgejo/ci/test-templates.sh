@@ -24,7 +24,7 @@ done
 echo "Building the orbital CLI..."
 cargo build --manifest-path "$ROOT/Cargo.toml" -p orbital-cli
 
-for template in minimal all-in-one 2d; do
+for template in minimal-3d all-in-one minimal-2d; do
     project="$TMP/$template"
 
     echo "Checking template '$template'..."

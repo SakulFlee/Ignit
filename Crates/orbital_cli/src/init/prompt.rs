@@ -105,11 +105,11 @@ pub fn interactive(
         (21, 34)
     };
 
-    // 5. Template selection (minimal, all-in-one, or 2d)
+    // 5. Template selection (minimal-3d, all-in-one, or minimal-2d)
     let template_name = match template {
         Some(t) => t,
         None => {
-            let templates = vec!["minimal", "all-in-one", "2d"];
+            let templates = vec!["minimal-3d", "all-in-one", "minimal-2d"];
             Select::new("Select a template:", templates)
                 .prompt()?
                 .to_string()
@@ -202,7 +202,7 @@ pub fn non_interactive(
     let package_name =
         package.unwrap_or_else(|| format!("com.example.{}", project_name.replace('-', "_")));
 
-    let template_name = template.unwrap_or_else(|| "minimal".to_string());
+    let template_name = template.unwrap_or_else(|| "minimal-3d".to_string());
     let engine_repo = engine_repo.unwrap_or_else(|| orbital_config.engine_repo().to_string());
     let engine_branch = engine_branch.unwrap_or_else(|| orbital_config.engine_branch().to_string());
 

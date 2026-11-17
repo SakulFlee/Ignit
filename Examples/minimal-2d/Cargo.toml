@@ -1,5 +1,5 @@
 [package]
-name = "template_many_lights"
+name = "template_minimal_2d"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,11 +8,11 @@ license.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "template_many_lights"
+name = "template_minimal_2d"
 path = "src/main.rs"
 
 [lib]
-name = "template_many_lights"
+name = "template_minimal_2d"
 path = "src/lib.rs"
 crate-type = ["cdylib", "lib"]
 
