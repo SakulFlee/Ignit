@@ -97,7 +97,7 @@ ignit init my-game --template all-in-one
 To use the engine in your own project, add the published facade crate:
 
 ```toml
-ignit = "1.6.1"
+ignit = "1.6"
 ```
 
 The engine crates are published under `ignit` and `ignit_*`; the editor and

@@ -216,6 +216,11 @@ The template app sources are canonical in `Examples/`. The publishable
 `Crates/cli/src/template/` also contains platform scaffolding such as Gradle
 and Xcode files.
 
+The `ignit` and `ignit-cli` crate READMEs are generated from the root
+`README.md` plus `.forgejo/ci/readme-headers/{ignit,cli}.md` by
+`.forgejo/ci/generate-crate-readmes.sh`. Run it after editing the root README;
+the lint workflow checks that the generated files are current.
+
 ---
 
 ## 7. Tooling and CI
