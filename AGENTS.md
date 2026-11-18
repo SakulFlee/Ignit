@@ -308,6 +308,11 @@ and then one every ten minutes, returning HTTP `429` with a retry timestamp;
 retry after that timestamp rather than restarting the release. Use the
 `CARGO_REGISTRY_TOKEN` secret with `publish-new` and `publish-update` scopes.
 
+The `Publish Crates` Forgejo workflow is manual-only. It defaults to a dry run,
+requires the workspace version in its `confirm` input, and requires the matching
+`v<version>` tag before uploading. It publishes only this workspace; the fork
+repositories have their own release process.
+
 ### WASM
 
 `NOTE-for-WASM.md` documents COOP/COEP headers and the `wasm-threads` feature.
