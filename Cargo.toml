@@ -9,7 +9,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 # Mirror: https://github.com/SakulFlee/Ignit
 repository = "https://forgejo.sakul-flee.de/SakulFlee/Ignit"
-rust-version = "1.94"
+rust-version = "1.95"
 
 [workspace.dependencies]
 # Ignit crates
