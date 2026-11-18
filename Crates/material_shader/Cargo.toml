@@ -9,10 +9,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_core = { path = "../core", version = "1.6.1" }
-ignit_shader_core = { path = "../shader_core", version = "1.6.1" }
-ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.1" }
-ignit_texture = { path = "../texture", version = "1.6.1" }
-ignit_vertex = { path = "../vertex", version = "1.6.1" }
-ignit_instance = { path = "../instance", version = "1.6.1" }
+ignit_core = { path = "../core", version = "1.6.2" }
+ignit_shader_core = { path = "../shader_core", version = "1.6.2" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.2" }
+ignit_texture = { path = "../texture", version = "1.6.2" }
+ignit_vertex = { path = "../vertex", version = "1.6.2" }
+ignit_instance = { path = "../instance", version = "1.6.2" }
 wgpu = { workspace = true }
