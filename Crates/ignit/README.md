@@ -24,7 +24,7 @@ The goal of this project is to bridge well established industry-standard techniq
 | PBR Grid: Spheres | PBR Grid: Cubes |
 | ![A](https://forgejo.sakul-flee.de/SakulFlee/Ignit/raw/branch/main/Images/PBRGridSpheres.png) | ![A](https://forgejo.sakul-flee.de/SakulFlee/Ignit/raw/branch/main/Images/PBRGridCubes.png) |
 
-## Core Features 
+## Core Features
 
 <div align="center">
 

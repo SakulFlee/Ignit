@@ -21,7 +21,7 @@ The goal of this project is to bridge well established industry-standard techniq
 | PBR Grid: Spheres | PBR Grid: Cubes |
 | ![A](Images/PBRGridSpheres.png) | ![A](Images/PBRGridCubes.png) |
 
-## Core Features 
+## Core Features
 
 <div align="center">
 
