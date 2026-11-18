@@ -122,6 +122,7 @@ jobs:
             printf 'template_all_in_one needs the Assets/ directory next to its executable.\n\n'
             printf 'On Windows, use the .exe files.\n'
           } > "$out/README.txt"
+          cp LICENSE "$out/LICENSE"
 
 
           if [ "$target" = "x86_64-pc-windows-gnu" ]; then
@@ -196,6 +197,7 @@ jobs:
             printf 'template_all_in_one needs the Assets/ directory next to its executable.\n\n'
             printf 'On Windows, use the .exe files.\n'
           } > "$out/README.txt"
+          cp LICENSE "$out/LICENSE"
 
 
           (cd dist && tar -czf "$archive.tar.gz" "$archive")
@@ -338,6 +340,7 @@ jobs:
         run: |
           mkdir -p release
           find dist -type f -exec mv {} release/ \;
+          cp LICENSE release/LICENSE
       - name: Generate checksums
         run: |
           cd release
@@ -370,6 +373,7 @@ jobs:
         run: |
           mkdir -p release
           find dist -type f -exec mv {} release/ \;
+          cp LICENSE release/LICENSE
       - name: Generate checksums
         run: |
           cd release
