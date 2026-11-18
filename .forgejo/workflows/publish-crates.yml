@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Dry-Run (package, compile and check licenses)
+        description: Dry-Run (package, compile and check licenses without uploading)
         type: boolean
         default: true
       crates:
