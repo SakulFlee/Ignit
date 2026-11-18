@@ -6,7 +6,6 @@ Cross-platform real-time 3D rendering engine and framework written in Rust.
 ignit = "1.6"
 ```
 
-See the [Ignit repository](https://forgejo.sakul-flee.de/SakulFlee/Ignit) for
-installation, the example templates, platform notes, and the full documentation.
+[Ignit repository](https://forgejo.sakul-flee.de/SakulFlee/Ignit) | [GitHub mirror](https://github.com/SakulFlee/Ignit)
 
-Licensed under MIT OR Apache-2.0.
+Licensed under [MIT OR Apache-2.0](https://forgejo.sakul-flee.de/SakulFlee/Ignit/src/branch/main/LICENSE).
