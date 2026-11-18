@@ -13,12 +13,12 @@ cgmath = { workspace = true }
 wgpu = { workspace = true }
 winit = { workspace = true }
 
-ignit_app = { path = "../app", version = "1.6.0" }
-ignit_camera = { path = "../camera", version = "1.6.0" }
-ignit_core = { path = "../core", version = "1.6.0" }
-ignit_ecs = { path = "../ecs", version = "1.6.0" }
-ignit_ecs_bridge = { path = "../ecs_bridge", version = "1.6.0" }
-ignit_instance = { path = "../instance", version = "1.6.0" }
-ignit_light = { path = "../light", version = "1.6.0" }
-ignit_shadow = { path = "../shadow", version = "1.6.0" }
-ignit_vertex = { path = "../vertex", version = "1.6.0" }
+ignit_app = { path = "../app", version = "1.6.1" }
+ignit_camera = { path = "../camera", version = "1.6.1" }
+ignit_core = { path = "../core", version = "1.6.1" }
+ignit_ecs = { path = "../ecs", version = "1.6.1" }
+ignit_ecs_bridge = { path = "../ecs_bridge", version = "1.6.1" }
+ignit_instance = { path = "../instance", version = "1.6.1" }
+ignit_light = { path = "../light", version = "1.6.1" }
+ignit_shadow = { path = "../shadow", version = "1.6.1" }
+ignit_vertex = { path = "../vertex", version = "1.6.1" }

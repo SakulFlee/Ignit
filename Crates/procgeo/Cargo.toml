@@ -9,13 +9,13 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_mesh = { path = "../mesh", version = "1.6.0" }
-ignit_math = { path = "../math", version = "1.6.0" }
-ignit_material_shader = { path = "../material_shader", version = "1.6.0" }
-ignit_shader_debug = { path = "../shader_debug", version = "1.6.0" }
-ignit_shader_pbr = { path = "../shader_pbr", version = "1.6.0" }
-ignit_texture = { path = "../texture", version = "1.6.0" }
-ignit_file_manager = { path = "../file_manager", version = "1.6.0" }
+ignit_mesh = { path = "../mesh", version = "1.6.1" }
+ignit_math = { path = "../math", version = "1.6.1" }
+ignit_material_shader = { path = "../material_shader", version = "1.6.1" }
+ignit_shader_debug = { path = "../shader_debug", version = "1.6.1" }
+ignit_shader_pbr = { path = "../shader_pbr", version = "1.6.1" }
+ignit_texture = { path = "../texture", version = "1.6.1" }
+ignit_file_manager = { path = "../file_manager", version = "1.6.1" }
 cgmath = { workspace = true }
 wgpu = { workspace = true }
 serde = { workspace = true }

@@ -9,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_2d = { path = "../2d", version = "1.6.0" }
+ignit_2d = { path = "../2d", version = "1.6.1" }
 cgmath = { workspace = true }
 fontdue = { workspace = true }
 log = { workspace = true }
