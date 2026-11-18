@@ -9,23 +9,23 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_macros = { path = "../macros", version = "1.6.0" }
-ignit_core = { path = "../core", version = "1.6.0" }
-ignit_ecs = { path = "../ecs", version = "1.6.0" }
-ignit_importer_gltf = { path = "../importer_gltf", version = "1.6.0" }
-ignit_camera = { path = "../camera", version = "1.6.0" }
-ignit_cull = { path = "../cull", version = "1.6.0" }
-ignit_ibl_brdf = { path = "../ibl_brdf", version = "1.6.0" }
-ignit_light = { path = "../light", version = "1.6.0" }
-ignit_material_shader = { path = "../material_shader", version = "1.6.0" }
-ignit_math = { path = "../math", version = "1.6.0" }
-ignit_mesh = { path = "../mesh", version = "1.6.0" }
-ignit_model = { path = "../model", version = "1.6.0" }
-ignit_shadow = { path = "../shadow", version = "1.6.0" }
-ignit_world_environment = { path = "../world_environment", version = "1.6.0" }
+ignit_macros = { path = "../macros", version = "1.6.1" }
+ignit_core = { path = "../core", version = "1.6.1" }
+ignit_ecs = { path = "../ecs", version = "1.6.1" }
+ignit_importer_gltf = { path = "../importer_gltf", version = "1.6.1" }
+ignit_camera = { path = "../camera", version = "1.6.1" }
+ignit_cull = { path = "../cull", version = "1.6.1" }
+ignit_ibl_brdf = { path = "../ibl_brdf", version = "1.6.1" }
+ignit_light = { path = "../light", version = "1.6.1" }
+ignit_material_shader = { path = "../material_shader", version = "1.6.1" }
+ignit_math = { path = "../math", version = "1.6.1" }
+ignit_mesh = { path = "../mesh", version = "1.6.1" }
+ignit_model = { path = "../model", version = "1.6.1" }
+ignit_shadow = { path = "../shadow", version = "1.6.1" }
+ignit_world_environment = { path = "../world_environment", version = "1.6.1" }
 cgmath = { workspace = true }
 hashbrown = { workspace = true }
-ignit_input = { path = "../input", version = "1.6.0" }
+ignit_input = { path = "../input", version = "1.6.1" }
 ulid = { workspace = true }
 wgpu = { workspace = true }
 winit = { workspace = true }

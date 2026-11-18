@@ -3,7 +3,7 @@ resolver = "2"
 members = ["Examples/*", "Crates/*"]
 
 [workspace.package]
-version = "1.6.0"
+version = "1.6.1"
 authors = ["Lukas Weber <dev@sakul-flee.de>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -51,12 +51,12 @@ syn = { version = "3.0", features = ["full"] }
 criterion = { version = "0.8", features = ["html_reports"] }
 
 # Iced sub-crates (Ignit fork)
-iced_core = { package = "ignit-iced-core", version = "0.15.0-ignit.1" }
-iced_widget = { package = "ignit-iced-widget", version = "0.15.0-ignit.1" }
-iced_runtime = { package = "ignit-iced-runtime", version = "0.15.0-ignit.1" }
-iced_graphics = { package = "ignit-iced-graphics", version = "0.15.0-ignit.1" }
-iced_wgpu = { package = "ignit-iced-wgpu", version = "0.15.0-ignit.1", default-features = false }
-iced_winit = { package = "ignit-iced-winit", version = "0.15.0-ignit.1", default-features = false }
+iced_core = { package = "ignit-iced-core", version = "0.15.0-ignit.2" }
+iced_widget = { package = "ignit-iced-widget", version = "0.15.0-ignit.2" }
+iced_runtime = { package = "ignit-iced-runtime", version = "0.15.0-ignit.2" }
+iced_graphics = { package = "ignit-iced-graphics", version = "0.15.0-ignit.2" }
+iced_wgpu = { package = "ignit-iced-wgpu", version = "0.15.0-ignit.2", default-features = false }
+iced_winit = { package = "ignit-iced-winit", version = "0.15.0-ignit.2", default-features = false }
 
 # Iced third-party deps
 arboard = { version = "3.6", default-features = false }

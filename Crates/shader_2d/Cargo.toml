@@ -9,4 +9,4 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.0" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.1" }

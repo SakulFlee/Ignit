@@ -9,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_core = { path = "../core", version = "1.6.0" }
-ignit_vertex = { path = "../vertex", version = "1.6.0" }
+ignit_core = { path = "../core", version = "1.6.1" }
+ignit_vertex = { path = "../vertex", version = "1.6.1" }
 cgmath = { workspace = true }
 wgpu = { workspace = true }

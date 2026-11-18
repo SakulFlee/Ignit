@@ -9,24 +9,24 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_2d = { path = "../2d", version = "1.6.0" }
-ignit_camera = { path = "../camera", version = "1.6.0" }
-ignit_cull = { path = "../cull", version = "1.6.0" }
-ignit_ecs = { path = "../ecs", version = "1.6.0" }
-ignit_ecs_bridge = { path = "../ecs_bridge", version = "1.6.0" }
-ignit_ibl_brdf = { path = "../ibl_brdf", version = "1.6.0" }
-ignit_light = { path = "../light", version = "1.6.0" }
-ignit_material_shader = { path = "../material_shader", version = "1.6.0" }
-ignit_model = { path = "../model", version = "1.6.0" }
-ignit_render_graph = { path = "../render_graph", version = "1.6.0" }
-ignit_shader_engine = { path = "../shader_engine", version = "1.6.0" }
-ignit_shader_math = { path = "../shader_math", version = "1.6.0" }
-ignit_shader_pbr = { path = "../shader_pbr", version = "1.6.0" }
-ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.0" }
-ignit_shadow = { path = "../shadow", version = "1.6.0" }
-ignit_text = { path = "../text", version = "1.6.0" }
-ignit_texture = { path = "../texture", version = "1.6.0" }
-ignit_world_environment = { path = "../world_environment", version = "1.6.0" }
+ignit_2d = { path = "../2d", version = "1.6.1" }
+ignit_camera = { path = "../camera", version = "1.6.1" }
+ignit_cull = { path = "../cull", version = "1.6.1" }
+ignit_ecs = { path = "../ecs", version = "1.6.1" }
+ignit_ecs_bridge = { path = "../ecs_bridge", version = "1.6.1" }
+ignit_ibl_brdf = { path = "../ibl_brdf", version = "1.6.1" }
+ignit_light = { path = "../light", version = "1.6.1" }
+ignit_material_shader = { path = "../material_shader", version = "1.6.1" }
+ignit_model = { path = "../model", version = "1.6.1" }
+ignit_render_graph = { path = "../render_graph", version = "1.6.1" }
+ignit_shader_engine = { path = "../shader_engine", version = "1.6.1" }
+ignit_shader_math = { path = "../shader_math", version = "1.6.1" }
+ignit_shader_pbr = { path = "../shader_pbr", version = "1.6.1" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.1" }
+ignit_shadow = { path = "../shadow", version = "1.6.1" }
+ignit_text = { path = "../text", version = "1.6.1" }
+ignit_texture = { path = "../texture", version = "1.6.1" }
+ignit_world_environment = { path = "../world_environment", version = "1.6.1" }
 wgpu = { workspace = true }
 cgmath = { workspace = true }
 
