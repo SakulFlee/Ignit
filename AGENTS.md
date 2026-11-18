@@ -291,6 +291,23 @@ GitHub additionally builds macOS. iOS is not part of the release matrix yet.
 
 Dependencies are auto-updated by Renovate (`renovate.json`).
 
+### crates.io
+
+The release also publishes to crates.io:
+
+- the `ignit` facade and the `ignit_*` engine crates at the workspace version
+- `ignit-cli`, whose binary is named `ignit`
+- the fork packages `ignit-winit`, `ignit-cosmic-text`, `ignit-cryoglyph`, and the `ignit-iced-*` closure
+
+`Examples/*` are `publish = false`. The CLI templates are vendored under
+`Crates/cli/src/template/app` so the `ignit-cli` crate is self-contained;
+`.forgejo/ci/test-templates.sh` keeps the copies in sync with `Examples/`.
+
+Publish in dependency order. crates.io limits new crate names to a small burst
+and then one every ten minutes, returning HTTP `429` with a retry timestamp;
+retry after that timestamp rather than restarting the release. Use the
+`CARGO_REGISTRY_TOKEN` secret with `publish-new` and `publish-update` scopes.
+
 ### WASM
 
 `NOTE-for-WASM.md` documents COOP/COEP headers and the `wasm-threads` feature.

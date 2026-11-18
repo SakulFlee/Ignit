@@ -87,13 +87,22 @@ cargo run -p template_minimal_2d
 `minimal-3d` and `minimal-2d` need no asset files. `all-in-one` ships the scene and helmet
 model it uses in `Examples/all-in-one/Assets/`.
 
-To create a standalone project from one of these templates, use the Ignit CLI:
+Install the CLI from crates.io and create a standalone project:
 
 ```shell
+cargo install ignit-cli
 ignit init my-game --template all-in-one
 ```
 
-To use the engine in your own project, add the following to your `Cargo.toml`:
+To use the engine in your own project, add the published facade crate:
+
+```toml
+ignit = "1.6.0"
+```
+
+The engine crates are published under `ignit` and `ignit_*`; the editor and
+windowing forks are published as `ignit-iced-*`, `ignit-winit`,
+`ignit-cosmic-text`, and `ignit-cryoglyph`. To track the repository instead:
 
 ```toml
 ignit = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit.git", branch = "main" }
