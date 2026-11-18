@@ -308,11 +308,11 @@ and then one every ten minutes, returning HTTP `429` with a retry timestamp;
 retry after that timestamp rather than restarting the release. Use the
 `CARGO_REGISTRY_TOKEN` secret with `publish-new` and `publish-update` scopes.
 
-The `Publish Crates` Forgejo workflow is manual-only. It defaults to a dry run,
-requires the workspace version in its `confirm` input, and requires the matching
-`v<version>` tag before uploading. Cargo publishes workspace packages in
-dependency order; the workflow skips versions already present on crates.io so a
-rate-limit stop can be resumed. It publishes only this workspace; the fork
+The `Publish Crates` Forgejo workflow is manual-only. It defaults to a dry run;
+branch refs are always dry-run, and tag refs may publish only when the tag
+(`v<version>`) matches the workspace version. Cargo publishes workspace packages
+in dependency order; the workflow skips versions already present on crates.io so
+a rate-limit stop can be resumed. It publishes only this workspace; the fork
 repositories have their own release process.
 
 ### WASM

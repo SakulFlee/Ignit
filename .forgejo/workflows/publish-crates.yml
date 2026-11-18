@@ -1,19 +1,16 @@
 name: Publish Crates
 
 # Manual-only. Publishing is permanent on crates.io, so this workflow never
-# runs on a tag, push, or pull request. Start it from the Actions tab.
+# runs on a tag, push, or pull request. Branch refs are dry-run only; tag refs
+# may publish when the tag matches the workspace version. Start it from the
+# Actions tab.
 on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Package, compile and check licenses without uploading
+        description: Dry-Run (package, compile and check licenses)
         type: boolean
         default: true
-      confirm:
-        description: Type the workspace version to allow publishing
-        type: string
-        required: false
-        default: ""
       crates:
         description: Space-separated crate names; empty publishes the whole workspace
         type: string
@@ -47,26 +44,53 @@ jobs:
         run: |
           set -euo pipefail
 
+          ref="${{ github.ref }}"
+          ref_name="${ref#refs/tags/}"
+          if [ "$ref_name" = "$ref" ]; then
+            ref_name="${ref#refs/heads/}"
+          fi
+
+          case "$ref" in
+            refs/tags/*) ref_type=tag ;;
+            refs/heads/*) ref_type=branch ;;
+            *)
+              echo "Unsupported ref: $ref" >&2
+              exit 1
+              ;;
+          esac
+
           version="$(cargo metadata --no-deps --format-version 1 \
             | jq -r '.packages[] | select(.name == "ignit") | .version')"
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Workspace version: $version"
+          echo "ref_type=$ref_type" >> "$GITHUB_OUTPUT"
+          echo "Workspace version: $version (ref: $ref_name, $ref_type)"
 
           if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
             echo "CARGO_REGISTRY_TOKEN is not configured" >&2
             exit 1
           fi
 
-          if [ "${{ inputs.dry_run }}" = "false" ]; then
-            if [ "${{ inputs.confirm }}" != "$version" ]; then
-              echo "Refusing to publish: confirm must equal $version" >&2
+          if [ "$ref_type" = "branch" ] && [ "${{ inputs.dry_run }}" = "false" ]; then
+            echo "Refusing to publish: branches are dry-run only. Run from a v$version tag." >&2
+            exit 1
+          fi
+
+          if [ "$ref_type" = "tag" ]; then
+            tag_version="${ref_name#v}"
+            if [ "$tag_version" = "$ref_name" ]; then
+              echo "Refusing: tag must start with v" >&2
               exit 1
             fi
 
-            tag="$(git describe --tags --exact-match 2>/dev/null || true)"
-            if [ "$tag" != "v$version" ]; then
-              echo "Refusing to publish: expected tag v$version, found '${tag:-none}'" >&2
+            if [ "$tag_version" != "$version" ]; then
+              echo "Refusing: tag $ref_name does not match workspace version $version" >&2
+              exit 1
+            fi
+
+            exact="$(git describe --tags --exact-match 2>/dev/null || true)"
+            if [ "$exact" != "$ref_name" ]; then
+              echo "Refusing: checkout is not exactly at tag $ref_name" >&2
               exit 1
             fi
           fi
