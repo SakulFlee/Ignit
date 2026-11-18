@@ -84,35 +84,29 @@ jobs:
 
           cargo metadata --no-deps --format-version 1 > /tmp/metadata.json
 
-          while IFS= read -r crate; do
-            [ -z "$crate" ] && continue
-            case "$crate" in \#*) continue ;; esac
-
-            if [ -n "$selected" ] && ! printf '%s\n' $selected | grep -qx "$crate"; then
-              continue
-            fi
-
-            license="$(jq -r --arg c "$crate" \
-              '.packages[] | select(.name == $c) | .license // empty' \
-              /tmp/metadata.json)"
+          while IFS=$'\t' read -r name license manifest; do
             if [ -z "$license" ]; then
-              echo "Missing license metadata for $crate" >&2
+              echo "Missing license metadata for $name" >&2
               exit 1
             fi
 
-            manifest="$(jq -r --arg c "$crate" \
-              '.packages[] | select(.name == $c) | .manifest_path' \
-              /tmp/metadata.json)"
             directory="$(dirname "$manifest")"
-
             if ! compgen -G "$directory/LICENSE*" >/dev/null \
               && ! compgen -G "$directory/COPYING*" >/dev/null; then
               echo "No license file in $directory" >&2
               exit 1
             fi
 
-            echo "ok: $crate ($license)"
-          done < .forgejo/ci/publish-order.txt
+            echo "ok: $name ($license)"
+          done < <(jq -r --arg selected "$selected" '
+            .packages[]
+            | select(.publish != [])
+            | select($selected == ""
+                or (.name as $name
+                    | ($selected | split(" ") | index($name)) != null))
+            | [.name, .license // "", .manifest_path]
+            | @tsv
+          ' /tmp/metadata.json)
 
           # Verify that Cargo actually puts the file into a package tarball.
           cargo package -p ignit_2d --allow-dirty --no-verify
@@ -130,47 +124,87 @@ jobs:
 
           selected="${{ inputs.crates }}"
 
-          while IFS= read -r crate; do
-            [ -z "$crate" ] && continue
-            case "$crate" in \#*) continue ;; esac
+          while true; do
+            cargo metadata --no-deps --format-version 1 > /tmp/metadata.json
 
-            if [ -n "$selected" ] && ! printf '%s\n' $selected | grep -qx "$crate"; then
-              continue
+            mapfile -t names < <(jq -r --arg selected "$selected" '
+              .packages[]
+              | select(.publish != [])
+              | select($selected == ""
+                  or (.name as $name
+                      | ($selected | split(" ") | index($name)) != null))
+              | .name
+            ' /tmp/metadata.json)
+
+            if [ ${#names[@]} -eq 0 ]; then
+              echo "No matching publishable crates" >&2
+              exit 1
             fi
 
-            while true; do
-              echo "=== $crate $(date -u +%FT%TZ)"
+            args=()
+            excludes=()
+            pending=0
 
-              if out="$(cargo publish -p "$crate" 2>&1)"; then
-                printf '%s\n' "$out"
-                echo "PUBLISHED $crate"
-                break
-              fi
+            if [ -z "$selected" ]; then
+              args=(--workspace)
+            fi
 
-              printf '%s\n' "$out"
+            for name in "${names[@]}"; do
+              version="$(jq -r --arg name "$name" \
+                '.packages[] | select(.name == $name) | .version' \
+                /tmp/metadata.json)"
 
-              if printf '%s' "$out" | grep -Eq 'already (exists|uploaded)'; then
-                echo "ALREADY PUBLISHED $crate"
-                break
-              fi
-
-              if printf '%s' "$out" | grep -q '429 Too Many Requests'; then
-                when="$(printf '%s\n' "$out" \
-                  | sed -n 's/.*try again after \(.*\) GMT and see.*/\1 GMT/p' \
-                  | head -1)"
-                target="$(date -u -d "$when" +%s 2>/dev/null || echo 0)"
-                now="$(date -u +%s)"
-                wait=$((target - now + 30))
-                [ "$wait" -lt 60 ] && wait=60
-                echo "Rate limited; waiting ${wait}s until $when"
-                sleep "$wait"
+              if curl -fsS -A "ignit-publish-workflow" \
+                "https://crates.io/api/v1/crates/${name}/${version}" \
+                >/dev/null 2>&1; then
+                if [ -z "$selected" ]; then
+                  excludes+=(--exclude "$name")
+                fi
                 continue
               fi
 
-              echo "FAILED $crate" >&2
-              exit 1
+              pending=$((pending + 1))
+              if [ -n "$selected" ]; then
+                args+=(-p "$name")
+              fi
             done
-          done < .forgejo/ci/publish-order.txt
+
+            if [ "$pending" -eq 0 ]; then
+              echo "All selected crates are already published at this version."
+              break
+            fi
+
+            echo "Publishing $pending crate(s)..."
+            if output="$(cargo publish "${args[@]}" "${excludes[@]}" 2>&1)"; then
+              printf '%s\n' "$output"
+              echo "PUBLISH COMPLETE"
+              break
+            fi
+
+            printf '%s\n' "$output"
+
+            if printf '%s' "$output" | grep -q '429 Too Many Requests'; then
+              when="$(printf '%s\n' "$output" \
+                | sed -n 's/.*try again after \(.*\) GMT and see.*/\1 GMT/p' \
+                | head -1)"
+              target="$(date -u -d "$when" +%s 2>/dev/null || echo 0)"
+              now="$(date -u +%s)"
+              wait=$((target - now + 30))
+              [ "$wait" -lt 60 ] && wait=60
+              echo "Rate limited; waiting ${wait}s until $when"
+              sleep "$wait"
+              continue
+            fi
+
+            if printf '%s' "$output" | grep -Eq 'already (exists|uploaded)'; then
+              echo "Registry changed during the run; retrying with a fresh published set."
+              sleep 10
+              continue
+            fi
+
+            echo "PUBLISH FAILED" >&2
+            exit 1
+          done
 
       - name: sccache stats
         if: always()

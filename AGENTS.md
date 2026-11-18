@@ -310,7 +310,9 @@ retry after that timestamp rather than restarting the release. Use the
 
 The `Publish Crates` Forgejo workflow is manual-only. It defaults to a dry run,
 requires the workspace version in its `confirm` input, and requires the matching
-`v<version>` tag before uploading. It publishes only this workspace; the fork
+`v<version>` tag before uploading. Cargo publishes workspace packages in
+dependency order; the workflow skips versions already present on crates.io so a
+rate-limit stop can be resumed. It publishes only this workspace; the fork
 repositories have their own release process.
 
 ### WASM
