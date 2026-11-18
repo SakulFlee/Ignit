@@ -9,16 +9,16 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_app = { path = "../app", version = "1.6.1" }
-ignit_ecs = { path = "../ecs", version = "1.6.1" }
-ignit_ecs_bridge = { path = "../ecs_bridge", version = "1.6.1" }
-ignit_material_shader = { path = "../material_shader", version = "1.6.1" }
-ignit_mesh = { path = "../mesh", version = "1.6.1" }
-ignit_shader_core = { path = "../shader_core", version = "1.6.1" }
-ignit_shader_pbr = { path = "../shader_pbr", version = "1.6.1" }
-ignit_texture = { path = "../texture", version = "1.6.1" }
-ignit_text = { path = "../text", version = "1.6.1" }
-ignit_math = { path = "../math", version = "1.6.1" }
-ignit_vertex = { path = "../vertex", version = "1.6.1" }
+ignit_app = { path = "../app", version = "1.6.2" }
+ignit_ecs = { path = "../ecs", version = "1.6.2" }
+ignit_ecs_bridge = { path = "../ecs_bridge", version = "1.6.2" }
+ignit_material_shader = { path = "../material_shader", version = "1.6.2" }
+ignit_mesh = { path = "../mesh", version = "1.6.2" }
+ignit_shader_core = { path = "../shader_core", version = "1.6.2" }
+ignit_shader_pbr = { path = "../shader_pbr", version = "1.6.2" }
+ignit_texture = { path = "../texture", version = "1.6.2" }
+ignit_text = { path = "../text", version = "1.6.2" }
+ignit_math = { path = "../math", version = "1.6.2" }
+ignit_vertex = { path = "../vertex", version = "1.6.2" }
 cgmath = { workspace = true }
 wgpu = { workspace = true }

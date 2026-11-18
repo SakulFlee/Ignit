@@ -9,16 +9,16 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_core = { path = "../core", version = "1.6.1" }
-ignit_camera = { path = "../camera", version = "1.6.1" }
-ignit_light = { path = "../light", version = "1.6.1" }
-ignit_material_shader = { path = "../material_shader", version = "1.6.1" }
-ignit_mesh = { path = "../mesh", version = "1.6.1" }
-ignit_model = { path = "../model", version = "1.6.1" }
-ignit_shader_pbr = { path = "../shader_pbr", version = "1.6.1" }
-ignit_texture = { path = "../texture", version = "1.6.1" }
-ignit_math = { path = "../math", version = "1.6.1" }
-ignit_file_manager = { path = "../file_manager", version = "1.6.1" }
+ignit_core = { path = "../core", version = "1.6.2" }
+ignit_camera = { path = "../camera", version = "1.6.2" }
+ignit_light = { path = "../light", version = "1.6.2" }
+ignit_material_shader = { path = "../material_shader", version = "1.6.2" }
+ignit_mesh = { path = "../mesh", version = "1.6.2" }
+ignit_model = { path = "../model", version = "1.6.2" }
+ignit_shader_pbr = { path = "../shader_pbr", version = "1.6.2" }
+ignit_texture = { path = "../texture", version = "1.6.2" }
+ignit_math = { path = "../math", version = "1.6.2" }
+ignit_file_manager = { path = "../file_manager", version = "1.6.2" }
 cgmath = { workspace = true }
 gltf = { workspace = true }
 hashbrown = { workspace = true }

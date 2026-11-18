@@ -9,6 +9,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_texture = { path = "../texture", version = "1.6.1" }
+ignit_texture = { path = "../texture", version = "1.6.2" }
 cgmath = { workspace = true }
 wgpu = { workspace = true }

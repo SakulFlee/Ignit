@@ -9,9 +9,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_2d = { path = "../2d", version = "1.6.1" }
-ignit_ecs = { path = "../ecs", version = "1.6.1" }
-ignit_text = { path = "../text", version = "1.6.1" }
+ignit_2d = { path = "../2d", version = "1.6.2" }
+ignit_ecs = { path = "../ecs", version = "1.6.2" }
+ignit_text = { path = "../text", version = "1.6.2" }
 cgmath = { workspace = true }
 wgpu = { workspace = true }
 log = { workspace = true }
