@@ -25,3 +25,9 @@ cgmath = { workspace = true }
 hashbrown = { workspace = true }
 log = { workspace = true }
 gilrs = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Linux needs a winit backend selected explicitly. `ignit_iced` enables
+# these through its own Linux target section; input does not pull iced, so it
+# must enable them itself for standalone crate builds.
+winit = { workspace = true, features = ["x11", "wayland"] }
