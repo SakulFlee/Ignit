@@ -9,8 +9,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_core = { path = "../core", version = "1.6.2" }
-ignit_file_manager = { path = "../file_manager", version = "1.6.2" }
+ignit_core = { path = "../core", version = "1.6.3" }
+ignit_file_manager = { path = "../file_manager", version = "1.6.3" }
 wgpu = { workspace = true }
 cgmath = { workspace = true }
 image = { workspace = true }
