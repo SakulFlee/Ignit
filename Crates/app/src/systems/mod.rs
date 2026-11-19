@@ -1,9 +1,11 @@
+pub mod animation;
 pub mod camera;
 pub mod cull;
 pub mod cursor;
 pub mod import;
 pub mod realize;
 pub mod stagger;
+pub use animation::sys_animate;
 pub use camera::{
     CameraControlSettings, OrthographicForwardMode, sys_camera_controller, sys_ortho_dolly,
     sys_ortho_pan, sys_ortho_zoom, sys_touch_camera_controller,

@@ -272,6 +272,8 @@ pub fn realize_models(ecs: &mut World) {
             mesh: desc.mesh.clone(),
             materials: desc.materials.clone(),
             transforms: instances.0.clone(),
+            skin: desc.skin.clone(),
+            skeleton: None,
         };
         // Transform-only changes can update the existing instance buffer in
         // place. Animation will take this path every frame.

@@ -90,7 +90,7 @@ fn bind_and_draw_model(
 ) {
     pass.set_bind_group(0, world_bind_group, &[]);
     pass.set_bind_group(1, material.bind_group(), &[]);
-    pass.set_vertex_buffer(0, model.mesh().vertex_buffer().slice(..));
+    pass.set_vertex_buffer(0, model.vertex_buffer().slice(..));
 
     if let Some(cr) = cull {
         let byte_off = cr.model_first_instance(model_index) as u64 * 64;

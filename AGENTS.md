@@ -98,6 +98,7 @@ Workspace members are `Examples/*` and `Crates/*` (see `Cargo.toml`).
 | `Crates/file_manager` | Cross-platform asset/storage/cache I/O (desktop `Assets/`, Android APK assets, iOS bundle resources). |
 | `Crates/math` | Transforms, modes, projections. |
 | `Crates/camera`, `Crates/instance`, `Crates/vertex`, `Crates/mesh`, `Crates/model`, `Crates/light`, `Crates/cull`, `Crates/shadow`, `Crates/texture`, `Crates/material_shader` | Geometry, scene, and GPU resource crates. |
+| `Crates/animation` | Animation clips, skeletons, and CPU skinning. |
 | `Crates/ibl_brdf`, `Crates/world_environment` | BRDF LUT and HDR/IBL environment handling. |
 | `Crates/procgeo` | Procedural shapes and RON scene descriptions (`SceneBuilder`). |
 | `Crates/billboard` | Camera-facing textured billboards realized as normal models. |
@@ -166,6 +167,8 @@ Mesh, material, and descriptor caches are keyed by descriptor and use `ignit_cor
 ### Import pipeline
 
 `ImportQueueResource` holds glTF tasks. `ImporterResource` owns a rayon pool and result channel. `sys_poll_importer` drains results and spawns ECS entities for models, cameras, and lights. The importer supports external/local URIs, inline data URIs, and `KHR_lights_punctual`.
+
+glTF skins and animations are imported into `ignit_animation` clip and skeleton data. `sys_animate` advances `AnimationPlayer` components, evaluates skeleton poses, and writes CPU-skinned vertices into each model's skinned vertex buffer before scene extraction.
 
 ### UI and 2D
 
@@ -366,6 +369,8 @@ Treat the current WASM status as unverified: `Crates/ecs/src/system/runner.rs` u
 | `Crates/shader_preprocessor/src/registry.rs` | WGSL node registry. |
 | `Crates/shader_core/src/lib.rs` | `ShaderDescriptor` and pipeline plumbing. |
 | `Crates/shader_compute/src/lib.rs` | Compute shader descriptors, bind groups, and pipeline cache. |
+| `Crates/animation/src/skeleton.rs` | Skeleton hierarchy and skinning-matrix evaluation. |
+| `Crates/app/src/systems/animation.rs` | Animation advancement and CPU skinning. |
 | `Crates/renderer/src/renderer.rs` | Pass ordering, models, overlays, 2D/UI/text. |
 | `Crates/renderer/src/volumetric.rs` | Froxel injection/composite pipelines for volumetric lighting and height fog. |
 | `Crates/importer_gltf/src/lib.rs` | Async glTF importer. |

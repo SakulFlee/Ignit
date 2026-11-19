@@ -13,6 +13,7 @@ ignit_macros = { path = "../macros", version = "1.6.3" }
 ignit_core = { path = "../core", version = "1.6.3" }
 ignit_ecs = { path = "../ecs", version = "1.6.3" }
 ignit_importer_gltf = { path = "../importer_gltf", version = "1.6.3" }
+ignit_animation = { path = "../animation", version = "1.6.3" }
 ignit_camera = { path = "../camera", version = "1.6.3" }
 ignit_cull = { path = "../cull", version = "1.6.3" }
 ignit_ibl_brdf = { path = "../ibl_brdf", version = "1.6.3" }

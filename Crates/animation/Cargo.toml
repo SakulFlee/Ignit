@@ -1,0 +1,14 @@
+[package]
+name = "ignit_animation"
+description = "Animation clips, skeletons, and CPU skinning for Ignit"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+cgmath = { workspace = true }
+ignit_math = { path = "../math", version = "1.6.3" }
+ignit_vertex = { path = "../vertex", version = "1.6.3" }

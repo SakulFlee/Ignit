@@ -13,6 +13,7 @@ ignit_core = { path = "../core", version = "1.6.3" }
 ignit_camera = { path = "../camera", version = "1.6.3" }
 ignit_light = { path = "../light", version = "1.6.3" }
 ignit_material_shader = { path = "../material_shader", version = "1.6.3" }
+ignit_animation = { path = "../animation", version = "1.6.3" }
 ignit_mesh = { path = "../mesh", version = "1.6.3" }
 ignit_model = { path = "../model", version = "1.6.3" }
 ignit_shader_pbr = { path = "../shader_pbr", version = "1.6.3" }

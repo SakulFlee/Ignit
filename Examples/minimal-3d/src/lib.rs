@@ -140,6 +140,7 @@ impl Module for GameModule {
                     label: "procgeo".into(),
                     mesh: Arc::new(mesh),
                     materials: vec![material],
+                    skin: None,
                 },
             )
             .unwrap();

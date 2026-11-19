@@ -190,6 +190,9 @@ pub struct ModelDescriptor {
     pub mesh: std::sync::Arc<ignit_mesh::MeshDescriptor>,
     #[editable(skip)]
     pub materials: Vec<std::sync::Arc<ignit_material_shader::MaterialShaderDescriptor>>,
+    /// Per-vertex joint indices and weights for CPU skinning.
+    #[editable(skip)]
+    pub skin: Option<std::sync::Arc<ignit_animation::SkinData>>,
 }
 
 impl ModelDescriptor {
@@ -201,6 +204,7 @@ impl ModelDescriptor {
         let mut hasher = DefaultHasher::new();
         self.mesh.vertices.hash(&mut hasher);
         self.mesh.indices.hash(&mut hasher);
+        self.skin.hash(&mut hasher);
         for material in &self.materials {
             material.hash(&mut hasher);
         }
@@ -270,6 +274,51 @@ impl ModelDirty {
         self.0 = false;
     }
 }
+
+// ---------------------------------------------------------------------------
+// Animation ECS types
+// ---------------------------------------------------------------------------
+
+/// Plays one animation clip on a skinned model entity.
+#[derive(Debug, Clone)]
+pub struct AnimationPlayer {
+    pub clip: std::sync::Arc<ignit_animation::AnimationClip>,
+    pub time: f32,
+    pub speed: f32,
+    pub looping: bool,
+    pub playing: bool,
+}
+
+impl AnimationPlayer {
+    pub fn new(clip: std::sync::Arc<ignit_animation::AnimationClip>) -> Self {
+        Self {
+            clip,
+            time: 0.0,
+            speed: 1.0,
+            looping: true,
+            playing: true,
+        }
+    }
+
+    /// Advances the clip time by `delta` seconds.
+    pub fn advance(&mut self, delta: f32) {
+        if !self.playing {
+            return;
+        }
+
+        self.time += delta * self.speed;
+        let duration = self.clip.duration;
+        if self.looping && duration > f32::EPSILON {
+            self.time = self.time.rem_euclid(duration);
+        } else if duration > 0.0 {
+            self.time = self.time.clamp(0.0, duration);
+        }
+    }
+}
+
+/// Runtime skeleton state for an animated model entity.
+#[derive(Debug, Clone)]
+pub struct SkeletonComponent(pub ignit_animation::Skeleton);
 
 // ---------------------------------------------------------------------------
 // Light ECS types
@@ -509,11 +558,13 @@ mod tests {
             label: "test".into(),
             mesh: mesh.clone(),
             materials: vec![mat.clone()],
+            skin: None,
         };
         let desc2 = ModelDescriptor {
             label: "test".into(),
             mesh: mesh.clone(),
             materials: vec![mat.clone()],
+            skin: None,
         };
 
         assert_eq!(desc1.instance_hash(), desc2.instance_hash());
@@ -531,13 +582,34 @@ mod tests {
             label: "test".into(),
             mesh: mesh1,
             materials: vec![],
+            skin: None,
         };
         let desc2 = ModelDescriptor {
             label: "test".into(),
             mesh: mesh2,
             materials: vec![],
+            skin: None,
         };
 
         assert_ne!(desc1.instance_hash(), desc2.instance_hash());
+    }
+
+    #[test]
+    fn animation_player_loops_and_clamps() {
+        use std::sync::Arc;
+
+        let clip = Arc::new(ignit_animation::AnimationClip {
+            name: "test".into(),
+            duration: 2.0,
+            channels: Vec::new(),
+        });
+        let mut player = AnimationPlayer::new(clip);
+
+        player.advance(2.5);
+        assert!((player.time - 0.5).abs() < 1e-6);
+
+        player.looping = false;
+        player.advance(3.0);
+        assert!((player.time - 2.0).abs() < 1e-6);
     }
 }

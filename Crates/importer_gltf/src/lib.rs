@@ -19,6 +19,7 @@ pub struct ImportResult {
     pub models: Vec<ModelDescriptor>,
     pub cameras: Vec<CameraDescriptor>,
     pub lights: Vec<LightDescriptor>,
+    pub animations: Vec<Arc<ignit_animation::AnimationClip>>,
 }
 
 /// Counts the import tasks that are still running on the rayon pool.
@@ -151,6 +152,7 @@ impl Importer {
                             models: gltf_result.models,
                             cameras: gltf_result.cameras,
                             lights: gltf_result.lights,
+                            animations: gltf_result.animations,
                         }
                     }
                 };
