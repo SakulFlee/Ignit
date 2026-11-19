@@ -48,7 +48,7 @@ impl System for CursorToggle {
             None => return,
         };
 
-        let alt_pressed = is_alt_pressed(&input.0);
+        let alt_pressed = is_toggle_pressed(&input.0);
 
         // Edge detection: toggle only on fresh press (not held)
         if alt_pressed && !self.was_pressed {
@@ -66,9 +66,11 @@ impl System for CursorToggle {
     }
 }
 
-fn is_alt_pressed(input: &InputState) -> bool {
-    input
-        .button_state_any(&InputButton::Keyboard(PhysicalKey::Code(KeyCode::AltLeft)))
-        .map(|(_, pressed)| pressed)
-        .unwrap_or(false)
+fn is_toggle_pressed(input: &InputState) -> bool {
+    [KeyCode::AltLeft, KeyCode::AltRight].iter().any(|key| {
+        input
+            .button_state_any(&InputButton::Keyboard(PhysicalKey::Code(*key)))
+            .map(|(_, pressed)| pressed)
+            .unwrap_or(false)
+    })
 }

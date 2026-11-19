@@ -2323,6 +2323,24 @@ impl ApplicationHandler for ModuleRuntime {
             _ => {}
         }
 
+        // Clicking back into the window is an explicit request to interact with
+        // the app. Re-apply a desired grab here because some compositors drop
+        // the pointer constraint while the window is unfocused and do not
+        // re-acquire it on focus alone.
+        if matches!(
+            &event,
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                ..
+            }
+        ) {
+            self.pointer_over_window = true;
+            self.window_focused = true;
+            if self.desired_cursor_grab() {
+                self.sync_cursor_grab(&ctx);
+            }
+        }
+
         let input_event = match event {
             WindowEvent::CloseRequested => {
                 info!("App shutdown requested!");
