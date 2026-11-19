@@ -130,6 +130,38 @@ nix-shell -p cargo pkg-config systemd wayland libxkbcommon vulkan-loader mesa \
 Android builds need a container or `programs.nix-ld`, because the CLI-managed
 SDK and JDK are generic Linux builds.
 
+## Container
+
+The repository includes a `Containerfile` that packages the `ignit` CLI with
+the desktop build dependencies needed by generated projects. It works with
+Docker and Podman:
+
+```shell
+docker build -f Containerfile -t ignit-cli .
+docker run --rm -it -v "$PWD:/workspace" ignit-cli init my-game --template all-in-one
+docker run --rm -it -v "$PWD/my-game:/workspace" ignit-cli build
+```
+
+With Podman, use `podman build -t ignit-cli .` and the same `podman run`
+arguments.
+
+The image runs as root, so files it creates in a bind mount are owned by root.
+Pass your host UID/GID to keep ownership:
+
+```shell
+docker run --rm -it \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp \
+  -v "$PWD:/workspace" \
+  ignit-cli build
+```
+
+`ignit run` needs access to the host display and GPU. For Wayland, pass through
+`XDG_RUNTIME_DIR` and the Wayland socket, and add `--device /dev/dri`. Android
+builds download the SDK and JDK into the container; mount a volume over
+`/root/.cache/Ignit` (or `$HOME/.cache/Ignit` with `--user`) to keep them
+between runs.
+
 ## Performance Reporting
 
 The debug UI can write FPS, frame-stage timings and cache counters to

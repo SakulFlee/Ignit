@@ -1,0 +1,17 @@
+# Build context exclusions for the Ignit CLI container image.
+
+.git
+.github
+.forgejo
+
+# Cargo build output
+target
+**/target
+
+# Local logs and generated screenshots
+Logs
+*.log
+Images
+
+# Release packaging scratch output
+/dist
