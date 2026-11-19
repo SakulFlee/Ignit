@@ -103,7 +103,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          version="${{ steps.version.outputs.version }}"
           selected="${{ inputs.crates }}"
 
           cargo metadata --no-deps --format-version 1 > /tmp/metadata.json
@@ -132,10 +131,9 @@ jobs:
             | @tsv
           ' /tmp/metadata.json)
 
-          # Verify that Cargo actually puts the file into a package tarball.
-          cargo package -p ignit_2d --allow-dirty --no-verify
-          if ! tar -tzf "target/package/ignit_2d-${version}.crate" \
-            | grep -qiE '(^|/)(LICENSE|LICENCE|COPYING|NOTICE)'; then
+          # Verify that Cargo includes the license in its package file list.
+          if ! cargo package --list -p ignit_2d --allow-dirty \
+            | grep -qE '^(LICENSE|LICENCE|COPYING|NOTICE)'; then
             echo "Cargo did not include a license file in ignit_2d" >&2
             exit 1
           fi
