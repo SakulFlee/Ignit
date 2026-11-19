@@ -44,16 +44,16 @@ enum Commands {
         /// Enable Android support
         #[arg(long)]
         android: Option<bool>,
-        /// Ignit engine git repo URL
-        #[arg(long)]
+        /// Custom engine git repository (overrides the source menu)
+        #[arg(long, conflicts_with = "engine_path")]
         engine_repo: Option<String>,
-        /// Ignit engine git branch
+        /// Engine git branch (with --engine-repo)
         #[arg(long)]
         engine_branch: Option<String>,
-        /// Local path to Ignit engine repo (alternative to --engine-repo)
-        #[arg(long)]
+        /// Local engine checkout (overrides the source menu)
+        #[arg(long, conflicts_with = "engine_repo")]
         engine_path: Option<PathBuf>,
-        /// Skip interactive prompts (use defaults)
+        /// Skip interactive prompts (defaults to the crates.io engine)
         #[arg(long)]
         yes: bool,
         /// Do not initialize a Git repository for the generated project

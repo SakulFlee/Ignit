@@ -23,10 +23,8 @@ pub struct IgnitGeneral {
 }
 
 impl IgnitGeneral {
-    pub fn engine_repo(&self) -> &str {
-        self.engine_repo
-            .as_deref()
-            .unwrap_or("https://forgejo.sakul-flee.de/SakulFlee/Ignit.git")
+    pub fn engine_repo(&self) -> Option<&str> {
+        self.engine_repo.as_deref()
     }
 
     pub fn engine_branch(&self) -> &str {
