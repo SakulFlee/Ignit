@@ -14,6 +14,7 @@ pub use ignit_material_shader::*;
 pub use ignit_math::{Mode, Transform, ortho_wgpu, perspective_wgpu};
 pub use ignit_mesh::*;
 pub use ignit_model::*;
+pub use ignit_shader_compute::*;
 pub use ignit_shader_core::*;
 pub use ignit_shadow::*;
 pub use ignit_texture::*;

@@ -38,6 +38,7 @@ ignit_file_manager = { path = "../file_manager", version = "1.6.3" }
 ignit_macros = { path = "../macros", version = "1.6.3" }
 ignit_input = { path = "../input", version = "1.6.3" }
 ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.3" }
+ignit_shader_compute = { path = "../shader_compute", version = "1.6.3" }
 ignit_resources = { path = "../resources", version = "1.6.3" }
 ignit_importer_gltf = { path = "../importer_gltf", version = "1.6.3" }
 wgpu = { workspace = true }

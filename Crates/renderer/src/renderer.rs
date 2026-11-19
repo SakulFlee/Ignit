@@ -54,6 +54,7 @@ pub const GBUFFER_COLOR_FORMATS: [TextureFormat; 3] = [
 /// Renderer passes scheduled by the frame graph.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum ScenePass {
+    Compute,
     Shadow,
     PrepareWorld,
     Sky,
@@ -283,6 +284,9 @@ pub struct RendererCpuTimings {
 /// scene submission.
 pub type OverlayCallback<'a> =
     dyn FnMut(&mut wgpu::CommandEncoder) -> Vec<wgpu::CommandBuffer> + 'a;
+
+/// Records compute work into the scene encoder before the scene graph runs.
+pub type ComputeCallback<'a> = dyn FnMut(&mut CommandEncoder) + 'a;
 
 /// Empty resources bound when a frame has no shadows.
 ///
@@ -1111,6 +1115,56 @@ impl Renderer {
         dirty_set: &std::collections::HashSet<u32>,
         overlay: Option<&mut OverlayCallback<'_>>,
     ) {
+        self.render_internal(
+            target_view,
+            scene,
+            device,
+            queue,
+            cull,
+            dirty_set,
+            overlay,
+            None,
+        );
+    }
+
+    /// Renders the scene and records registered compute workloads before the
+    /// shadow pass.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_with_compute(
+        &mut self,
+        target_view: &TextureView,
+        scene: &RenderScene,
+        device: &Device,
+        queue: &Queue,
+        cull: Option<&CullResources>,
+        dirty_set: &std::collections::HashSet<u32>,
+        overlay: Option<&mut OverlayCallback<'_>>,
+        compute: Option<&mut ComputeCallback<'_>>,
+    ) {
+        self.render_internal(
+            target_view,
+            scene,
+            device,
+            queue,
+            cull,
+            dirty_set,
+            overlay,
+            compute,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_internal(
+        &mut self,
+        target_view: &TextureView,
+        scene: &RenderScene,
+        device: &Device,
+        queue: &Queue,
+        cull: Option<&CullResources>,
+        dirty_set: &std::collections::HashSet<u32>,
+        overlay: Option<&mut OverlayCallback<'_>>,
+        compute: Option<&mut ComputeCallback<'_>>,
+    ) {
         let ms = |duration: std::time::Duration| duration.as_secs_f64() * 1000.0;
         let render_start = Instant::now();
 
@@ -1359,6 +1413,9 @@ impl Renderer {
         let mut volumetric_integrated: Option<TextureView> = None;
         let mut graph = std::mem::take(&mut self.render_graph);
         graph.begin_frame();
+        if compute.is_some() {
+            graph.add_pass(ScenePass::Compute, "compute", &[], &[]);
+        }
         add_scene_passes(
             &mut graph,
             self.anti_aliasing,
@@ -1390,6 +1447,7 @@ impl Renderer {
         let mut skybox_ms = 0.0;
         let mut models_ms = 0.0;
         let mut volumetrics_ms = 0.0;
+        let mut compute_callback = compute;
 
         graph
             .execute(
@@ -1397,6 +1455,11 @@ impl Renderer {
                 device,
                 queue,
                 |pass, context| match pass {
+                    ScenePass::Compute => {
+                        if let Some(callback) = compute_callback.as_mut() {
+                            callback(context.encoder);
+                        }
+                    }
                     ScenePass::Shadow => {
                         if let Some(shadow_renderer) = self.shadow_renderer.as_mut()
                             && let Some(camera) = &scene.camera
@@ -1684,7 +1747,11 @@ impl Renderer {
                 }
                 ScenePass::Transparent => models_ms += ms(timing.cpu),
                 ScenePass::PrepareWorld => skybox_ms += ms(timing.cpu),
-                ScenePass::ClearDepth | ScenePass::Tonemap | ScenePass::Fxaa | ScenePass::Smaa => {}
+                ScenePass::Compute
+                | ScenePass::ClearDepth
+                | ScenePass::Tonemap
+                | ScenePass::Fxaa
+                | ScenePass::Smaa => {}
             }
         }
         self.render_graph = graph;
@@ -2294,6 +2361,59 @@ mod tests {
             &queue,
         );
         renderer.enable_shadows(&device, &queue, 4, 256);
+    }
+
+    #[test]
+    fn renderer_records_compute_before_the_scene() {
+        let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+        let mut renderer = Renderer::new(
+            TextureFormat::Bgra8UnormSrgb,
+            Vector2::new(320, 180),
+            &device,
+            &queue,
+        );
+        let target = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("Renderer compute noop target"),
+                size: wgpu::Extent3d {
+                    width: 320,
+                    height: 180,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: TextureFormat::Bgra8UnormSrgb,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
+
+        let called = std::cell::Cell::new(false);
+        let mut compute = |_encoder: &mut wgpu::CommandEncoder| called.set(true);
+        let world = ignit_ecs::World::new();
+        let scene = RenderScene::from_world(&world);
+
+        renderer.render_with_compute(
+            &target,
+            &scene,
+            &device,
+            &queue,
+            None,
+            &std::collections::HashSet::new(),
+            None,
+            Some(&mut compute),
+        );
+
+        assert!(called.get());
+        assert_eq!(
+            renderer
+                .render_graph
+                .ordered_passes()
+                .map(|(_, name)| name)
+                .next(),
+            Some("compute")
+        );
     }
 
     #[test]

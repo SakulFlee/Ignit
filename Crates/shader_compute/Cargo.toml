@@ -1,0 +1,17 @@
+[package]
+name = "ignit_shader_compute"
+description = "Compute shader assembly and pipeline creation for Ignit"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ignit_shader_core = { path = "../shader_core", version = "1.6.3" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.3" }
+wgpu = { workspace = true }
+
+[dev-dependencies]
+wgpu = { workspace = true, features = ["noop"] }

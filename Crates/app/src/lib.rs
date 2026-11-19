@@ -56,6 +56,9 @@ pub use render_overlay::{
     RenderOverlayResource,
 };
 
+mod compute;
+pub use compute::{ComputeWorkload, ComputeWorkloadContext, ComputeWorkloads};
+
 mod touch_controls;
 pub use touch_controls::{TouchControlsConfig, set_touch_controls, touch_controls};
 
