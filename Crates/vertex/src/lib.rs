@@ -13,6 +13,9 @@ pub struct Vertex {
 }
 
 impl Vertex {
+    /// Size of one vertex in bytes, matching [`Vertex::to_bytes`].
+    pub const BYTE_SIZE: usize = 14 * std::mem::size_of::<f32>();
+
     pub fn complex_vertex_buffer_layout_descriptor() -> VertexBufferLayout<'static> {
         VertexBufferLayout {
             array_stride: size_of::<[f32; 3 * 4 + 2]>() as u64,

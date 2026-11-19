@@ -182,6 +182,7 @@ mod tests {
             label: "helmet".to_string(),
             mesh: Arc::new(MeshDescriptor::new(Vec::new(), Vec::new())),
             materials: Vec::new(),
+            skin: None,
         };
 
         assert_eq!(descriptor.editable_fields().len(), 1);

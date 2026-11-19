@@ -732,7 +732,7 @@ impl ShadowRenderer {
                 }
             }
 
-            pass.set_vertex_buffer(0, model.mesh().vertex_buffer().slice(..));
+            pass.set_vertex_buffer(0, model.vertex_buffer().slice(..));
             pass.set_vertex_buffer(1, model.instance_buffer().slice(..));
             pass.set_index_buffer(
                 model.mesh().index_buffer().slice(..),

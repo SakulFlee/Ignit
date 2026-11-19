@@ -1,9 +1,17 @@
-use cgmath::{InnerSpace, Point3, Quaternion, Vector2, Vector3, Zero};
+use cgmath::{
+    InnerSpace, Matrix, Matrix4, Point3, Quaternion, Rad, Rotation3, SquareMatrix, Vector2,
+    Vector3, Vector4, Zero,
+};
+use gltf::animation::{Interpolation as GltfInterpolation, Property};
 use gltf::camera::Projection;
 use gltf::image::Format;
 use gltf::khr_lights_punctual;
 use gltf::{Camera, Document, Material, Mesh, Node, Scene, Semantic};
 use hashbrown::{HashMap, HashSet};
+use ignit_animation::{
+    AnimationChannel, AnimationClip, AnimationPath, AnimationSampler, AnimationValue,
+    Interpolation, JointDescriptor, SkeletonDescriptor, SkinData,
+};
 use ignit_camera::{CameraDescriptor, ProjectionMode};
 use ignit_file_manager::FileManager;
 use ignit_light::LightDescriptor;
@@ -400,7 +408,7 @@ impl GltfImporter {
                             .is_some_and(|name| name == specific_import.label)
                     })
                 }) {
-                    let import_result = Self::import_nodes(vec![node], buffers, textures);
+                    let import_result = Self::import_nodes(vec![node], document, buffers, textures);
                     result.extend(import_result);
                 } else {
                     result
@@ -433,6 +441,7 @@ impl GltfImporter {
             }
         }
 
+        result.animations = Self::parse_animations(document, buffers);
         result
     }
 
@@ -449,24 +458,26 @@ impl GltfImporter {
             result.extend(import_result);
         }
 
+        result.animations = Self::parse_animations(document, buffers);
         result
     }
 
     /// Handles importing a whole scene from a glTF [`Document`].
     fn import_whole_scene(
         scene: Scene,
-        _document: &Document,
+        document: &Document,
         buffers: &[gltf::buffer::Data],
         textures: &[Option<gltf::image::Data>],
     ) -> GltfImportResult {
         let nodes: Vec<_> = scene.nodes().collect();
 
-        Self::import_nodes(nodes, buffers, textures)
+        Self::import_nodes(nodes, document, buffers, textures)
     }
 
     /// Handles importing a specific set of [`Node`]s from a glTF [`Document`].
     fn import_nodes(
         nodes: Vec<Node>,
+        document: &Document,
         buffers: &[gltf::buffer::Data],
         textures: &[Option<gltf::image::Data>],
     ) -> GltfImportResult {
@@ -477,7 +488,10 @@ impl GltfImporter {
 
         for node in nodes {
             if let Some(mesh) = node.mesh() {
-                match Self::parse_models(&node, &mesh, buffers, textures) {
+                let skeleton = node
+                    .skin()
+                    .map(|skin| Arc::new(Self::parse_skeleton(&skin, document, buffers)));
+                match Self::parse_models(&node, &mesh, skeleton, buffers, textures) {
                     Ok(models) => model_descriptors.extend(models),
                     Err(e) => errors.push(e),
                 }
@@ -500,6 +514,7 @@ impl GltfImporter {
             models: model_descriptors,
             cameras: camera_descriptors,
             lights: light_descriptors,
+            animations: Vec::new(),
             errors,
         }
     }
@@ -742,6 +757,206 @@ impl GltfImporter {
         (texture_0, texture_1)
     }
 
+    /// Parses a glTF skin into a rest-pose skeleton descriptor.
+    fn parse_skeleton(
+        skin: &gltf::Skin,
+        document: &Document,
+        buffers: &[gltf::buffer::Data],
+    ) -> SkeletonDescriptor {
+        let mut parent_nodes: HashMap<usize, usize> = HashMap::new();
+        for node in document.nodes() {
+            for child in node.children() {
+                parent_nodes.insert(child.index(), node.index());
+            }
+        }
+
+        let joint_nodes = skin.joints().collect::<Vec<_>>();
+        let joint_indices: HashMap<usize, usize> = joint_nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| (node.index(), index))
+            .collect();
+
+        let joints = joint_nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| {
+                let parent = parent_nodes
+                    .get(&node.index())
+                    .and_then(|parent| joint_indices.get(parent).copied());
+                JointDescriptor {
+                    node_index: node.index(),
+                    name: node
+                        .name()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("joint{index}")),
+                    parent,
+                    rest: Self::node_transform(node),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let inverse_bind_matrices = skin
+            .reader(|buffer| Some(&buffers[buffer.index()]))
+            .read_inverse_bind_matrices()
+            .map(|matrices| {
+                matrices
+                    .map(|matrix| Self::convert_matrix(Self::matrix_from_gltf(matrix)))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| vec![Matrix4::identity(); joints.len()]);
+
+        SkeletonDescriptor {
+            joints,
+            inverse_bind_matrices,
+        }
+    }
+
+    /// Parses all glTF animation clips in the document.
+    fn parse_animations(
+        document: &Document,
+        buffers: &[gltf::buffer::Data],
+    ) -> Vec<Arc<AnimationClip>> {
+        use gltf::animation::util::ReadOutputs;
+
+        let mut clips = Vec::new();
+
+        for animation in document.animations() {
+            let name = animation
+                .name()
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("Animation {}", animation.index()));
+            let mut channels = Vec::new();
+
+            for channel in animation.channels() {
+                let target = channel.target();
+                let path = match target.property() {
+                    Property::Translation => AnimationPath::Translation,
+                    Property::Rotation => AnimationPath::Rotation,
+                    Property::Scale => AnimationPath::Scale,
+                    Property::MorphTargetWeights => continue,
+                };
+
+                let sampler = channel.sampler();
+                let cubic = matches!(sampler.interpolation(), GltfInterpolation::CubicSpline);
+                let interpolation = match sampler.interpolation() {
+                    GltfInterpolation::Step => Interpolation::Step,
+                    GltfInterpolation::Linear => Interpolation::Linear,
+                    GltfInterpolation::CubicSpline => {
+                        warn!("Cubic spline animation '{}' is imported as linear", name);
+                        Interpolation::Linear
+                    }
+                };
+
+                let reader = channel.reader(|buffer| Some(&buffers[buffer.index()]));
+                let Some(times) = reader
+                    .read_inputs()
+                    .map(|inputs| inputs.collect::<Vec<_>>())
+                else {
+                    continue;
+                };
+                let Some(outputs) = reader.read_outputs() else {
+                    continue;
+                };
+
+                let mut values = match outputs {
+                    ReadOutputs::Translations(values) => values
+                        .map(|value| {
+                            AnimationValue::Vec3(Self::convert_translation(Vector3::new(
+                                value[0], value[1], value[2],
+                            )))
+                        })
+                        .collect::<Vec<_>>(),
+                    ReadOutputs::Rotations(values) => values
+                        .into_f32()
+                        .map(|value| {
+                            let rotation = Quaternion::new(value[3], value[0], value[1], value[2]);
+                            AnimationValue::Quat(Self::convert_rotation(rotation))
+                        })
+                        .collect::<Vec<_>>(),
+                    ReadOutputs::Scales(values) => values
+                        .map(|value| {
+                            AnimationValue::Vec3(Self::convert_scale(Vector3::new(
+                                value[0], value[1], value[2],
+                            )))
+                        })
+                        .collect::<Vec<_>>(),
+                    ReadOutputs::MorphTargetWeights(_) => continue,
+                };
+
+                if cubic {
+                    values = values.into_iter().skip(1).step_by(3).collect();
+                }
+
+                if times.is_empty() || values.is_empty() {
+                    continue;
+                }
+
+                channels.push(AnimationChannel {
+                    node_index: target.node().index(),
+                    path,
+                    sampler: AnimationSampler::new(times, values, interpolation),
+                });
+            }
+
+            if !channels.is_empty() {
+                clips.push(Arc::new(AnimationClip::new(name, channels)));
+            }
+        }
+
+        clips
+    }
+
+    fn node_transform(node: &Node) -> Transform {
+        let decomposed = node.transform().decomposed();
+        let position = Vector3::new(decomposed.0[0], decomposed.0[1], decomposed.0[2]);
+        let rotation = Quaternion::new(
+            decomposed.1[3],
+            decomposed.1[0],
+            decomposed.1[1],
+            decomposed.1[2],
+        );
+        let scale = Vector3::new(decomposed.2[0], decomposed.2[1], decomposed.2[2]);
+
+        Transform {
+            position: Self::convert_translation(position),
+            rotation: Self::convert_rotation(rotation),
+            scale: Self::convert_scale(scale),
+        }
+    }
+
+    fn matrix_from_gltf(matrix: [[f32; 4]; 4]) -> Matrix4<f32> {
+        Matrix4::from_cols(
+            Vector4::new(matrix[0][0], matrix[0][1], matrix[0][2], matrix[0][3]),
+            Vector4::new(matrix[1][0], matrix[1][1], matrix[1][2], matrix[1][3]),
+            Vector4::new(matrix[2][0], matrix[2][1], matrix[2][2], matrix[2][3]),
+            Vector4::new(matrix[3][0], matrix[3][1], matrix[3][2], matrix[3][3]),
+        )
+    }
+
+    /// Rotation taking glTF's Y-up space into Ignit's Z-up space.
+    fn coordinate_rotation() -> Quaternion<f32> {
+        Quaternion::from_axis_angle(Vector3::unit_x(), Rad(-std::f32::consts::FRAC_PI_2))
+    }
+
+    fn convert_translation(value: Vector3<f32>) -> Vector3<f32> {
+        Vector3::new(value.x, value.z, -value.y)
+    }
+
+    fn convert_scale(value: Vector3<f32>) -> Vector3<f32> {
+        Vector3::new(value.x, value.z, value.y)
+    }
+
+    fn convert_rotation(value: Quaternion<f32>) -> Quaternion<f32> {
+        let conversion = Self::coordinate_rotation();
+        (conversion * value * conversion.conjugate()).normalize()
+    }
+
+    fn convert_matrix(value: Matrix4<f32>) -> Matrix4<f32> {
+        let conversion = Matrix4::from(Self::coordinate_rotation());
+        conversion * value * conversion.transpose()
+    }
+
     /// Handles parsing a glTF [`Material`] into an Ignit [`MaterialDescriptor`].
     fn parse_materials(
         material: &Material,
@@ -891,6 +1106,7 @@ impl GltfImporter {
     fn parse_models(
         node: &Node,
         mesh: &Mesh,
+        skeleton: Option<Arc<SkeletonDescriptor>>,
         buffers: &[gltf::buffer::Data],
         textures: &[Option<gltf::image::Data>],
     ) -> Result<Vec<ModelDescriptor>, Box<dyn Error>> {
@@ -923,6 +1139,12 @@ impl GltfImporter {
             let normals = reader.read_normals();
             let tangents = reader.read_tangents();
             let uvs = reader.read_tex_coords(0).map(|x| x.into_f32());
+            let joints = reader
+                .read_joints(0)
+                .map(|joints| joints.into_u16().collect::<Vec<_>>());
+            let weights = reader
+                .read_weights(0)
+                .map(|weights| weights.into_f32().collect::<Vec<_>>());
             primitive.attributes().for_each(|x| {
                 if let Semantic::TexCoords(indices) = x.0
                     && indices > 1
@@ -1154,6 +1376,7 @@ impl GltfImporter {
                 }
             }
 
+            let vertex_count = vertices.len();
             let mesh_descriptor = MeshDescriptor {
                 vertices,
                 indices: indices_flipped,
@@ -1173,8 +1396,17 @@ impl GltfImporter {
                 }
             };
 
+            let skin = match (joints, weights) {
+                (Some(joints), Some(weights))
+                    if joints.len() == vertex_count && weights.len() == vertex_count =>
+                {
+                    Some(Arc::new(SkinData::new(joints, weights)))
+                }
+                _ => None,
+            };
+
             let decomposed = node.transform().decomposed();
-            let transform = Transform {
+            let raw_transform = Transform {
                 position: Vector3 {
                     x: decomposed.0[0],
                     y: decomposed.0[1],
@@ -1194,10 +1426,19 @@ impl GltfImporter {
                     z: decomposed.2[2],
                 },
             };
+            // Skinned meshes are deformed in the converted space, so their
+            // model transform must use the same basis as the skeleton.
+            let transform = if skin.is_some() {
+                Self::node_transform(node)
+            } else {
+                raw_transform
+            };
 
             let mut transforms = HashMap::new();
             let ulid = Ulid::generate();
             transforms.insert(ulid, transform);
+
+            let model_skeleton = skin.as_ref().and_then(|_| skeleton.clone());
 
             let model = ModelDescriptor {
                 label: node
@@ -1207,6 +1448,8 @@ impl GltfImporter {
                 mesh: Arc::new(mesh_descriptor),
                 materials: vec![Arc::new(material)],
                 transforms,
+                skin,
+                skeleton: model_skeleton,
             };
 
             results.push(model);
@@ -1487,5 +1730,164 @@ mod tests {
         assert!((descriptor.aspect - 4.0 / 3.0).abs() < 1e-6);
         assert_eq!(descriptor.near, 0.5);
         assert_eq!(descriptor.far, 50.0);
+    }
+
+    #[test]
+    fn parse_animations_reads_translation_channels() {
+        use ignit_animation::AnimationValue;
+
+        const ANIMATION_GLTF: &str = r#"{
+            "asset": { "version": "2.0" },
+            "buffers": [{ "byteLength": 32 }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0, "byteLength": 8 },
+                { "buffer": 0, "byteOffset": 8, "byteLength": 24 }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 2, "type": "SCALAR" },
+                { "bufferView": 1, "componentType": 5126, "count": 2, "type": "VEC3" }
+            ],
+            "nodes": [{ "name": "root" }],
+            "scenes": [{ "nodes": [0] }],
+            "scene": 0,
+            "animations": [{
+                "name": "Move",
+                "samplers": [{
+                    "input": 0,
+                    "output": 1,
+                    "interpolation": "LINEAR"
+                }],
+                "channels": [{
+                    "sampler": 0,
+                    "target": { "node": 0, "path": "translation" }
+                }]
+            }]
+        }"#;
+
+        let mut bytes = Vec::new();
+        for value in [0.0f32, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [0.0f32, 0.0, 0.0, 1.0, 2.0, 3.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+
+        let gltf = gltf::Gltf::from_slice(ANIMATION_GLTF.as_bytes()).expect("fixture is valid");
+        let clips = GltfImporter::parse_animations(&gltf.document, &[gltf::buffer::Data(bytes)]);
+
+        assert_eq!(clips.len(), 1);
+        assert_eq!(clips[0].name, "Move");
+        assert_eq!(clips[0].duration, 1.0);
+        assert_eq!(clips[0].channels.len(), 1);
+
+        let channel = &clips[0].channels[0];
+        assert_eq!(channel.node_index, 0);
+        assert_eq!(channel.path, AnimationPath::Translation);
+        let Some(AnimationValue::Vec3(value)) = channel.sampler.sample(0.5) else {
+            panic!("expected a sampled vec3");
+        };
+        assert_eq!(value, Vector3::new(0.5, 1.5, -1.0));
+    }
+
+    #[test]
+    fn parse_models_attaches_skin_and_skeleton() {
+        const SKINNED_GLTF: &str = r#"{
+            "asset": { "version": "2.0" },
+            "buffers": [{ "byteLength": 244 }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+                { "buffer": 0, "byteOffset": 36, "byteLength": 24 },
+                { "buffer": 0, "byteOffset": 60, "byteLength": 48 },
+                { "buffer": 0, "byteOffset": 108, "byteLength": 6 },
+                { "buffer": 0, "byteOffset": 116, "byteLength": 128 }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0.0, 0.0, 0.0], "max": [1.0, 1.0, 0.0] },
+                { "bufferView": 1, "componentType": 5123, "count": 3, "type": "VEC4" },
+                { "bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC4" },
+                { "bufferView": 3, "componentType": 5123, "count": 3, "type": "SCALAR" },
+                { "bufferView": 4, "componentType": 5126, "count": 2, "type": "MAT4" }
+            ],
+            "meshes": [{
+                "primitives": [{
+                    "attributes": {
+                        "POSITION": 0,
+                        "JOINTS_0": 1,
+                        "WEIGHTS_0": 2
+                    },
+                    "indices": 3
+                }]
+            }],
+            "skins": [{
+                "joints": [0, 1],
+                "inverseBindMatrices": 4,
+                "skeleton": 0
+            }],
+            "nodes": [
+                { "name": "root", "children": [1] },
+                { "name": "joint", "translation": [1.0, 0.0, 0.0] },
+                { "name": "mesh", "mesh": 0, "skin": 0 }
+            ],
+            "scenes": [{ "nodes": [0, 2] }],
+            "scene": 0
+        }"#;
+
+        let mut bytes = Vec::new();
+        for value in [0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for _ in 0..3 {
+            for joint in [0u16, 0, 0, 0] {
+                bytes.extend_from_slice(&joint.to_le_bytes());
+            }
+        }
+        for _ in 0..3 {
+            for weight in [1.0f32, 0.0, 0.0, 0.0] {
+                bytes.extend_from_slice(&weight.to_le_bytes());
+            }
+        }
+        for index in [0u16, 1, 2] {
+            bytes.extend_from_slice(&index.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0, 0]);
+        for matrix in [
+            [
+                1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+            [
+                1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 1.0,
+            ],
+        ] {
+            for value in matrix {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+
+        let gltf = gltf::Gltf::from_slice(SKINNED_GLTF.as_bytes()).expect("fixture is valid");
+        let buffers = vec![gltf::buffer::Data(bytes)];
+        let node = gltf
+            .nodes()
+            .find(|node| node.mesh().is_some())
+            .expect("skinned mesh node");
+        let mesh = node.mesh().expect("mesh");
+        let skin = node.skin().expect("skin");
+        let skeleton = Arc::new(GltfImporter::parse_skeleton(
+            &skin,
+            &gltf.document,
+            &buffers,
+        ));
+
+        let models = GltfImporter::parse_models(&node, &mesh, Some(skeleton), &buffers, &[])
+            .expect("model parses");
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].skin.as_ref().map(|skin| skin.len()), Some(3));
+        assert_eq!(
+            models[0]
+                .skeleton
+                .as_ref()
+                .map(|skeleton| skeleton.joints.len()),
+            Some(2)
+        );
     }
 }

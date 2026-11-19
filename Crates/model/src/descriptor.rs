@@ -7,6 +7,7 @@ use std::{
 use hashbrown::HashMap;
 use ulid::Ulid;
 
+use ignit_animation::{SkeletonDescriptor, SkinData};
 use ignit_material_shader::MaterialShaderDescriptor;
 use ignit_math::{Mode, Transform};
 
@@ -22,6 +23,10 @@ pub struct ModelDescriptor {
     pub materials: Vec<Arc<MaterialShaderDescriptor>>,
     /// Multiple -> Multiple instances of the same model
     pub transforms: HashMap<Ulid, Transform>,
+    /// Per-vertex joint indices and weights for CPU skinning.
+    pub skin: Option<Arc<SkinData>>,
+    /// Rest-pose skeleton used by the animation system.
+    pub skeleton: Option<Arc<SkeletonDescriptor>>,
 }
 
 impl ModelDescriptor {
@@ -94,6 +99,7 @@ impl ModelDescriptor {
         // Hash mesh vertices and indices
         self.mesh.vertices.hash(&mut hasher);
         self.mesh.indices.hash(&mut hasher);
+        self.skin.hash(&mut hasher);
 
         // Hash materials
         for material in &self.materials {

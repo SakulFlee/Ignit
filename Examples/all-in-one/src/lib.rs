@@ -337,6 +337,7 @@ fn spawn_scene_model(
             label: label.to_string(),
             mesh: Arc::new(mesh),
             materials: vec![material],
+            skin: None,
         },
     )
     .unwrap();

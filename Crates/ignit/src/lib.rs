@@ -3,6 +3,7 @@
 //! A multi-platform 3D rendering engine built in Rust using wgpu as the graphics backend.
 
 pub use ignit_2d as twod;
+pub use ignit_animation as animation;
 pub use ignit_app as app;
 pub use ignit_app::{TouchControlsConfig, set_touch_controls, touch_controls};
 pub use ignit_billboard as billboard;

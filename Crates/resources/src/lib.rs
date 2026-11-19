@@ -5,6 +5,7 @@
 //! import directly from the specific crate.
 
 // Flat re-exports for backward compatibility
+pub use ignit_animation::*;
 pub use ignit_camera::*;
 pub use ignit_cull::*;
 pub use ignit_ibl_brdf::*;

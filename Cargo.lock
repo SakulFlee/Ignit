@@ -1702,6 +1702,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "ignit-winit",
  "ignit_2d",
+ "ignit_animation",
  "ignit_app",
  "ignit_billboard",
  "ignit_camera",
@@ -2019,6 +2020,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ignit_animation"
+version = "1.6.3"
+dependencies = [
+ "cgmath",
+ "ignit_math",
+ "ignit_vertex",
+]
+
+[[package]]
 name = "ignit_app"
 version = "1.6.3"
 dependencies = [
@@ -2026,6 +2036,7 @@ dependencies = [
  "cgmath",
  "gilrs",
  "ignit-winit",
+ "ignit_animation",
  "ignit_camera",
  "ignit_core",
  "ignit_cull",
@@ -2037,6 +2048,8 @@ dependencies = [
  "ignit_instance",
  "ignit_light",
  "ignit_material_shader",
+ "ignit_math",
+ "ignit_mesh",
  "ignit_model",
  "ignit_renderer",
  "ignit_shader_core",
@@ -2165,6 +2178,7 @@ dependencies = [
  "cgmath",
  "hashbrown 0.17.1",
  "ignit-winit",
+ "ignit_animation",
  "ignit_camera",
  "ignit_core",
  "ignit_cull",
@@ -2232,6 +2246,7 @@ dependencies = [
  "cgmath",
  "gltf",
  "hashbrown 0.17.1",
+ "ignit_animation",
  "ignit_camera",
  "ignit_core",
  "ignit_file_manager",
@@ -2324,11 +2339,13 @@ version = "1.6.3"
 dependencies = [
  "cgmath",
  "hashbrown 0.17.1",
+ "ignit_animation",
  "ignit_core",
  "ignit_instance",
  "ignit_material_shader",
  "ignit_math",
  "ignit_mesh",
+ "ignit_vertex",
  "ulid",
  "wgpu",
 ]
@@ -2388,6 +2405,7 @@ dependencies = [
 name = "ignit_resources"
 version = "1.6.3"
 dependencies = [
+ "ignit_animation",
  "ignit_camera",
  "ignit_cull",
  "ignit_ibl_brdf",

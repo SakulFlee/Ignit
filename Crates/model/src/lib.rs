@@ -15,6 +15,7 @@ use ignit_instance::Instance;
 use ignit_material_shader::{MaterialShader, MaterialShaderDescriptor, PipelineCache};
 use ignit_math::Transform;
 pub use ignit_mesh::{Mesh, MeshDescriptor};
+use ignit_vertex::Vertex;
 use ulid::Ulid;
 
 mod descriptor;
@@ -39,6 +40,11 @@ pub struct Model {
     /// update can compare these `Arc`s without re-hashing the whole mesh.
     source_mesh: Arc<MeshDescriptor>,
     source_materials: Vec<Arc<MaterialShaderDescriptor>>,
+    /// Skin binding used by the CPU skinning path.
+    source_skin: Option<Arc<ignit_animation::SkinData>>,
+    /// Optional GPU buffer receiving CPU-skinned vertices.
+    skinned_vertex_buffer: Option<Buffer>,
+    skinned_vertex_capacity: u32,
     instance_count: u32,
     instance_capacity: u32,
     instance_buffer: Buffer,
@@ -116,11 +122,27 @@ impl Model {
             mapped_at_creation: false,
         });
 
+        let skinned_vertex_capacity = descriptor.mesh.vertices.len().max(1) as u32;
+        let skinned_vertex_buffer = descriptor.skin.as_ref().map(|_| {
+            device.create_buffer(&BufferDescriptor {
+                label: Some("Model Skinned Vertex Buffer"),
+                size: u64::from(skinned_vertex_capacity) * Vertex::BYTE_SIZE as u64,
+                usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        });
+        if let Some(buffer) = &skinned_vertex_buffer {
+            queue.write_buffer(buffer, 0, &vertices_to_bytes(&descriptor.mesh.vertices));
+        }
+
         let mut model = Self {
             mesh,
             materials,
             source_mesh: descriptor.mesh.clone(),
             source_materials: descriptor.materials.clone(),
+            source_skin: descriptor.skin.clone(),
+            skinned_vertex_buffer,
+            skinned_vertex_capacity,
             instance_count: 0,
             instance_capacity,
             instance_buffer,
@@ -195,6 +217,49 @@ impl Model {
         &self.mesh
     }
 
+    /// Rest-pose mesh descriptor, including the CPU vertex data.
+    pub fn source_mesh(&self) -> &Arc<MeshDescriptor> {
+        &self.source_mesh
+    }
+
+    /// Skin binding for CPU skinning, if this model is skinned.
+    pub fn skin(&self) -> Option<&Arc<ignit_animation::SkinData>> {
+        self.source_skin.as_ref()
+    }
+
+    /// Vertex buffer used by the render and shadow passes.
+    ///
+    /// Skinned models use the buffer written by the animation system;
+    /// everything else uses the static mesh buffer.
+    pub fn vertex_buffer(&self) -> &Buffer {
+        self.skinned_vertex_buffer
+            .as_ref()
+            .unwrap_or_else(|| self.mesh.vertex_buffer())
+    }
+
+    /// Uploads CPU-skinned vertices, reallocating the buffer when needed.
+    pub fn update_skinned_vertices(&mut self, vertices: &[Vertex], device: &Device, queue: &Queue) {
+        if self.source_skin.is_none() {
+            return;
+        }
+
+        let required = vertices.len().max(1) as u32;
+        if self.skinned_vertex_buffer.is_none() || required > self.skinned_vertex_capacity {
+            let capacity = required.next_power_of_two().max(1);
+            self.skinned_vertex_buffer = Some(device.create_buffer(&BufferDescriptor {
+                label: Some("Model Skinned Vertex Buffer"),
+                size: u64::from(capacity) * Vertex::BYTE_SIZE as u64,
+                usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+            self.skinned_vertex_capacity = capacity;
+        }
+
+        if let Some(buffer) = &self.skinned_vertex_buffer {
+            queue.write_buffer(buffer, 0, &vertices_to_bytes(vertices));
+        }
+    }
+
     pub fn materials(&self) -> &Vec<Arc<MaterialShader>> {
         &self.materials
     }
@@ -251,11 +316,28 @@ impl Model {
     /// produces a different `Arc`.
     pub fn source_matches(&self, descriptor: &ModelDescriptor) -> bool {
         Arc::ptr_eq(&self.source_mesh, &descriptor.mesh)
+            && option_arc_ptr_eq(&self.source_skin, &descriptor.skin)
             && self.source_materials.len() == descriptor.materials.len()
             && self
                 .source_materials
                 .iter()
                 .zip(&descriptor.materials)
                 .all(|(a, b)| Arc::ptr_eq(a, b))
+    }
+}
+
+fn vertices_to_bytes(vertices: &[Vertex]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(vertices.len() * Vertex::BYTE_SIZE);
+    for vertex in vertices {
+        bytes.extend(vertex.to_bytes());
+    }
+    bytes
+}
+
+fn option_arc_ptr_eq<T>(left: &Option<Arc<T>>, right: &Option<Arc<T>>) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+        (None, None) => true,
+        (Some(_), None) | (None, Some(_)) => false,
     }
 }
