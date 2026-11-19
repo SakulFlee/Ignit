@@ -135,18 +135,30 @@ SDK and JDK are generic Linux builds.
 
 ## Container
 
-The repository includes a `Containerfile` that packages the `ignit` CLI with
-the desktop build dependencies needed by generated projects. It works with
-Docker and Podman:
+The `Containerfile` packages the `ignit` CLI with the desktop build
+dependencies needed by generated projects. Release workflows publish the image
+to both registries:
 
 ```shell
-docker build -f Containerfile -t ignit-cli .
-docker run --rm -it -v "$PWD:/workspace" ignit-cli init my-game --template all-in-one
-docker run --rm -it -v "$PWD/my-game:/workspace" ignit-cli build
+docker pull forgejo.sakul-flee.de/sakulflee/ignit-cli:latest
+docker pull ghcr.io/sakulflee/ignit-cli:latest
 ```
 
-With Podman, use `podman build -t ignit-cli .` and the same `podman run`
-arguments.
+Images are tagged with the release version (for example `1.6.3`) and with
+`latest`. The examples below use the Forgejo image; substitute the GitHub image
+if you prefer:
+
+```shell
+docker run --rm -it -v "$PWD:/workspace" \
+  forgejo.sakul-flee.de/sakulflee/ignit-cli:latest \
+  init my-game --template all-in-one
+docker run --rm -it -v "$PWD/my-game:/workspace" \
+  forgejo.sakul-flee.de/sakulflee/ignit-cli:latest build
+```
+
+To build the image locally, use `docker build -f Containerfile -t ignit-cli .`
+or `podman build -t ignit-cli .`, then pass `ignit-cli` instead of the registry
+image.
 
 The image runs as root, so files it creates in a bind mount are owned by root.
 Pass your host UID/GID to keep ownership:

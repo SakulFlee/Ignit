@@ -263,6 +263,41 @@ jobs:
           name: release-android
           path: dist/*
           if-no-files-found: error
+  container-github:
+    if: ${{ inputs.publish }}
+    needs:
+      - desktop
+      - macos
+      - android
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/sakulflee/ignit-cli
+    steps:
+      - uses: actions/checkout@v7
+      - name: Resolve image version
+        id: version
+        run: |
+          version="${{ inputs.version }}"
+          echo "version=${version#v}" >> "$GITHUB_OUTPUT"
+      - name: Build image
+        run: |
+          docker build --pull \
+            --tag "$IMAGE:${{ steps.version.outputs.version }}" \
+            --tag "$IMAGE:latest" \
+            --file Containerfile \
+            .
+      - name: Log in to GitHub Container Registry
+        run: |
+          printf '%s' "${{ github.token }}" \
+            | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Push image
+        run: |
+          docker push "$IMAGE:${{ steps.version.outputs.version }}"
+          docker push "$IMAGE:latest"
+
   publish-github:
     if: ${{ inputs.publish }}
     needs:

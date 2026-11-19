@@ -356,6 +356,40 @@ jobs:
           generate_release_notes: true
           draft: false
 
+  container-forgejo:
+    if: ${{ github.server_url != 'https://github.com' && inputs.publish }}
+    needs:
+      - desktop
+      - android
+    runs-on: docker
+    env:
+      IMAGE: forgejo.sakul-flee.de/sakulflee/ignit-cli
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@v7
+      - name: Resolve image version
+        id: version
+        run: |
+          version="${{ inputs.version }}"
+          echo "version=${version#v}" >> "$GITHUB_OUTPUT"
+      - name: Build image
+        run: |
+          docker build --pull \
+            --tag "$IMAGE:${{ steps.version.outputs.version }}" \
+            --tag "$IMAGE:latest" \
+            --file Containerfile \
+            .
+      - name: Push image
+        env:
+          OCI_PUSH_TOKEN: ${{ secrets.OCI_PUSH_TOKEN }}
+        run: |
+          if [ -z "${OCI_PUSH_TOKEN:-}" ]; then
+            echo "OCI_PUSH_TOKEN is not configured" >&2
+            exit 1
+          fi
+          printf '%s' "$OCI_PUSH_TOKEN" | docker login --username sakulflee --password-stdin forgejo.sakul-flee.de
+          docker push "$IMAGE:${{ steps.version.outputs.version }}"
+          docker push "$IMAGE:latest"
+
   publish-forgejo:
     if: ${{ github.server_url != 'https://github.com' && inputs.publish }}
     needs:
