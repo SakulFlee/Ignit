@@ -1,0 +1,97 @@
+name: Backfill Releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: Space-separated tags; empty discovers Forgejo releases missing on GitHub
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Copy missing releases from Forgejo
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORGEJO_API: https://forgejo.sakul-flee.de/api/v1/repos/SakulFlee/Ignit
+          GITHUB_API: https://api.github.com/repos/${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tags_input="${{ inputs.tags }}"
+          if [ -n "$tags_input" ]; then
+            read -ra tags <<< "$tags_input"
+          else
+            mapfile -t tags < <(
+              comm -23 \
+                <(curl -fsSL "$FORGEJO_API/releases?limit=100" \
+                    | jq -r '.[].tag_name' | sort -u) \
+                <(curl -fsSL \
+                    -H "Authorization: Bearer $GH_TOKEN" \
+                    "$GITHUB_API/releases?per_page=100" \
+                    | jq -r '.[].tag_name' | sort -u)
+            )
+          fi
+
+          if [ ${#tags[@]} -eq 0 ]; then
+            echo "Nothing to backfill."
+            exit 0
+          fi
+
+          for tag in "${tags[@]}"; do
+            echo "=== $tag"
+
+            if curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+              -o /dev/null "$GITHUB_API/releases/tags/$tag"; then
+              echo "already exists on GitHub; skipping"
+              continue
+            fi
+
+            if ! release_json="$(curl -fsSL "$FORGEJO_API/releases/tags/$tag")"; then
+              echo "no Forgejo release for $tag; skipping"
+              continue
+            fi
+
+            name="$(jq -r '.name // ""' <<< "$release_json")"
+            body="$(jq -r '.body // ""' <<< "$release_json")"
+            prerelease="$(jq -r '.prerelease' <<< "$release_json")"
+            [ -z "$name" ] && name="$tag"
+
+            payload="$(jq -n \
+              --arg tag "$tag" \
+              --arg name "$name" \
+              --arg body "$body" \
+              --argjson prerelease "$prerelease" \
+              '{tag_name: $tag, name: $name, body: $body, prerelease: $prerelease, draft: false}')"
+
+            created="$(curl -fsSL -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/json" \
+              --data "$payload" "$GITHUB_API/releases")"
+            release_id="$(jq -r '.id' <<< "$created")"
+            echo "created GitHub release $release_id"
+
+            while IFS=$'\t' read -r asset_name asset_url; do
+              [ -z "$asset_name" ] && continue
+
+              echo "  uploading $asset_name"
+              encoded_name="$(jq -rn --arg name "$asset_name" '$name | @uri')"
+              tmp="$(mktemp)"
+
+              curl -fsSL -A "ignit-release-backfill" -o "$tmp" "$asset_url"
+              curl -fsSL -X POST \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary "@$tmp" \
+                "https://uploads.github.com/repos/${{ github.repository }}/releases/$release_id/assets?name=$encoded_name"
+              rm -f "$tmp"
+            done < <(jq -r '.assets[] | [.name, .browser_download_url] | @tsv' <<< "$release_json")
+          done
