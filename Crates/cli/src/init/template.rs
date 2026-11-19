@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use super::prompt::ProjectConfig;
+use super::prompt::{EngineSource, ProjectConfig};
 
 pub fn generate_project(project_dir: &Path, config: &ProjectConfig) -> Result<()> {
     fs::create_dir_all(project_dir.join("src"))?;
@@ -110,20 +110,20 @@ fn write_all_in_one_assets(project_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn generate_cargo_toml(project_dir: &Path, config: &ProjectConfig) -> Result<()> {
+fn cargo_toml(config: &ProjectConfig) -> String {
     let lib_name = config.project_name.replace('-', "_").to_lowercase();
 
-    let ignit_dep = if let Some(path) = &config.engine_path {
-        format!(r#"ignit = {{ path = "{path}/Crates/ignit" }}"#)
-    } else {
-        format!(
-            r#"ignit = {{ git = "{repo}", branch = "{branch}" }}"#,
-            repo = config.engine_repo,
-            branch = config.engine_branch,
-        )
+    let ignit_dep = match &config.engine_source {
+        EngineSource::CratesIo => format!(r#"ignit = "{}""#, env!("CARGO_PKG_VERSION")),
+        EngineSource::Git { repo, branch } => {
+            format!(r#"ignit = {{ git = "{repo}", branch = "{branch}" }}"#)
+        }
+        EngineSource::Path(path) => {
+            format!(r#"ignit = {{ path = "{path}/Crates/ignit" }}"#)
+        }
     };
 
-    let content = format!(
+    format!(
         r#"[package]
 name = "{name}"
 version = "0.1.0"
@@ -139,20 +139,16 @@ crate-type = ["cdylib", "lib"]
 
 [dependencies]
 {ignit_dep}
-
-# The engine and cryoglyph both use the same patched cosmic-text fork.
-# This patch pins any crates.io consumer of cosmic-text to that revision,
-# so cargo cannot resolve two incompatible cosmic-text versions (which
-# makes iced_wgpu fail to compile).
-[patch.crates-io]
-cosmic-text = {{ git = "https://github.com/hecrj/cosmic-text.git", rev = "19cca2bd90e73e20614964f06d44240e71e503b3" }}
 "#,
         name = config.project_name,
         lib_name = lib_name,
         ignit_dep = ignit_dep,
-    );
+    )
+}
 
-    fs::write(project_dir.join("Cargo.toml"), content).context("Failed to write Cargo.toml")?;
+fn generate_cargo_toml(project_dir: &Path, config: &ProjectConfig) -> Result<()> {
+    fs::write(project_dir.join("Cargo.toml"), cargo_toml(config))
+        .context("Failed to write Cargo.toml")?;
 
     Ok(())
 }
@@ -241,3 +237,43 @@ const ALL_IN_ONE_CUSTOM_SHADER: &str =
     include_str!("../template/app/all-in-one-custom-shader.wgsl");
 
 const MINIMAL_2D_TEMPLATE: &str = include_str!("../template/app/minimal-2d.rs");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn project_config(engine_source: EngineSource) -> ProjectConfig {
+        ProjectConfig {
+            project_name: "demo".to_string(),
+            package_name: "com.example.demo".to_string(),
+            min_sdk: 21,
+            target_sdk: 34,
+            template: "minimal-3d".to_string(),
+            generate_android: false,
+            engine_source,
+        }
+    }
+
+    #[test]
+    fn crates_io_uses_the_cli_version() {
+        let content = cargo_toml(&project_config(EngineSource::CratesIo));
+
+        assert!(content.contains(&format!("ignit = \"{}\"", env!("CARGO_PKG_VERSION"))));
+        assert!(!content.contains("[patch.crates-io]"));
+    }
+
+    #[test]
+    fn git_and_local_sources_are_rendered() {
+        let git = cargo_toml(&project_config(EngineSource::Git {
+            repo: "https://example.com/Ignit.git".to_string(),
+            branch: "dev".to_string(),
+        }));
+        assert!(git.contains("git = \"https://example.com/Ignit.git\""));
+        assert!(git.contains("branch = \"dev\""));
+
+        let local = cargo_toml(&project_config(EngineSource::Path(
+            "/tmp/Ignit".to_string(),
+        )));
+        assert!(local.contains("path = \"/tmp/Ignit/Crates/ignit\""));
+    }
+}

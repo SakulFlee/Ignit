@@ -246,8 +246,8 @@ ignit run --release
 ignit run ios --device "<device>"
 ```
 
-- `init` supports the `minimal-3d`, `all-in-one`, and `minimal-2d` templates, and can point at the engine via `--engine-repo`, `--engine-branch`, or `--engine-path`.
-- The CLI writes `Ignit.toml`, which configures the engine repository/branch plus Android and iOS packaging/deployment settings.
+- `init` supports the `minimal-3d`, `all-in-one`, and `minimal-2d` templates and defaults to the published `ignit` crate. The interactive engine-source menu also offers Forgejo `main`, the GitHub mirror `main`, a custom git repository, and a local checkout; `--engine-repo`, `--engine-branch`, and `--engine-path` override the menu.
+- The CLI writes `Ignit.toml` for Android and iOS packaging/deployment settings. The engine source is recorded in the generated `Cargo.toml`; the optional engine fields in `Ignit.toml` are only defaults for `init`.
 - Template app sources live in `Examples/`; publishable copies live in `Crates/cli/src/template/app/` and are checked by `test-templates.sh`. The generators live in `Crates/cli/src/init/`. Platform scaffolding lives in `Crates/cli/src/template/`.
 - Generated projects are plain Cargo projects; there is no generated dev shell or direnv setup.
 - When changing CLI behavior or templates, test the generated project end to end, not only the CLI crate.
