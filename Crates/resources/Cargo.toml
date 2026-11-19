@@ -19,6 +19,7 @@ ignit_math = { path = "../math", version = "1.6.3" }
 ignit_mesh = { path = "../mesh", version = "1.6.3" }
 ignit_model = { path = "../model", version = "1.6.3" }
 ignit_shader_core = { path = "../shader_core", version = "1.6.3" }
+ignit_shader_compute = { path = "../shader_compute", version = "1.6.3" }
 ignit_shader_pbr = { path = "../shader_pbr", version = "1.6.3" }
 ignit_shadow = { path = "../shadow", version = "1.6.3" }
 ignit_texture = { path = "../texture", version = "1.6.3" }

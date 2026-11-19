@@ -17,6 +17,7 @@ pub use ignit_importer_gltf as importer;
 pub use ignit_procgeo as procgeo;
 pub use ignit_renderer as renderer;
 pub use ignit_resources as resources;
+pub use ignit_shader_compute as shader_compute;
 pub use ignit_shader_preprocessor as shader_preprocessor;
 pub use ignit_text as text;
 pub use ignit_touch_ui as touch_ui;

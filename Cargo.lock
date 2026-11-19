@@ -1718,6 +1718,7 @@ dependencies = [
  "ignit_procgeo",
  "ignit_renderer",
  "ignit_resources",
+ "ignit_shader_compute",
  "ignit_shader_preprocessor",
  "ignit_text",
  "ignit_touch_ui",
@@ -2396,6 +2397,7 @@ dependencies = [
  "ignit_math",
  "ignit_mesh",
  "ignit_model",
+ "ignit_shader_compute",
  "ignit_shader_core",
  "ignit_shader_engine",
  "ignit_shader_math",
@@ -2413,6 +2415,15 @@ name = "ignit_shader_2d"
 version = "1.6.3"
 dependencies = [
  "ignit_shader_preprocessor",
+]
+
+[[package]]
+name = "ignit_shader_compute"
+version = "1.6.3"
+dependencies = [
+ "ignit_shader_core",
+ "ignit_shader_preprocessor",
+ "wgpu",
 ]
 
 [[package]]

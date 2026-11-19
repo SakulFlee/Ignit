@@ -104,6 +104,7 @@ Workspace members are `Examples/*` and `Crates/*` (see `Cargo.toml`).
 | `Crates/resources` | Compatibility re-export shim only; real types live in the fine-grained crates. |
 | `Crates/shader_preprocessor` | Named WGSL `ShaderNode` registry and `ShaderBuilder`. |
 | `Crates/shader_core` | `ShaderDescriptor`, variables, bind-group and pipeline plumbing. |
+| `Crates/shader_compute` | Compute shader descriptors, bind groups, pipelines, and pipeline cache. |
 | `Crates/shader_engine`, `Crates/shader_math`, `Crates/shader_pbr`, `Crates/shader_debug`, `Crates/shader_2d` | Reusable WGSL node libraries for engine, math, PBR, debug, and 2D/UI/text. |
 | `Crates/renderer` | Main `Renderer` (shadow pass, skybox, models, timestamps) plus `Renderer2D`, `TextRenderer`, `UiRenderer`. |
 | `Crates/render_graph` | Render graph construction and pass scheduling. |
@@ -364,6 +365,7 @@ Treat the current WASM status as unverified: `Crates/ecs/src/system/runner.rs` u
 | `Crates/ecs_bridge/src/resources.rs` | Engine ECS resources. |
 | `Crates/shader_preprocessor/src/registry.rs` | WGSL node registry. |
 | `Crates/shader_core/src/lib.rs` | `ShaderDescriptor` and pipeline plumbing. |
+| `Crates/shader_compute/src/lib.rs` | Compute shader descriptors, bind groups, and pipeline cache. |
 | `Crates/renderer/src/renderer.rs` | Pass ordering, models, overlays, 2D/UI/text. |
 | `Crates/renderer/src/volumetric.rs` | Froxel injection/composite pipelines for volumetric lighting and height fog. |
 | `Crates/importer_gltf/src/lib.rs` | Async glTF importer. |

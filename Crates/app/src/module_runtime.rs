@@ -1004,12 +1004,28 @@ impl ModuleRuntime {
         let mut layer_renderers = self.overlay_renderers.lock().unwrap();
         layer_renderers.sort_by_key(|r| r.layer().index());
 
+        let compute_workloads = self.ecs_world.get_resource::<crate::ComputeWorkloads>();
+        let has_compute = compute_workloads.is_some_and(|workloads| !workloads.is_empty());
+
         let d_overlay_main = std::cell::Cell::new(std::time::Duration::ZERO);
         let d_overlay_submit = std::cell::Cell::new(std::time::Duration::ZERO);
         if let (Some(renderer), Some(camera_buffer)) = (&mut self.renderer, camera_buffer.as_ref())
         {
             let cull = cull_res.as_ref().and_then(|r| r.0.as_ref());
             let ecs = &self.ecs_world;
+            let mut compute_callback = |encoder: &mut wgpu::CommandEncoder| {
+                if let Some(workloads) = ecs.get_resource::<crate::ComputeWorkloads>() {
+                    for workload in workloads.snapshot() {
+                        let mut ctx = crate::ComputeWorkloadContext {
+                            encoder,
+                            device,
+                            queue,
+                            ecs,
+                        };
+                        workload.record(&mut ctx);
+                    }
+                }
+            };
             let mut overlay_callback =
                 |encoder: &mut wgpu::CommandEncoder| -> Vec<wgpu::CommandBuffer> {
                     let start = Instant::now();
@@ -1054,7 +1070,13 @@ impl ModuleRuntime {
                     commands
                 };
 
-            renderer.render(
+            let compute_arg: Option<&mut ignit_renderer::ComputeCallback<'_>> = if has_compute {
+                Some(&mut compute_callback)
+            } else {
+                None
+            };
+
+            renderer.render_with_compute(
                 &view,
                 &scene,
                 device,
@@ -1062,6 +1084,7 @@ impl ModuleRuntime {
                 cull,
                 &dirty_set,
                 Some(&mut overlay_callback),
+                compute_arg,
             );
             drop(overlay_callback);
         }
