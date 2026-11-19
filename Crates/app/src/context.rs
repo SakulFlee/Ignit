@@ -117,12 +117,49 @@ impl AppContext {
             .with_active(true)
             .with_inner_size(inner_size)
             .with_title(title);
-        let attributes = if fullscreen {
-            attributes.with_fullscreen(Some(Fullscreen::Borderless(None)))
+        let attributes = if fullscreen && !cfg!(any(target_os = "android", target_os = "ios")) {
+            attributes.with_fullscreen(Some(Self::fullscreen_mode(event_loop)))
         } else {
             attributes
         };
         event_loop.create_window(attributes)
+    }
+
+    /// Picks an exclusive video mode at the monitor's current resolution with
+    /// the highest refresh rate. Falls back to borderless fullscreen when the
+    /// platform exposes no exclusive modes.
+    fn fullscreen_mode(event_loop: &ActiveEventLoop) -> Fullscreen {
+        // Wayland ignores exclusive fullscreen requests, so use borderless
+        // there instead of silently leaving the window non-fullscreen.
+        if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+            return Fullscreen::Borderless(None);
+        }
+
+        let Some(monitor) = event_loop.primary_monitor() else {
+            return Fullscreen::Borderless(None);
+        };
+
+        let desktop_size = monitor.size();
+        let modes = monitor.video_modes().collect::<Vec<_>>();
+        let mode = modes
+            .iter()
+            .filter(|mode| mode.size() == desktop_size)
+            .max_by_key(|mode| mode.refresh_rate_millihertz())
+            .or_else(|| {
+                modes.iter().max_by_key(|mode| {
+                    (
+                        mode.size().width,
+                        mode.size().height,
+                        mode.refresh_rate_millihertz(),
+                    )
+                })
+            })
+            .cloned();
+
+        match mode {
+            Some(mode) => Fullscreen::Exclusive(mode),
+            None => Fullscreen::Borderless(None),
+        }
     }
 
     fn make_instance(owned_display_handle: OwnedDisplayHandle) -> Instance {

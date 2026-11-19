@@ -8,7 +8,11 @@ pub struct AppSettings {
     pub name: String,
     pub size: Size,
     pub vsync_enabled: bool,
-    /// Start the window in borderless fullscreen.
+    /// Start the window in exclusive fullscreen.
+    ///
+    /// Falls back to borderless fullscreen when the platform exposes no
+    /// exclusive video mode (for example on Wayland). Android and iOS are
+    /// always fullscreen and ignore this flag.
     pub fullscreen: bool,
     /// Optional explicit present mode. `None` uses `AutoVsync`/`AutoNoVsync`
     /// according to `vsync_enabled`. Useful for testing compositor and
@@ -79,7 +83,7 @@ impl Default for AppSettings {
             name: "Ignit App".into(),
             size: PhysicalSize::new(1280, 720).into(),
             vsync_enabled: true,
-            fullscreen: false,
+            fullscreen: true,
             present_mode: None,
             fps_limit: None,
             render_scale: 1.0,
