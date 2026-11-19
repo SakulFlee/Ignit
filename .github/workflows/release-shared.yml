@@ -423,4 +423,6 @@ jobs:
           override: true
           release-dir: release
           sha256sum: false
-          token: ${{ secrets.BOT_TOKEN }}
+          # The workflow token has write:repository and is not tied to a user
+          # account, so it is not affected by account-level 2FA enforcement.
+          token: ${{ github.token }}
