@@ -33,13 +33,13 @@ auto_request_redraw = ["ignit_app/auto_request_redraw"]
 
 
 [dependencies]
-ignit_core = { path = "../core", version = "1.6.2" }
-ignit_file_manager = { path = "../file_manager", version = "1.6.2" }
-ignit_macros = { path = "../macros", version = "1.6.2" }
-ignit_input = { path = "../input", version = "1.6.2" }
-ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.2" }
-ignit_resources = { path = "../resources", version = "1.6.2" }
-ignit_importer_gltf = { path = "../importer_gltf", version = "1.6.2" }
+ignit_core = { path = "../core", version = "1.6.3" }
+ignit_file_manager = { path = "../file_manager", version = "1.6.3" }
+ignit_macros = { path = "../macros", version = "1.6.3" }
+ignit_input = { path = "../input", version = "1.6.3" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.3" }
+ignit_resources = { path = "../resources", version = "1.6.3" }
+ignit_importer_gltf = { path = "../importer_gltf", version = "1.6.3" }
 wgpu = { workspace = true }
 cgmath = { workspace = true }
 gltf = { workspace = true }
@@ -52,20 +52,20 @@ ulid = { workspace = true }
 winit = { workspace = true }
 rayon = { workspace = true }
 
-ignit_renderer = { path = "../renderer", version = "1.6.2" }
-ignit_app = { path = "../app", version = "1.6.2" }
-ignit_billboard = { path = "../billboard", version = "1.6.2" }
-ignit_ecs = { path = "../ecs", version = "1.6.2" }
-ignit_camera = { path = "../camera", version = "1.6.2" }
-ignit_ecs_bridge = { path = "../ecs_bridge", version = "1.6.2" }
-ignit_procgeo = { path = "../procgeo", version = "1.6.2" }
-ignit_debug_render = { path = "../debug_render", version = "1.6.2" }
-ignit_debug_ui = { path = "../debug_ui", version = "1.6.2" }
-ignit_touch_ui = { path = "../touch_ui", version = "1.6.2" }
-ignit_2d = { path = "../2d", version = "1.6.2" }
-ignit_text = { path = "../text", version = "1.6.2" }
-ignit_ui = { path = "../ui", version = "1.6.2" }
-ignit_iced = { path = "../iced", version = "1.6.2" }
+ignit_renderer = { path = "../renderer", version = "1.6.3" }
+ignit_app = { path = "../app", version = "1.6.3" }
+ignit_billboard = { path = "../billboard", version = "1.6.3" }
+ignit_ecs = { path = "../ecs", version = "1.6.3" }
+ignit_camera = { path = "../camera", version = "1.6.3" }
+ignit_ecs_bridge = { path = "../ecs_bridge", version = "1.6.3" }
+ignit_procgeo = { path = "../procgeo", version = "1.6.3" }
+ignit_debug_render = { path = "../debug_render", version = "1.6.3" }
+ignit_debug_ui = { path = "../debug_ui", version = "1.6.3" }
+ignit_touch_ui = { path = "../touch_ui", version = "1.6.3" }
+ignit_2d = { path = "../2d", version = "1.6.3" }
+ignit_text = { path = "../text", version = "1.6.3" }
+ignit_ui = { path = "../ui", version = "1.6.3" }
+ignit_iced = { path = "../iced", version = "1.6.3" }
 
 gilrs = { workspace = true, optional = true }
 

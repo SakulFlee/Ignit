@@ -1693,7 +1693,7 @@ dependencies = [
 
 [[package]]
 name = "ignit"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "android_logger",
  "cgmath",
@@ -1733,7 +1733,7 @@ dependencies = [
 
 [[package]]
 name = "ignit-cli"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -2011,7 +2011,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_2d"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "wgpu",
@@ -2019,7 +2019,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_app"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "android_logger",
  "cgmath",
@@ -2058,7 +2058,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_billboard"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit_app",
@@ -2077,7 +2077,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_camera"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit_math",
@@ -2086,7 +2086,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_core"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "android_logger",
  "cgmath",
@@ -2100,14 +2100,14 @@ dependencies = [
 
 [[package]]
 name = "ignit_cull"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "wgpu",
 ]
 
 [[package]]
 name = "ignit_debug_render"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit-winit",
@@ -2125,7 +2125,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_debug_ui"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit-iced-core",
@@ -2149,7 +2149,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_ecs"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "criterion",
  "rand 0.10.4",
@@ -2159,7 +2159,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_ecs_bridge"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "hashbrown 0.17.1",
@@ -2185,7 +2185,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_file_manager"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "dirs",
  "log",
@@ -2196,7 +2196,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_ibl_brdf"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit_texture",
@@ -2205,7 +2205,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_iced"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "ignit-iced-core",
  "ignit-iced-graphics",
@@ -2225,7 +2225,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_importer_gltf"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "base64 0.23.1",
  "cgmath",
@@ -2252,7 +2252,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_input"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "gilrs",
@@ -2263,7 +2263,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_instance"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit_math",
@@ -2272,14 +2272,14 @@ dependencies = [
 
 [[package]]
 name = "ignit_light"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
 ]
 
 [[package]]
 name = "ignit_macros"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -2289,7 +2289,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_material_shader"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "ignit_core",
  "ignit_instance",
@@ -2302,14 +2302,14 @@ dependencies = [
 
 [[package]]
 name = "ignit_math"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
 ]
 
 [[package]]
 name = "ignit_mesh"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit_core",
@@ -2319,7 +2319,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_model"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "hashbrown 0.17.1",
@@ -2334,7 +2334,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_procgeo"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit_file_manager",
@@ -2352,14 +2352,14 @@ dependencies = [
 
 [[package]]
 name = "ignit_render_graph"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "wgpu",
 ]
 
 [[package]]
 name = "ignit_renderer"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit_2d",
@@ -2385,7 +2385,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_resources"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "ignit_camera",
  "ignit_cull",
@@ -2410,14 +2410,14 @@ dependencies = [
 
 [[package]]
 name = "ignit_shader_2d"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "ignit_shader_preprocessor",
 ]
 
 [[package]]
 name = "ignit_shader_core"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "ignit_shader_preprocessor",
  "ignit_texture",
@@ -2427,7 +2427,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_shader_debug"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "ignit_material_shader",
  "ignit_shader_core",
@@ -2440,7 +2440,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_shader_engine"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "ignit_shader_math",
  "ignit_shader_preprocessor",
@@ -2449,7 +2449,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_shader_math"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "ignit_shader_preprocessor",
  "log",
@@ -2457,7 +2457,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_shader_pbr"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit_material_shader",
@@ -2472,7 +2472,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_shader_preprocessor"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "ignit_file_manager",
  "log",
@@ -2480,7 +2480,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_shadow"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit_camera",
@@ -2496,7 +2496,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_text"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "fontdue",
@@ -2506,7 +2506,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_texture"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit_core",
@@ -2519,7 +2519,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_touch_ui"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit_app",
@@ -2532,7 +2532,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_ui"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit_2d",
@@ -2544,7 +2544,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_vertex"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "wgpu",
@@ -2552,7 +2552,7 @@ dependencies = [
 
 [[package]]
 name = "ignit_world_environment"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit_file_manager",
@@ -4858,21 +4858,21 @@ dependencies = [
 
 [[package]]
 name = "template_all_in_one"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "ignit",
 ]
 
 [[package]]
 name = "template_minimal_2d"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "ignit",
 ]
 
 [[package]]
 name = "template_minimal_3d"
-version = "1.6.2"
+version = "1.6.3"
 dependencies = [
  "ignit",
 ]

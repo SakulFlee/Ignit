@@ -9,12 +9,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_texture = { path = "../texture", version = "1.6.2" }
-ignit_material_shader = { path = "../material_shader", version = "1.6.2" }
-ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.2" }
-ignit_shader_engine = { path = "../shader_engine", version = "1.6.2" }
-ignit_shader_math = { path = "../shader_math", version = "1.6.2" }
-ignit_file_manager = { path = "../file_manager", version = "1.6.2" }
+ignit_texture = { path = "../texture", version = "1.6.3" }
+ignit_material_shader = { path = "../material_shader", version = "1.6.3" }
+ignit_shader_preprocessor = { path = "../shader_preprocessor", version = "1.6.3" }
+ignit_shader_engine = { path = "../shader_engine", version = "1.6.3" }
+ignit_shader_math = { path = "../shader_math", version = "1.6.3" }
+ignit_file_manager = { path = "../file_manager", version = "1.6.3" }
 cgmath = { workspace = true }
 image = { workspace = true }
 log = { workspace = true }

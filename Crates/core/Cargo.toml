@@ -15,7 +15,7 @@ fern = { workspace = true }
 humantime = { workspace = true }
 cgmath = { workspace = true }
 pollster = { workspace = true }
-ignit_file_manager = { path = "../file_manager", version = "1.6.2" }
+ignit_file_manager = { path = "../file_manager", version = "1.6.3" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = { workspace = true }

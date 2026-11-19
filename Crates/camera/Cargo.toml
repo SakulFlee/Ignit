@@ -9,6 +9,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_math = { path = "../math", version = "1.6.2" }
+ignit_math = { path = "../math", version = "1.6.3" }
 cgmath = { workspace = true }
 wgpu = { workspace = true }

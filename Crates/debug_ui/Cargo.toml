@@ -13,16 +13,16 @@ cgmath = { workspace = true }
 log = { workspace = true }
 winit = { workspace = true }
 
-ignit_app = { path = "../app", version = "1.6.2" }
-ignit_billboard = { path = "../billboard", version = "1.6.2" }
-ignit_camera = { path = "../camera", version = "1.6.2" }
-ignit_core = { path = "../core", version = "1.6.2" }
-ignit_debug_render = { path = "../debug_render", version = "1.6.2" }
-ignit_ecs = { path = "../ecs", version = "1.6.2" }
-ignit_ecs_bridge = { path = "../ecs_bridge", version = "1.6.2" }
-ignit_iced = { path = "../iced", version = "1.6.2" }
-ignit_material_shader = { path = "../material_shader", version = "1.6.2" }
-ignit_renderer = { path = "../renderer", version = "1.6.2" }
+ignit_app = { path = "../app", version = "1.6.3" }
+ignit_billboard = { path = "../billboard", version = "1.6.3" }
+ignit_camera = { path = "../camera", version = "1.6.3" }
+ignit_core = { path = "../core", version = "1.6.3" }
+ignit_debug_render = { path = "../debug_render", version = "1.6.3" }
+ignit_ecs = { path = "../ecs", version = "1.6.3" }
+ignit_ecs_bridge = { path = "../ecs_bridge", version = "1.6.3" }
+ignit_iced = { path = "../iced", version = "1.6.3" }
+ignit_material_shader = { path = "../material_shader", version = "1.6.3" }
+ignit_renderer = { path = "../renderer", version = "1.6.3" }
 
 # Iced sub-crates, matching ignit_iced so the types line up.
 iced_core = { workspace = true }
@@ -31,4 +31,4 @@ iced_wgpu = { workspace = true }
 iced_winit = { workspace = true }
 
 [dev-dependencies]
-ignit_mesh = { path = "../mesh", version = "1.6.2" }
+ignit_mesh = { path = "../mesh", version = "1.6.3" }

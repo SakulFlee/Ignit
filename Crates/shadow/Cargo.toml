@@ -9,13 +9,13 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_camera = { path = "../camera", version = "1.6.2" }
-ignit_math = { path = "../math", version = "1.6.2" }
-ignit_texture = { path = "../texture", version = "1.6.2" }
-ignit_vertex = { path = "../vertex", version = "1.6.2" }
-ignit_instance = { path = "../instance", version = "1.6.2" }
-ignit_model = { path = "../model", version = "1.6.2" }
-ignit_material_shader = { path = "../material_shader", version = "1.6.2" }
+ignit_camera = { path = "../camera", version = "1.6.3" }
+ignit_math = { path = "../math", version = "1.6.3" }
+ignit_texture = { path = "../texture", version = "1.6.3" }
+ignit_vertex = { path = "../vertex", version = "1.6.3" }
+ignit_instance = { path = "../instance", version = "1.6.3" }
+ignit_model = { path = "../model", version = "1.6.3" }
+ignit_material_shader = { path = "../material_shader", version = "1.6.3" }
 cgmath = { workspace = true }
 wgpu = { workspace = true }
 log = { workspace = true }
