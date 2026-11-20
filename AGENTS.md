@@ -168,7 +168,7 @@ Mesh, material, and descriptor caches are keyed by descriptor and use `ignit_cor
 
 `ImportQueueResource` holds glTF tasks. `ImporterResource` owns a rayon pool and result channel. `sys_poll_importer` drains results and spawns ECS entities for models, cameras, and lights. The importer supports external/local URIs, inline data URIs, and `KHR_lights_punctual`.
 
-glTF skins and animations are imported into `ignit_animation` clip and skeleton data. `sys_animate` advances `AnimationPlayer` components, evaluates skeleton poses, and writes CPU-skinned vertices into each model's skinned vertex buffer before scene extraction.
+glTF skins and animations are imported into `ignit_animation` clip and skeleton data. Every imported clip is attached as `AnimationClips`; `AnimationPlayer::crossfade` fades between clips and `Skeleton::apply_clips` blends the weighted layers. `sys_animate` advances `AnimationPlayer` components, evaluates skeleton poses, and writes CPU-skinned vertices into each model's skinned vertex buffer before scene extraction.
 
 ### UI and 2D
 

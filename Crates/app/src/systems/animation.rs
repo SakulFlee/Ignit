@@ -11,6 +11,29 @@ use ignit_ecs_bridge::{
     AnimationPlayer, DeviceResource, ModelRealization, QueueResource, SkeletonComponent,
 };
 
+/// Animation layers for the current clip and an optional fade-out layer.
+fn animation_layers(player: &AnimationPlayer) -> Vec<ignit_animation::AnimationLayer<'_>> {
+    match &player.blend {
+        Some(blend) => vec![
+            ignit_animation::AnimationLayer {
+                clip: &player.clip,
+                time: player.time,
+                weight: blend.progress,
+            },
+            ignit_animation::AnimationLayer {
+                clip: &blend.clip,
+                time: blend.time,
+                weight: 1.0 - blend.progress,
+            },
+        ],
+        None => vec![ignit_animation::AnimationLayer {
+            clip: &player.clip,
+            time: player.time,
+            weight: 1.0,
+        }],
+    }
+}
+
 /// Advances animation players and writes CPU-skinned vertices.
 pub fn sys_animate(ecs: &World, delta_time: f32) {
     let (device, queue) = {
@@ -54,8 +77,7 @@ pub fn sys_animate(ecs: &World, delta_time: f32) {
 
             let mut skeleton = skeletons.components[skeleton_index].0.clone();
             player.advance(delta_time);
-            skeleton.reset_to_rest();
-            skeleton.apply_clip(&player.clip, player.time);
+            skeleton.apply_clips(&animation_layers(&player));
             skeleton.update_world(Matrix4::identity());
 
             let vertices =
@@ -214,5 +236,25 @@ mod tests {
                 .abs()
                 < 1e-6
         );
+    }
+
+    #[test]
+    fn animation_layers_crossfade_the_outgoing_clip() {
+        let incoming = Arc::new(AnimationClip::new("walk", Vec::new()));
+        let outgoing = Arc::new(AnimationClip::new("idle", Vec::new()));
+        let mut player = AnimationPlayer::new(incoming);
+        player.blend = Some(ignit_ecs_bridge::AnimationBlend {
+            clip: outgoing,
+            time: 0.75,
+            progress: 0.25,
+            duration: 1.0,
+        });
+
+        let layers = animation_layers(&player);
+
+        assert_eq!(layers.len(), 2);
+        assert!((layers[0].weight - 0.25).abs() < 1e-6);
+        assert!((layers[1].weight - 0.75).abs() < 1e-6);
+        assert!((layers[1].time - 0.75).abs() < 1e-6);
     }
 }
