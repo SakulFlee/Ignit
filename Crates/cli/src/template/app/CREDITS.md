@@ -16,6 +16,7 @@ Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Fox)
 - Rigging and animation by tomkranis, [CC BY
   4.0](https://creativecommons.org/licenses/by/4.0/).
 
-This copy adds a root node that rotates the model for the engine's up axis,
-scales it to `0.035`, and places it in room R2 at `(10, 0, 0)`. The mesh,
-skeleton, and animation clips are unchanged.
+This copy bakes a transform into the top-level `fox` mesh node: a +90° X
+rotation for the engine's up axis, a uniform `0.03` scale, and a translation
+that places the model at engine `(3.0, 0, 2.2)` in room R1. The mesh, skeleton,
+and animation clips are unchanged.
