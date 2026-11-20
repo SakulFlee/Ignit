@@ -164,7 +164,7 @@ target_sdk = {target_sdk}
 targets = ["arm64-v8a", "armeabi-v7a", "x86_64", "x86"]
 apk_mode = "multiarch"
 ndk_version = "26.2.11394342"
-screen_orientation = "unspecified"
+screen_orientation = "sensorLandscape"
 
 # Signing configuration for release APKs (optional)
 # If not specified, a debug keystore will be automatically generated

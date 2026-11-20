@@ -101,8 +101,12 @@ impl AndroidConfig {
         self.ndk_version.as_deref().unwrap_or("26.2.11394342")
     }
 
+    /// Returns the screen orientation, defaulting to landscape that still
+    /// follows the device sensor.
     pub fn screen_orientation(&self) -> &str {
-        self.screen_orientation.as_deref().unwrap_or("unspecified")
+        self.screen_orientation
+            .as_deref()
+            .unwrap_or("sensorLandscape")
     }
 
     /// Returns the path to the keystore file, or None if not configured.
@@ -444,4 +448,27 @@ pub fn find_package_lib_name(package_name: &str) -> Result<String> {
 
     // Fallback: use package name
     Ok(package_name.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AndroidConfig;
+
+    #[test]
+    fn android_defaults_to_sensor_landscape() {
+        assert_eq!(
+            AndroidConfig::default().screen_orientation(),
+            "sensorLandscape"
+        );
+    }
+
+    #[test]
+    fn configured_orientation_wins_over_the_default() {
+        let config = AndroidConfig {
+            screen_orientation: Some("portrait".to_string()),
+            ..AndroidConfig::default()
+        };
+
+        assert_eq!(config.screen_orientation(), "portrait");
+    }
 }
