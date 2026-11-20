@@ -127,6 +127,8 @@ pub enum DebugMessage {
     SetDebugShadowFrusta(bool),
     /// Toggle the selected-entity highlight.
     SetDebugSelection(bool),
+    /// Toggle skeleton bone rendering.
+    SetDebugBones(bool),
     /// Set the HDR brightness where bloom starts.
     SetBloomThreshold(f32),
     /// Set the bloom contribution strength.
@@ -583,6 +585,7 @@ impl DebugUiState {
             | DebugMessage::SetDebugGridAxes(_)
             | DebugMessage::SetDebugShadowFrusta(_)
             | DebugMessage::SetDebugSelection(_)
+            | DebugMessage::SetDebugBones(_)
             | DebugMessage::SetBloomThreshold(_)
             | DebugMessage::SetBloomIntensity(_)
             | DebugMessage::SetContrast(_)

@@ -650,6 +650,10 @@ fn handle_debug_message(
             update_debug_settings(world, |settings| settings.selection = enabled);
             return;
         }
+        DebugMessage::SetDebugBones(enabled) => {
+            update_debug_settings(world, |settings| settings.bones = enabled);
+            return;
+        }
         DebugMessage::SetBloomThreshold(threshold) => {
             update_render_settings(world, |settings| {
                 settings.bloom_threshold = threshold.max(0.0)

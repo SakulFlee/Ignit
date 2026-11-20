@@ -22,3 +22,7 @@ ignit_instance = { path = "../instance", version = "1.6.3" }
 ignit_light = { path = "../light", version = "1.6.3" }
 ignit_shadow = { path = "../shadow", version = "1.6.3" }
 ignit_vertex = { path = "../vertex", version = "1.6.3" }
+
+[dev-dependencies]
+ignit_animation = { path = "../animation", version = "1.6.3" }
+ignit_math = { path = "../math", version = "1.6.3" }

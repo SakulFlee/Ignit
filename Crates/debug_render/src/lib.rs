@@ -3,7 +3,7 @@ use ignit_app::{LayerRenderer, Module, RenderLayer, RenderOverlayContext};
 use ignit_ecs::{IntoSystem, Res, ResMut, System, World};
 use ignit_ecs_bridge::{
     ActiveCamera, CameraStore, DebugSelectedEntity, InputSnapshot, LightDescriptor, ModelInstances,
-    ModelRealization, Position, ShadowDebugData,
+    ModelRealization, Position, ShadowDebugData, SkeletonComponent,
 };
 use ignit_instance::Instance;
 use ignit_light::LightType;
@@ -558,6 +558,8 @@ pub struct DebugRenderSettings {
     pub shadow_frusta: bool,
     /// Highlight the entity selected in the ECS debug panel.
     pub selection: bool,
+    /// Draw skeleton joints as bone segments for every animated model.
+    pub bones: bool,
 }
 
 impl Default for DebugRenderSettings {
@@ -571,6 +573,7 @@ impl Default for DebugRenderSettings {
             grid_axes: false,
             shadow_frusta: false,
             selection: false,
+            bones: false,
         }
     }
 }
@@ -644,6 +647,9 @@ impl LayerRenderer for DebugRenderOverlay {
         }
         if settings.selection {
             extra_lines.extend(selection_lines(ctx.ecs));
+        }
+        if settings.bones {
+            extra_lines.extend(collect_bone_lines(ctx.ecs));
         }
 
         let live_corners = settings
@@ -934,6 +940,62 @@ fn collect_box_lines(ecs: &World, frozen_frustum: Option<&ignit_camera::Frustum>
                 lines.push([
                     world[b].x, world[b].y, world[b].z, color[0], color[1], color[2],
                 ]);
+            }
+        }
+    }
+
+    lines
+}
+
+/// Draws each skeleton's joint hierarchy as world-space bone segments.
+///
+/// Skeleton world matrices are computed with an identity root, so every
+/// instance transform is applied on top to place the bones where the model is
+/// drawn.
+fn collect_bone_lines(ecs: &World) -> Vec<[f32; 6]> {
+    const COLOR: [f32; 3] = [0.2, 0.9, 1.0];
+
+    let Some(skeletons) = ecs.get_component_store::<SkeletonComponent>() else {
+        return Vec::new();
+    };
+    let Some(instances) = ecs.get_component_store::<ModelInstances>() else {
+        return Vec::new();
+    };
+
+    let mut lines = Vec::new();
+    for &eid in skeletons.dense.as_slice() {
+        let Some(skeleton_index) = skeletons.sparse.get(eid).copied().flatten() else {
+            continue;
+        };
+        let Some(instance_index) = instances.sparse.get(eid).copied().flatten() else {
+            continue;
+        };
+
+        let joints = skeletons.components[skeleton_index].0.joints();
+        if joints.len() < 2 {
+            continue;
+        }
+
+        for transform in instances.components[instance_index].0.values() {
+            let matrix = transform.to_matrix();
+            let joint_world = |index: usize| {
+                joints.get(index).map(|joint| {
+                    let world = joint.world[3];
+                    let point = matrix * Vector4::new(world.x, world.y, world.z, 1.0);
+                    Point3::new(point.x, point.y, point.z)
+                })
+            };
+
+            for (index, joint) in joints.iter().enumerate() {
+                let Some(parent) = joint.parent else {
+                    continue;
+                };
+                let (Some(child), Some(parent)) = (joint_world(index), joint_world(parent)) else {
+                    continue;
+                };
+
+                lines.push([child.x, child.y, child.z, COLOR[0], COLOR[1], COLOR[2]]);
+                lines.push([parent.x, parent.y, parent.z, COLOR[0], COLOR[1], COLOR[2]]);
             }
         }
     }
@@ -1330,5 +1392,94 @@ mod tests {
         assert!(!settings.grid_axes);
         assert!(!settings.shadow_frusta);
         assert!(!settings.selection);
+        assert!(!settings.bones);
+    }
+
+    fn skeleton_component() -> SkeletonComponent {
+        use cgmath::Quaternion;
+        use ignit_animation::{JointDescriptor, Skeleton, SkeletonDescriptor};
+        use ignit_math::Transform;
+
+        let descriptor = SkeletonDescriptor {
+            joints: vec![
+                JointDescriptor {
+                    node_index: 0,
+                    name: "root".into(),
+                    parent: None,
+                    rest: Transform::identity(),
+                },
+                JointDescriptor {
+                    node_index: 1,
+                    name: "child".into(),
+                    parent: Some(0),
+                    rest: Transform::new(
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Quaternion::new(1.0, 0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 1.0, 1.0),
+                    ),
+                },
+            ],
+            inverse_bind_matrices: vec![Matrix4::identity(); 2],
+        };
+
+        SkeletonComponent(Skeleton::from_descriptor(&descriptor))
+    }
+
+    #[test]
+    fn bones_connect_each_joint_to_its_parent() {
+        let mut world = World::new();
+        let entity = world.spawn_entity();
+        world
+            .attach_component(&entity, skeleton_component())
+            .expect("skeleton attach failed");
+        let mut instances = ModelInstances::new();
+        instances.add_identity_instance();
+        world
+            .attach_component(&entity, instances)
+            .expect("instances attach failed");
+
+        let lines = collect_bone_lines(&world);
+
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0][..3], [0.0, 1.0, 0.0]);
+        assert_eq!(lines[1][..3], [0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn bones_follow_the_instance_transform() {
+        use cgmath::Quaternion;
+        use ignit_math::Transform;
+
+        let mut world = World::new();
+        let entity = world.spawn_entity();
+        world
+            .attach_component(&entity, skeleton_component())
+            .expect("skeleton attach failed");
+        let mut instances = ModelInstances::new();
+        instances.add_instance(Transform::new(
+            Vector3::new(10.0, 0.0, 0.0),
+            Quaternion::new(1.0, 0.0, 0.0, 0.0),
+            Vector3::new(1.0, 1.0, 1.0),
+        ));
+        world
+            .attach_component(&entity, instances)
+            .expect("instances attach failed");
+
+        let lines = collect_bone_lines(&world);
+
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0][..3], [10.0, 1.0, 0.0]);
+        assert_eq!(lines[1][..3], [10.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn bones_need_a_model_instance() {
+        let mut world = World::new();
+        let entity = world.spawn_entity();
+        world
+            .attach_component(&entity, skeleton_component())
+            .expect("skeleton attach failed");
+
+        assert!(collect_bone_lines(&world).is_empty());
     }
 }
