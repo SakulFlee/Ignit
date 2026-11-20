@@ -190,7 +190,7 @@ Every example owns the assets it needs; there is no repository-wide `Assets/` tr
 
 | Path | Contents |
 |------|----------|
-| `Examples/all-in-one/Assets/` | Scene and glTF model used by the all-in-one example. |
+| `Examples/all-in-one/Assets/` | Scene, PBR helmet, and animated Fox used by the all-in-one example. |
 
 Asset export is no longer part of the build. `cargo build` does not require Blender or any generated model files.
 
@@ -292,7 +292,7 @@ All CI systems use the toolchain pinned in `rust-toolchain.toml` through rustup.
 Release tags (`v*`) run the shared `.github/workflows/release-shared.yml` from both forges. Release builds do not run lint or tests; those stay in the PR/`main` pipelines. A release publishes:
 
 - raw `ignit-cli-<version>-<target>` binaries
-- one `ignit-examples-<version>-<target>.tar.gz` (Unix) or `.zip` (Windows) per desktop target containing every example; only `template_all_in_one` carries its two runtime assets
+- one `ignit-examples-<version>-<target>.tar.gz` (Unix) or `.zip` (Windows) per desktop target containing every example; only `template_all_in_one` carries its runtime assets
 - universal `ignit-template-<name>-<version>-universal.apk` files for the Android templates
 - `SHA256SUMS`
 
@@ -337,7 +337,7 @@ Treat the current WASM status as unverified: `Crates/ecs/src/system/runner.rs` u
 - **`ignit_resources` is a shim.** It only re-exports types from the fine-grained resource crates.
 - **There is no `ignit_shaders` crate.** Use the `ignit_shader_*` family.
 - **`ignit_ecs` lives in `Crates/ecs`.**
-- **Examples own their assets.** There is no repository-wide `Assets/` tree; the all-in-one example keeps its scene and model under `Examples/all-in-one/Assets/`.
+- **Examples own their assets.** There is no repository-wide `Assets/` tree; the all-in-one example keeps its scene and models under `Examples/all-in-one/Assets/`.
 - **The shadow depth shader is embedded.** It lives in `Crates/shadow/src/shadow_depth.wgsl`.
 - **`App` state hooks.** `CombinedModule` forwards `setup` and `register_overlays`, but not per-module `save_state`/`restore_state`/`clear_state`.
 - **CI coverage is uneven.** Linux is the primary target; Windows/macOS/Android/iOS paths exist but are not equally covered.

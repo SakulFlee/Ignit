@@ -306,8 +306,8 @@ impl Module for DebugUiModule {
             ),
             (
                 "Animation",
-                (960.0, 40.0),
-                (320.0, 260.0),
+                (650.0, 320.0),
+                (300.0, 360.0),
                 PanelId::Animation,
                 animation_panel as PanelView,
             ),

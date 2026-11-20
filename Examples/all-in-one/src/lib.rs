@@ -1000,13 +1000,17 @@ impl Module for ProcgeoSceneModule {
             }
         };
 
-        // Import the DamagedHelmet into Room 2
+        // Import the DamagedHelmet and the animated Fox into the galleries.
         if let Some(mut queue) = ecs.get_resource_mut::<ImportQueueResource>() {
             queue.push(ImportTask::Gltf {
                 file_path: "Models/DamagedHelmet.glb".into(),
                 task: GltfImport::WholeFile,
             });
-            info!("Queued DamagedHelmet import");
+            queue.push(ImportTask::Gltf {
+                file_path: "Models/Fox.glb".into(),
+                task: GltfImport::WholeFile,
+            });
+            info!("Queued DamagedHelmet and Fox imports");
         }
 
         // ════════════════════════════════════════════════════════════
