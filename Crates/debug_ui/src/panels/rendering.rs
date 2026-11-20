@@ -727,6 +727,13 @@ pub fn rendering_panel<'a>(ecs: &World) -> Element<'a, DebugMessage, Theme, Iced
                         .into(),
                 );
                 rows.push(
+                    checkbox(settings.weights)
+                        .label("Skin weights (Animation panel joint)")
+                        .text_size(12)
+                        .on_toggle(DebugMessage::SetDebugWeights)
+                        .into(),
+                );
+                rows.push(
                     text("Wireframe requires GPU line polygon mode.")
                         .size(10)
                         .color(MUTED)

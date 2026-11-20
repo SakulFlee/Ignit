@@ -788,7 +788,13 @@ fn handle_debug_message(
             return;
         }
         DebugMessage::SetAnimationPlaying { entity, playing } => {
-            update_animation_player(world, entity, |player| player.playing = playing);
+            update_animation_player(world, entity, |player| {
+                if playing {
+                    player.play();
+                } else {
+                    player.pause();
+                }
+            });
             return;
         }
         DebugMessage::SetAnimationLooping { entity, looping } => {

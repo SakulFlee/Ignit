@@ -1016,20 +1016,26 @@ fn collect_bone_lines(ecs: &World) -> Vec<[f32; 6]> {
     lines
 }
 
-/// Draws a small cross at every vertex the selected joint influences.
+/// Draws the selected joint's influence over the model.
 ///
-/// Crosses are coloured from blue (weak influence) to red (full influence).
-/// Vertices are sampled evenly so a dense mesh cannot overflow the line budget,
-/// and use the rest-pose positions where the weights are defined.
+/// Every influenced vertex is connected to the joint with a line and marked
+/// with a small cross, coloured from blue (weak influence) to red (full
+/// influence). A yellow cross marks the joint itself. Vertices are sampled
+/// evenly so a dense mesh cannot overflow the line budget, and use the
+/// rest-pose positions where the weights are defined.
 fn collect_weight_lines(ecs: &World, settings: &DebugRenderSettings) -> Vec<[f32; 6]> {
-    const MAX_POINTS: usize = 1_200;
+    const MAX_POINTS: usize = 1_000;
     const MIN_WEIGHT: f32 = 0.01;
+    const JOINT_COLOR: [f32; 3] = [1.0, 0.95, 0.35];
 
     let (Some(entity), Some(joint)) = (settings.weight_entity, settings.weight_joint) else {
         return Vec::new();
     };
 
     let Some(skins) = ecs.get_component_store::<SkinComponent>() else {
+        return Vec::new();
+    };
+    let Some(skeletons) = ecs.get_component_store::<SkeletonComponent>() else {
         return Vec::new();
     };
     let Some(realizations) = ecs.get_component_store::<ModelRealization>() else {
@@ -1039,11 +1045,21 @@ fn collect_weight_lines(ecs: &World, settings: &DebugRenderSettings) -> Vec<[f32
         return Vec::new();
     };
 
-    let (Some(skin_index), Some(realization_index), Some(instance_index)) = (
+    let (Some(skin_index), Some(skeleton_index), Some(realization_index), Some(instance_index)) = (
         skins.sparse.get(entity.index).copied().flatten(),
+        skeletons.sparse.get(entity.index).copied().flatten(),
         realizations.sparse.get(entity.index).copied().flatten(),
         instances.sparse.get(entity.index).copied().flatten(),
     ) else {
+        return Vec::new();
+    };
+
+    let Some(joint_local) = skeletons.components[skeleton_index]
+        .0
+        .joints()
+        .get(joint)
+        .map(|joint| joint.world[3])
+    else {
         return Vec::new();
     };
 
@@ -1068,7 +1084,12 @@ fn collect_weight_lines(ecs: &World, settings: &DebugRenderSettings) -> Vec<[f32
             .max(transform.scale.y)
             .max(transform.scale.z)
             .max(0.001);
-        let half = 0.01 * scale;
+        let half = 0.015 * scale;
+        let joint_position =
+            matrix * Vector4::new(joint_local.x, joint_local.y, joint_local.z, 1.0);
+        let joint_point = Point3::new(joint_position.x, joint_position.y, joint_position.z);
+
+        push_cross(&mut lines, joint_point, 0.04 * scale, JOINT_COLOR);
 
         for index in (0..count).step_by(stride) {
             let Some(weight) = joint_weight(&skin.joints[index], &skin.weights[index], joint)
@@ -1086,60 +1107,30 @@ fn collect_weight_lines(ecs: &World, settings: &DebugRenderSettings) -> Vec<[f32
                     vertices[index].position.z,
                     1.0,
                 );
+            let point = Point3::new(position.x, position.y, position.z);
             let color = weight_color(weight);
 
-            lines.push([
-                position.x - half,
-                position.y,
-                position.z,
-                color[0],
-                color[1],
-                color[2],
-            ]);
-            lines.push([
-                position.x + half,
-                position.y,
-                position.z,
-                color[0],
-                color[1],
-                color[2],
-            ]);
-            lines.push([
-                position.x,
-                position.y - half,
-                position.z,
-                color[0],
-                color[1],
-                color[2],
-            ]);
-            lines.push([
-                position.x,
-                position.y + half,
-                position.z,
-                color[0],
-                color[1],
-                color[2],
-            ]);
-            lines.push([
-                position.x,
-                position.y,
-                position.z - half,
-                color[0],
-                color[1],
-                color[2],
-            ]);
-            lines.push([
-                position.x,
-                position.y,
-                position.z + half,
-                color[0],
-                color[1],
-                color[2],
-            ]);
+            push_line(&mut lines, point, joint_point, color);
+            push_cross(&mut lines, point, half, color);
         }
     }
 
     lines
+}
+
+fn push_line(lines: &mut Vec<[f32; 6]>, start: Point3<f32>, end: Point3<f32>, color: [f32; 3]) {
+    lines.push([start.x, start.y, start.z, color[0], color[1], color[2]]);
+    lines.push([end.x, end.y, end.z, color[0], color[1], color[2]]);
+}
+
+fn push_cross(lines: &mut Vec<[f32; 6]>, center: Point3<f32>, half: f32, color: [f32; 3]) {
+    let [red, green, blue] = color;
+    lines.push([center.x - half, center.y, center.z, red, green, blue]);
+    lines.push([center.x + half, center.y, center.z, red, green, blue]);
+    lines.push([center.x, center.y - half, center.z, red, green, blue]);
+    lines.push([center.x, center.y + half, center.z, red, green, blue]);
+    lines.push([center.x, center.y, center.z - half, red, green, blue]);
+    lines.push([center.x, center.y, center.z + half, red, green, blue]);
 }
 
 /// Sums the weights of one joint in a vertex's four influences.
@@ -1568,6 +1559,23 @@ mod tests {
             joint_weight(&joints, &weights, usize::from(u16::MAX) + 1),
             None
         );
+    }
+
+    #[test]
+    fn crosses_and_lines_emit_their_expected_vertex_counts() {
+        let mut lines = Vec::new();
+        push_cross(&mut lines, Point3::new(0.0, 0.0, 0.0), 0.1, [1.0, 0.0, 0.0]);
+        assert_eq!(lines.len(), 6);
+
+        push_line(
+            &mut lines,
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            [0.0, 1.0, 0.0],
+        );
+        assert_eq!(lines.len(), 8);
+        assert_eq!(lines[6][..3], [0.0, 0.0, 0.0]);
+        assert_eq!(lines[7][..3], [1.0, 0.0, 0.0]);
     }
 
     #[test]

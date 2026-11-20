@@ -335,6 +335,26 @@ impl AnimationPlayer {
         self.time = 0.0;
     }
 
+    /// Starts or resumes playback.
+    ///
+    /// A non-looping clip that already reached its end restarts from the
+    /// beginning, so pressing Play after the timer ran out plays it again.
+    pub fn play(&mut self) {
+        if !self.looping
+            && self.clip.duration > 0.0
+            && self.time >= self.clip.duration - f32::EPSILON
+        {
+            self.time = 0.0;
+        }
+
+        self.playing = true;
+    }
+
+    /// Pauses playback without changing the clip time.
+    pub fn pause(&mut self) {
+        self.playing = false;
+    }
+
     /// Advances the clip time by `delta` seconds.
     pub fn advance(&mut self, delta: f32) {
         if !self.playing {
@@ -347,19 +367,25 @@ impl AnimationPlayer {
             delta * self.speed,
             self.looping,
         );
+        let finished = !self.looping
+            && self.clip.duration > 0.0
+            && self.time >= self.clip.duration - f32::EPSILON;
 
-        let Some(blend) = &mut self.blend else {
-            return;
-        };
-        blend.time = advance_clip_time(
-            blend.clip.duration,
-            blend.time,
-            delta * self.speed,
-            self.looping,
-        );
-        blend.progress = (blend.progress + delta / blend.duration).clamp(0.0, 1.0);
-        if blend.progress >= 1.0 {
-            self.blend = None;
+        if let Some(blend) = &mut self.blend {
+            blend.time = advance_clip_time(
+                blend.clip.duration,
+                blend.time,
+                delta * self.speed,
+                self.looping,
+            );
+            blend.progress = (blend.progress + delta / blend.duration).clamp(0.0, 1.0);
+            if blend.progress >= 1.0 {
+                self.blend = None;
+            }
+        }
+
+        if finished {
+            self.playing = false;
         }
     }
 }
@@ -725,6 +751,42 @@ mod tests {
         assert_eq!(player.clip.name, "walk");
         assert_eq!(player.time, 0.0);
         assert!(player.blend.is_none());
+    }
+
+    #[test]
+    fn a_finished_non_looping_clip_stops_and_restarts_from_zero() {
+        let mut player = AnimationPlayer::new(clip("once", 1.0));
+        player.looping = false;
+
+        player.advance(2.0);
+        assert!((player.time - 1.0).abs() < 1e-6);
+        assert!(!player.playing, "a finished one-shot stops");
+
+        player.play();
+        assert!(player.playing);
+        assert_eq!(player.time, 0.0);
+    }
+
+    #[test]
+    fn play_does_not_rewind_a_looping_clip() {
+        let mut player = AnimationPlayer::new(clip("loop", 1.0));
+        player.time = 1.0;
+
+        player.play();
+
+        assert!(player.playing);
+        assert_eq!(player.time, 1.0);
+    }
+
+    #[test]
+    fn pause_keeps_the_current_time() {
+        let mut player = AnimationPlayer::new(clip("clip", 2.0));
+        player.time = 0.4;
+
+        player.pause();
+
+        assert!(!player.playing);
+        assert!((player.time - 0.4).abs() < 1e-6);
     }
 
     #[test]

@@ -133,7 +133,7 @@ pub fn animation_panel<'a>(ecs: &World) -> Element<'a, DebugMessage, Theme, Iced
 
     rows.push(crate::panels::caption("Speed", ACCENT));
     rows.push(
-        slider(0.0..=4.0, player.speed, move |speed| {
+        slider(0.1..=10.0, player.speed, move |speed| {
             DebugMessage::SetAnimationSpeed {
                 entity: selected,
                 speed,
@@ -225,13 +225,14 @@ pub fn animation_panel<'a>(ecs: &World) -> Element<'a, DebugMessage, Theme, Iced
             .or_else(|| joints.first().cloned());
 
         rows.push(crate::panels::caption("Skin weights", ACCENT));
-        rows.push(
-            checkbox(settings.is_some_and(|settings| settings.weights))
-                .label("Show weights")
-                .text_size(12)
-                .on_toggle(DebugMessage::SetDebugWeights)
-                .into(),
-        );
+        if !settings.is_some_and(|settings| settings.weights) {
+            rows.push(
+                text("Enable \"Skin weights\" in the Rendering panel.")
+                    .size(10)
+                    .color(MUTED)
+                    .into(),
+            );
+        }
         rows.push(
             pick_list(current, joints, |name: &String| name.clone())
                 .width(Length::Fill)
