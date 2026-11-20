@@ -2309,6 +2309,13 @@ impl ApplicationHandler for ModuleRuntime {
         match event {
             WindowEvent::Focused(false) => {
                 self.window_focused = false;
+                // The OS does not guarantee a release event for keys or
+                // mouse buttons held when focus moves elsewhere. Drop the
+                // live state so a held key cannot stay pressed indefinitely
+                // (e.g. continuous movement after alt-tab).
+                self.input_state.clear();
+                self.deferred_touches.clear();
+                self.deferred_wheels.clear();
                 let lock = ctx_lock!(ctx);
                 apply_cursor_grab(lock.window(), CursorGrabMode::None);
                 lock.window().set_cursor_visible(true);
