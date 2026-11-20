@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cgmath::{InnerSpace, Matrix4, SquareMatrix};
+use cgmath::{InnerSpace, Matrix4, Quaternion, SquareMatrix, Vector3};
 
 use ignit_math::Transform;
 
@@ -22,6 +22,15 @@ pub struct JointDescriptor {
 pub struct SkeletonDescriptor {
     pub joints: Vec<JointDescriptor>,
     pub inverse_bind_matrices: Vec<Matrix4<f32>>,
+}
+
+/// One weighted animation layer for [`Skeleton::apply_clips`].
+#[derive(Debug, Clone, Copy)]
+pub struct AnimationLayer<'a> {
+    pub clip: &'a AnimationClip,
+    pub time: f32,
+    /// Relative weight; weights are normalized across all layers.
+    pub weight: f32,
 }
 
 /// Mutable joint state for one skeleton instance.
@@ -133,6 +142,114 @@ impl Skeleton {
         }
     }
 
+    /// Applies multiple weighted clips to the local joints.
+    ///
+    /// Weights are normalized across the layers, so they do not need to sum to
+    /// one. Properties a layer does not animate fall back to the rest pose for
+    /// that layer's share, so crossfades settle into the rest pose instead of
+    /// snapping. World matrices are left untouched; call
+    /// [`Self::update_world`] afterwards.
+    pub fn apply_clips(&mut self, layers: &[AnimationLayer<'_>]) {
+        for joint in &mut self.joints {
+            joint.local = joint.rest;
+        }
+
+        let total_weight: f32 = layers.iter().map(|layer| layer.weight.max(0.0)).sum();
+        if total_weight <= f32::EPSILON {
+            return;
+        }
+
+        let count = self.joints.len();
+        let mut translations = vec![(Vector3::new(0.0, 0.0, 0.0), 0.0f32); count];
+        let mut rotations = vec![(Quaternion::new(0.0, 0.0, 0.0, 0.0), 0.0f32); count];
+        let mut rotation_references: Vec<Option<Quaternion<f32>>> = vec![None; count];
+        let mut scales = vec![(Vector3::new(0.0, 0.0, 0.0), 0.0f32); count];
+
+        for layer in layers {
+            let weight = layer.weight.max(0.0) / total_weight;
+            if weight <= 0.0 {
+                continue;
+            }
+
+            for channel in &layer.clip.channels {
+                let Some(&joint) = self.node_to_joint.get(&channel.node_index) else {
+                    continue;
+                };
+                let Some(value) = channel.sampler.sample(layer.time) else {
+                    continue;
+                };
+
+                match (channel.path, value) {
+                    (AnimationPath::Translation, AnimationValue::Vec3(value)) => {
+                        translations[joint].0 += value * weight;
+                        translations[joint].1 += weight;
+                    }
+                    (AnimationPath::Rotation, AnimationValue::Quat(value)) => {
+                        let reference = *rotation_references[joint].get_or_insert(value);
+                        // Quaternions double-cover rotations; keep every
+                        // contribution in one hemisphere before averaging.
+                        let contribution = if value.dot(reference) < 0.0 {
+                            quaternion_scale(value, -weight)
+                        } else {
+                            quaternion_scale(value, weight)
+                        };
+                        rotations[joint].0 = quaternion_add(rotations[joint].0, contribution);
+                        rotations[joint].1 += weight;
+                    }
+                    (AnimationPath::Scale, AnimationValue::Vec3(value)) => {
+                        scales[joint].0 += value * weight;
+                        scales[joint].1 += weight;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        for (index, joint) in self.joints.iter_mut().enumerate() {
+            let rest = joint.rest;
+
+            let (translation, weight) = translations[index];
+            if weight > 0.0 {
+                let remainder = (1.0 - weight).max(0.0);
+                joint.local.position =
+                    (translation + rest.position * remainder) / (weight + remainder);
+            }
+
+            let (rotation, weight) = rotations[index];
+            if weight > 0.0 {
+                let mut rest_rotation = rest.rotation;
+                if let Some(reference) = rotation_references[index]
+                    && rest_rotation.dot(reference) < 0.0
+                {
+                    rest_rotation = quaternion_scale(rest_rotation, -1.0);
+                }
+                let blended = quaternion_add(
+                    rotation,
+                    quaternion_scale(rest_rotation, (1.0 - weight).max(0.0)),
+                );
+                let magnitude = (blended.s * blended.s
+                    + blended.v.x * blended.v.x
+                    + blended.v.y * blended.v.y
+                    + blended.v.z * blended.v.z)
+                    .sqrt();
+                if magnitude > f32::EPSILON {
+                    joint.local.rotation = Quaternion::new(
+                        blended.s / magnitude,
+                        blended.v.x / magnitude,
+                        blended.v.y / magnitude,
+                        blended.v.z / magnitude,
+                    );
+                }
+            }
+
+            let (scale, weight) = scales[index];
+            if weight > 0.0 {
+                let remainder = (1.0 - weight).max(0.0);
+                joint.local.scale = (scale + rest.scale * remainder) / (weight + remainder);
+            }
+        }
+    }
+
     /// Recomputes world and skinning matrices from the current local joints.
     pub fn update_world(&mut self, root: Matrix4<f32>) {
         let count = self.joints.len();
@@ -172,6 +289,24 @@ impl Skeleton {
             self.skin_matrices[index] = world[index] * inverse_bind;
         }
     }
+}
+
+fn quaternion_add(first: Quaternion<f32>, second: Quaternion<f32>) -> Quaternion<f32> {
+    Quaternion::new(
+        first.s + second.s,
+        first.v.x + second.v.x,
+        first.v.y + second.v.y,
+        first.v.z + second.v.z,
+    )
+}
+
+fn quaternion_scale(value: Quaternion<f32>, factor: f32) -> Quaternion<f32> {
+    Quaternion::new(
+        value.s * factor,
+        value.v.x * factor,
+        value.v.y * factor,
+        value.v.z * factor,
+    )
 }
 
 fn compute_world(
@@ -296,5 +431,170 @@ mod tests {
             skeleton.local_transform(0).unwrap().position,
             Vector3::new(1.0, 0.0, 0.0)
         );
+    }
+
+    fn translation_clip(name: &str, node: usize, value: Vector3<f32>) -> AnimationClip {
+        AnimationClip::new(
+            name,
+            vec![AnimationChannel {
+                node_index: node,
+                path: AnimationPath::Translation,
+                sampler: crate::AnimationSampler::new(
+                    vec![0.0],
+                    vec![AnimationValue::Vec3(value)],
+                    crate::Interpolation::Linear,
+                ),
+            }],
+        )
+    }
+
+    fn rotation_clip(name: &str, node: usize, value: Quaternion<f32>) -> AnimationClip {
+        AnimationClip::new(
+            name,
+            vec![AnimationChannel {
+                node_index: node,
+                path: AnimationPath::Rotation,
+                sampler: crate::AnimationSampler::new(
+                    vec![0.0],
+                    vec![AnimationValue::Quat(value)],
+                    crate::Interpolation::Linear,
+                ),
+            }],
+        )
+    }
+
+    #[test]
+    fn apply_clips_with_one_layer_matches_apply_clip() {
+        let mut skeleton = Skeleton::from_descriptor(&descriptor());
+        let clip = translation_clip("Move", 1, Vector3::new(4.0, 5.0, 6.0));
+
+        skeleton.apply_clips(&[AnimationLayer {
+            clip: &clip,
+            time: 0.0,
+            weight: 1.0,
+        }]);
+
+        assert_eq!(
+            skeleton.local_transform(1).unwrap().position,
+            Vector3::new(4.0, 5.0, 6.0)
+        );
+    }
+
+    #[test]
+    fn apply_clips_normalizes_layer_weights() {
+        let mut skeleton = Skeleton::from_descriptor(&descriptor());
+        let first = translation_clip("First", 0, Vector3::new(2.0, 0.0, 0.0));
+        let second = translation_clip("Second", 0, Vector3::new(6.0, 0.0, 0.0));
+
+        skeleton.apply_clips(&[
+            AnimationLayer {
+                clip: &first,
+                time: 0.0,
+                weight: 1.0,
+            },
+            AnimationLayer {
+                clip: &second,
+                time: 0.0,
+                weight: 3.0,
+            },
+        ]);
+
+        // (1 * 2 + 3 * 6) / 4 = 5.
+        assert_eq!(
+            skeleton.local_transform(0).unwrap().position,
+            Vector3::new(5.0, 0.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn apply_clips_falls_back_to_rest_per_property() {
+        let mut skeleton = Skeleton::from_descriptor(&descriptor());
+        // Each clip animates a different joint, so each joint only gets half of
+        // its layer's weight and blends the rest of the way toward the rest
+        // pose.
+        let first = translation_clip("First", 0, Vector3::new(3.0, 0.0, 0.0));
+        let second = translation_clip("Second", 1, Vector3::new(0.0, 5.0, 0.0));
+
+        skeleton.apply_clips(&[
+            AnimationLayer {
+                clip: &first,
+                time: 0.0,
+                weight: 1.0,
+            },
+            AnimationLayer {
+                clip: &second,
+                time: 0.0,
+                weight: 1.0,
+            },
+        ]);
+
+        // Joint 0 rest x is 1, joint 1 rest y is 1.
+        assert_eq!(
+            skeleton.local_transform(0).unwrap().position,
+            Vector3::new(2.0, 0.0, 0.0)
+        );
+        assert_eq!(
+            skeleton.local_transform(1).unwrap().position,
+            Vector3::new(0.0, 3.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn apply_clips_normalizes_duplicate_channels() {
+        let mut skeleton = Skeleton::from_descriptor(&descriptor());
+        let channel = AnimationChannel {
+            node_index: 1,
+            path: AnimationPath::Translation,
+            sampler: crate::AnimationSampler::new(
+                vec![0.0],
+                vec![AnimationValue::Vec3(Vector3::new(4.0, 5.0, 6.0))],
+                crate::Interpolation::Linear,
+            ),
+        };
+        let clip = AnimationClip::new("Duplicate", vec![channel.clone(), channel]);
+
+        skeleton.apply_clips(&[AnimationLayer {
+            clip: &clip,
+            time: 0.0,
+            weight: 1.0,
+        }]);
+
+        // Two identical channels must not double the sampled value.
+        assert_eq!(
+            skeleton.local_transform(1).unwrap().position,
+            Vector3::new(4.0, 5.0, 6.0)
+        );
+    }
+
+    #[test]
+    fn apply_clips_aligns_quaternion_hemispheres() {
+        let mut skeleton = Skeleton::from_descriptor(&descriptor());
+        let rotation = Quaternion::new(
+            (std::f32::consts::FRAC_PI_4).cos(),
+            0.0,
+            (std::f32::consts::FRAC_PI_4).sin(),
+            0.0,
+        );
+        let negated = quaternion_scale(rotation, -1.0);
+        let first = rotation_clip("First", 0, rotation);
+        let second = rotation_clip("Second", 0, negated);
+
+        skeleton.apply_clips(&[
+            AnimationLayer {
+                clip: &first,
+                time: 0.0,
+                weight: 1.0,
+            },
+            AnimationLayer {
+                clip: &second,
+                time: 0.0,
+                weight: 1.0,
+            },
+        ]);
+
+        // q and -q describe the same rotation; blending must not cancel them.
+        let blended = skeleton.local_transform(0).unwrap().rotation;
+        assert!((blended.s - rotation.s).abs() < 1e-5, "{blended:?}");
+        assert!((blended.v.y - rotation.v.y).abs() < 1e-5, "{blended:?}");
     }
 }

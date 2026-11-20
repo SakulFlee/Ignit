@@ -283,6 +283,19 @@ pub struct AnimationPlayer {
     pub speed: f32,
     pub looping: bool,
     pub playing: bool,
+    /// Clip fading out after a [`Self::crossfade`].
+    pub blend: Option<AnimationBlend>,
+}
+
+/// Fading-out layer of an [`AnimationPlayer`].
+#[derive(Debug, Clone)]
+pub struct AnimationBlend {
+    pub clip: std::sync::Arc<ignit_animation::AnimationClip>,
+    pub time: f32,
+    /// Fade progress in `0..=1`; the layer is dropped at `1`.
+    pub progress: f32,
+    /// Seconds the fade takes.
+    pub duration: f32,
 }
 
 impl AnimationPlayer {
@@ -293,7 +306,33 @@ impl AnimationPlayer {
             speed: 1.0,
             looping: true,
             playing: true,
+            blend: None,
         }
+    }
+
+    /// Switches to `clip`, crossfading from the current one over `duration`.
+    ///
+    /// A duration of zero switches immediately.
+    pub fn crossfade(
+        &mut self,
+        clip: std::sync::Arc<ignit_animation::AnimationClip>,
+        duration: f32,
+    ) {
+        if duration <= f32::EPSILON {
+            self.clip = clip;
+            self.time = 0.0;
+            self.blend = None;
+            return;
+        }
+
+        let outgoing = std::mem::replace(&mut self.clip, clip);
+        self.blend = Some(AnimationBlend {
+            clip: outgoing,
+            time: self.time,
+            progress: 0.0,
+            duration,
+        });
+        self.time = 0.0;
     }
 
     /// Advances the clip time by `delta` seconds.
@@ -302,13 +341,48 @@ impl AnimationPlayer {
             return;
         }
 
-        self.time += delta * self.speed;
-        let duration = self.clip.duration;
-        if self.looping && duration > f32::EPSILON {
-            self.time = self.time.rem_euclid(duration);
-        } else if duration > 0.0 {
-            self.time = self.time.clamp(0.0, duration);
+        self.time = advance_clip_time(
+            self.clip.duration,
+            self.time,
+            delta * self.speed,
+            self.looping,
+        );
+
+        let Some(blend) = &mut self.blend else {
+            return;
+        };
+        blend.time = advance_clip_time(
+            blend.clip.duration,
+            blend.time,
+            delta * self.speed,
+            self.looping,
+        );
+        blend.progress = (blend.progress + delta / blend.duration).clamp(0.0, 1.0);
+        if blend.progress >= 1.0 {
+            self.blend = None;
         }
+    }
+}
+
+fn advance_clip_time(duration: f32, time: f32, delta: f32, looping: bool) -> f32 {
+    let time = time + delta;
+    if looping && duration > f32::EPSILON {
+        time.rem_euclid(duration)
+    } else if duration > 0.0 {
+        time.clamp(0.0, duration)
+    } else {
+        time
+    }
+}
+
+/// All animation clips imported for a skinned model entity.
+#[derive(Debug, Clone, Default)]
+pub struct AnimationClips(pub Vec<std::sync::Arc<ignit_animation::AnimationClip>>);
+
+impl AnimationClips {
+    /// Finds a clip by name.
+    pub fn find(&self, name: &str) -> Option<std::sync::Arc<ignit_animation::AnimationClip>> {
+        self.0.iter().find(|clip| clip.name == name).cloned()
     }
 }
 
@@ -607,5 +681,60 @@ mod tests {
         player.looping = false;
         player.advance(3.0);
         assert!((player.time - 2.0).abs() < 1e-6);
+    }
+
+    fn clip(name: &str, duration: f32) -> std::sync::Arc<ignit_animation::AnimationClip> {
+        std::sync::Arc::new(ignit_animation::AnimationClip {
+            name: name.into(),
+            duration,
+            channels: Vec::new(),
+        })
+    }
+
+    #[test]
+    fn crossfade_keeps_the_outgoing_clip_until_it_fades() {
+        let mut player = AnimationPlayer::new(clip("idle", 2.0));
+        player.time = 0.75;
+
+        player.crossfade(clip("walk", 1.0), 0.5);
+
+        assert_eq!(player.clip.name, "walk");
+        assert_eq!(player.time, 0.0);
+        let blend = player.blend.as_ref().expect("outgoing layer");
+        assert_eq!(blend.clip.name, "idle");
+        assert!((blend.time - 0.75).abs() < 1e-6);
+        assert_eq!(blend.progress, 0.0);
+
+        player.advance(0.25);
+        let blend = player.blend.as_ref().expect("still fading");
+        assert!((blend.progress - 0.5).abs() < 1e-6);
+        assert!((player.time - 0.25).abs() < 1e-6);
+        assert!((blend.time - 1.0).abs() < 1e-6);
+
+        player.advance(0.25);
+        assert!(player.blend.is_none());
+    }
+
+    #[test]
+    fn zero_duration_crossfade_switches_immediately() {
+        let mut player = AnimationPlayer::new(clip("idle", 2.0));
+        player.time = 1.0;
+
+        player.crossfade(clip("walk", 1.0), 0.0);
+
+        assert_eq!(player.clip.name, "walk");
+        assert_eq!(player.time, 0.0);
+        assert!(player.blend.is_none());
+    }
+
+    #[test]
+    fn animation_clips_find_by_name() {
+        let clips = AnimationClips(vec![clip("idle", 1.0), clip("walk", 1.0)]);
+
+        assert_eq!(
+            clips.find("walk").map(|clip| clip.name.clone()).as_deref(),
+            Some("walk")
+        );
+        assert!(clips.find("run").is_none());
     }
 }

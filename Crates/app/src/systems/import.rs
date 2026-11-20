@@ -9,10 +9,10 @@ use cgmath::{InnerSpace, Point3, Quaternion, Rotation3, Vector3};
 use ignit_camera::Camera;
 use ignit_ecs::World;
 use ignit_ecs_bridge::{
-    ActiveCamera, AnimationPlayer, CameraDescriptor, CameraDirty, CameraRealization, CameraStore,
-    DeviceResource, ImportQueueResource, ImporterResource, LightDescriptor, LightDirty,
-    ModelDescriptor, ModelDirty, ModelInstances, Position, QueueResource, Rotation,
-    SkeletonComponent, SkinComponent,
+    ActiveCamera, AnimationClips, AnimationPlayer, CameraDescriptor, CameraDirty,
+    CameraRealization, CameraStore, DeviceResource, ImportQueueResource, ImporterResource,
+    LightDescriptor, LightDirty, ModelDescriptor, ModelDirty, ModelInstances, Position,
+    QueueResource, Rotation, SkeletonComponent, SkinComponent,
 };
 use ignit_shadow::ShadowCaster;
 use log::warn;
@@ -69,7 +69,8 @@ pub fn sys_poll_importer(ecs: &mut World) {
 
     // Step 3: Spawn entities for each import result
     for result in results {
-        let first_animation = result.animations.first().cloned();
+        let animations = result.animations;
+        let first_animation = animations.first().cloned();
 
         // Spawn model entities
         for model_desc in result.models {
@@ -110,11 +111,16 @@ pub fn sys_poll_importer(ecs: &mut World) {
                 let skeleton = ignit_animation::Skeleton::from_descriptor(descriptor);
                 if let Err(e) = ecs.attach_component(&entity, SkeletonComponent(skeleton)) {
                     warn!("Failed to attach SkeletonComponent: {:?}", e);
-                } else if let Some(clip) = &first_animation
-                    && let Err(e) =
-                        ecs.attach_component(&entity, AnimationPlayer::new(clip.clone()))
-                {
-                    warn!("Failed to attach AnimationPlayer: {:?}", e);
+                } else if !animations.is_empty() {
+                    if let Err(e) =
+                        ecs.attach_component(&entity, AnimationClips(animations.clone()))
+                    {
+                        warn!("Failed to attach AnimationClips: {:?}", e);
+                    } else if let Some(clip) = first_animation.clone()
+                        && let Err(e) = ecs.attach_component(&entity, AnimationPlayer::new(clip))
+                    {
+                        warn!("Failed to attach AnimationPlayer: {:?}", e);
+                    }
                 }
             }
 
