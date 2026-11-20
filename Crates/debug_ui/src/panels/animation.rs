@@ -214,7 +214,11 @@ pub fn animation_panel<'a>(ecs: &World) -> Element<'a, DebugMessage, Theme, Iced
             })
         });
 
-    if let Some(joints) = joints {
+    let weights_enabled = ecs
+        .get_resource::<ignit_debug_render::DebugToggleState>()
+        .is_some_and(|state| state.settings.weights);
+
+    if weights_enabled && let Some(joints) = joints {
         let settings = ecs
             .get_resource::<ignit_debug_render::DebugToggleState>()
             .map(|state| state.settings);
@@ -225,14 +229,6 @@ pub fn animation_panel<'a>(ecs: &World) -> Element<'a, DebugMessage, Theme, Iced
             .or_else(|| joints.first().cloned());
 
         rows.push(crate::panels::caption("Skin weights", ACCENT));
-        if !settings.is_some_and(|settings| settings.weights) {
-            rows.push(
-                text("Enable \"Skin weights\" in the Rendering panel.")
-                    .size(10)
-                    .color(MUTED)
-                    .into(),
-            );
-        }
         rows.push(
             pick_list(current, joints, |name: &String| name.clone())
                 .width(Length::Fill)

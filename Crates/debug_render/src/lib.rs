@@ -1016,15 +1016,19 @@ fn collect_bone_lines(ecs: &World) -> Vec<[f32; 6]> {
     lines
 }
 
-/// Draws the selected joint's influence over the model.
+/// Draws the selected joint's influence over the animated model.
 ///
-/// Every influenced vertex is connected to the joint with a line and marked
-/// with a small cross, coloured from blue (weak influence) to red (full
-/// influence). A yellow cross marks the joint itself. Vertices are sampled
-/// evenly so a dense mesh cannot overflow the line budget, and use the
-/// rest-pose positions where the weights are defined.
+/// The wireframe of every influenced triangle is drawn, with each vertex
+/// coloured from blue (weak influence) to red (full influence), and every
+/// sampled influenced vertex is connected to the joint. A yellow cross marks
+/// the joint itself. Positions come from the current skinned pose, so the
+/// overlay follows the animation.
+///
+/// Triangles and vertices are sampled evenly so a dense mesh cannot overflow
+/// the line budget.
 fn collect_weight_lines(ecs: &World, settings: &DebugRenderSettings) -> Vec<[f32; 6]> {
-    const MAX_POINTS: usize = 1_000;
+    const MAX_VERTEX_LINES: usize = 600;
+    const MAX_TRIANGLES: usize = 1_200;
     const MIN_WEIGHT: f32 = 0.01;
     const JOINT_COLOR: [f32; 3] = [1.0, 0.95, 0.35];
 
@@ -1054,26 +1058,30 @@ fn collect_weight_lines(ecs: &World, settings: &DebugRenderSettings) -> Vec<[f32
         return Vec::new();
     };
 
-    let Some(joint_local) = skeletons.components[skeleton_index]
-        .0
-        .joints()
-        .get(joint)
-        .map(|joint| joint.world[3])
-    else {
+    let skeleton = &skeletons.components[skeleton_index].0;
+    let Some(joint_local) = skeleton.joints().get(joint).map(|joint| joint.world[3]) else {
         return Vec::new();
     };
 
     let skin = &skins.components[skin_index].0;
-    let vertices = &realizations.components[realization_index]
-        .0
-        .source_mesh()
-        .vertices;
-    let count = vertices.len().min(skin.len());
-    if count == 0 {
+    let mesh = realizations.components[realization_index].0.source_mesh();
+    let skinned = skin.skinned_vertices(&mesh.vertices, skeleton.skin_matrices());
+    if skinned.is_empty() {
         return Vec::new();
     }
 
-    let stride = count.div_ceil(MAX_POINTS).max(1);
+    let vertex_count = skinned.len().min(skin.len());
+    let vertex_stride = vertex_count.div_ceil(MAX_VERTEX_LINES).max(1);
+    let triangle_count = mesh.indices.len() / 3;
+    let triangle_stride = triangle_count.div_ceil(MAX_TRIANGLES).max(1);
+
+    let vertex_weight = |index: usize| -> f32 {
+        match (skin.joints.get(index), skin.weights.get(index)) {
+            (Some(joints), Some(weights)) => joint_weight(joints, weights, joint).unwrap_or(0.0),
+            _ => 0.0,
+        }
+    };
+
     let mut lines = Vec::new();
 
     for transform in instances.components[instance_index].0.values() {
@@ -1084,43 +1092,94 @@ fn collect_weight_lines(ecs: &World, settings: &DebugRenderSettings) -> Vec<[f32
             .max(transform.scale.y)
             .max(transform.scale.z)
             .max(0.001);
-        let half = 0.015 * scale;
+
+        let transform_point = |position: Vector3<f32>| {
+            let point = matrix * Vector4::new(position.x, position.y, position.z, 1.0);
+            Point3::new(point.x, point.y, point.z)
+        };
+
         let joint_position =
             matrix * Vector4::new(joint_local.x, joint_local.y, joint_local.z, 1.0);
         let joint_point = Point3::new(joint_position.x, joint_position.y, joint_position.z);
-
         push_cross(&mut lines, joint_point, 0.04 * scale, JOINT_COLOR);
 
-        for index in (0..count).step_by(stride) {
-            let Some(weight) = joint_weight(&skin.joints[index], &skin.weights[index], joint)
-            else {
+        for triangle in (0..triangle_count).step_by(triangle_stride) {
+            let base = triangle * 3;
+            let (Some(&first), Some(&second), Some(&third)) = (
+                mesh.indices.get(base),
+                mesh.indices.get(base + 1),
+                mesh.indices.get(base + 2),
+            ) else {
                 continue;
             };
+
+            let indices = [first as usize, second as usize, third as usize];
+            let weights = indices.map(vertex_weight);
+            if weights.iter().all(|weight| *weight <= MIN_WEIGHT) {
+                continue;
+            }
+
+            let colors = weights.map(influence_color);
+            let points = indices.map(|index| {
+                skinned
+                    .get(index)
+                    .map(|vertex| transform_point(vertex.position))
+            });
+            let [Some(a), Some(b), Some(c)] = points else {
+                continue;
+            };
+
+            push_line(&mut lines, a, b, colors[0], colors[1]);
+            push_line(&mut lines, b, c, colors[1], colors[2]);
+            push_line(&mut lines, c, a, colors[2], colors[0]);
+        }
+
+        for index in (0..vertex_count).step_by(vertex_stride) {
+            let weight = vertex_weight(index);
             if weight <= MIN_WEIGHT {
                 continue;
             }
 
-            let position = matrix
-                * Vector4::new(
-                    vertices[index].position.x,
-                    vertices[index].position.y,
-                    vertices[index].position.z,
-                    1.0,
-                );
-            let point = Point3::new(position.x, position.y, position.z);
+            let Some(vertex) = skinned.get(index) else {
+                continue;
+            };
             let color = weight_color(weight);
-
-            push_line(&mut lines, point, joint_point, color);
-            push_cross(&mut lines, point, half, color);
+            push_line(
+                &mut lines,
+                transform_point(vertex.position),
+                joint_point,
+                color,
+                color,
+            );
         }
     }
 
     lines
 }
 
-fn push_line(lines: &mut Vec<[f32; 6]>, start: Point3<f32>, end: Point3<f32>, color: [f32; 3]) {
-    lines.push([start.x, start.y, start.z, color[0], color[1], color[2]]);
-    lines.push([end.x, end.y, end.z, color[0], color[1], color[2]]);
+fn push_line(
+    lines: &mut Vec<[f32; 6]>,
+    start: Point3<f32>,
+    end: Point3<f32>,
+    start_color: [f32; 3],
+    end_color: [f32; 3],
+) {
+    lines.push([
+        start.x,
+        start.y,
+        start.z,
+        start_color[0],
+        start_color[1],
+        start_color[2],
+    ]);
+    lines.push([
+        end.x,
+        end.y,
+        end.z,
+        end_color[0],
+        end_color[1],
+        end_color[2],
+    ]);
 }
 
 fn push_cross(lines: &mut Vec<[f32; 6]>, center: Point3<f32>, half: f32, color: [f32; 3]) {
@@ -1144,6 +1203,16 @@ fn joint_weight(joints: &[u16; 4], weights: &[f32; 4], joint: usize) -> Option<f
     }
 
     (total > 0.0).then_some(total)
+}
+
+/// Colour for a triangle vertex; uninfluenced vertices stay neutral grey so
+/// the influenced area still reads where it borders the rest of the mesh.
+fn influence_color(weight: f32) -> [f32; 3] {
+    if weight <= 0.01 {
+        [0.3, 0.3, 0.34]
+    } else {
+        weight_color(weight)
+    }
 }
 
 /// Maps a skin weight to a blue-to-red debug colour.
@@ -1572,10 +1641,17 @@ mod tests {
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
         );
         assert_eq!(lines.len(), 8);
         assert_eq!(lines[6][..3], [0.0, 0.0, 0.0]);
         assert_eq!(lines[7][..3], [1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn uninfluenced_vertices_stay_neutral() {
+        assert_eq!(influence_color(0.0), [0.3, 0.3, 0.34]);
+        assert_eq!(influence_color(1.0), weight_color(1.0));
     }
 
     #[test]
