@@ -7,6 +7,11 @@ use std::process::Command;
 /// The Temurin LTS version we manage for Ignit projects.
 pub const JDK_VERSION: &str = "25";
 
+/// Minimum accepted Java major version.
+fn minimum_java_major() -> u32 {
+    JDK_VERSION.parse().unwrap_or(25)
+}
+
 /// Returns the path to the `java` executable for a given JRE home directory.
 fn java_executable(jre_home: &Path) -> PathBuf {
     let bin = jre_home.join("bin");
@@ -154,6 +159,12 @@ fn download_java(version: &str) -> Result<PathBuf> {
             java.display()
         );
     }
+    if !java_works(&java) {
+        anyhow::bail!(
+            "Extracted JDK is older than Java {} or cannot report its version",
+            JDK_VERSION
+        );
+    }
     if !is_jdk(&jdk_home) {
         anyhow::bail!(
             "Extracted JDK is missing javac at {} — Gradle requires a full JDK, not a JRE",
@@ -228,19 +239,40 @@ fn platform_tokens() -> (&'static str, &'static str, &'static str) {
 }
 
 fn java_works(java: &Path) -> bool {
-    Command::new(java)
-        .arg("-version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    java_major(java).is_some_and(|version| version >= minimum_java_major())
 }
 
 fn java_works_on_path() -> bool {
-    Command::new("java")
-        .arg("-version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    java_works(Path::new("java"))
+}
+
+/// Returns the major version reported by `java -version`, if it can be parsed.
+fn java_major(java: &Path) -> Option<u32> {
+    let output = Command::new(java).arg("-version").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+    parse_java_major(&text)
+}
+
+/// Parses the major version from `java -version` output.
+///
+/// Handles the pre-Java-9 `1.8.0_202` form as well as `25.0.1`, `25-ea`, and
+/// `17.0.9+9`.
+fn parse_java_major(output: &str) -> Option<u32> {
+    const MARKER: &str = "version \"";
+    let start = output.find(MARKER)? + MARKER.len();
+    let rest = &output[start..];
+    let end = rest.find('"')?;
+    let version = &rest[..end];
+
+    let mut parts = version.split(|character: char| !character.is_ascii_digit());
+    let first = parts.next().filter(|part| !part.is_empty())?;
+    let major = if first == "1" { parts.next()? } else { first };
+    major.parse().ok()
 }
 
 fn find_java_on_path() -> Option<PathBuf> {
@@ -349,4 +381,45 @@ fn extract_tar_gz(archive: &Path, dest: &Path) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to extract archive: {}", e))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_modern_java_versions() {
+        assert_eq!(
+            parse_java_major("openjdk version \"25.0.1\" 2026-01-20"),
+            Some(25)
+        );
+        assert_eq!(
+            parse_java_major("openjdk version \"17.0.9+9\" 2023-10-17"),
+            Some(17)
+        );
+        assert_eq!(parse_java_major("openjdk version \"25-ea\""), Some(25));
+    }
+
+    #[test]
+    fn parses_legacy_java_versions() {
+        assert_eq!(parse_java_major("java version \"1.8.0_202\""), Some(8));
+    }
+
+    #[test]
+    fn rejects_unparseable_versions() {
+        assert_eq!(parse_java_major("not java"), None);
+        assert_eq!(parse_java_major("version \"\""), None);
+    }
+
+    #[test]
+    fn enforces_the_minimum_major_version() {
+        let minimum = minimum_java_major();
+
+        assert!(minimum >= 1);
+        assert!(parse_java_major(&format!("version \"{minimum}.0.1\"")).unwrap() >= minimum);
+        assert!(
+            parse_java_major(&format!("version \"{}.0.1\"", minimum.saturating_sub(1))).unwrap()
+                < minimum
+        );
+    }
 }
