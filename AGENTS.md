@@ -190,7 +190,7 @@ Every example owns the assets it needs; there is no repository-wide `Assets/` tr
 
 | Path | Contents |
 |------|----------|
-| `Examples/all-in-one/Assets/` | Scene, PBR helmet, and animated Fox used by the all-in-one example. |
+| `Examples/all-in-one/Assets/` | Scene, PBR helmet, and animated Fox variants used by the all-in-one example. |
 
 Asset export is no longer part of the build. `cargo build` does not require Blender or any generated model files.
 

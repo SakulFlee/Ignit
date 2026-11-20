@@ -106,8 +106,14 @@ fn write_all_in_one_assets(project_dir: &Path) -> Result<()> {
         ALL_IN_ONE_HELMET,
     )
     .context("Failed to write Assets/Models/DamagedHelmet.glb")?;
-    fs::write(assets.join("Models").join("Fox.glb"), ALL_IN_ONE_FOX)
-        .context("Failed to write Assets/Models/Fox.glb")?;
+    for (name, bytes) in [
+        ("Fox-Survey.glb", ALL_IN_ONE_FOX_SURVEY),
+        ("Fox-Walk.glb", ALL_IN_ONE_FOX_WALK),
+        ("Fox-Run.glb", ALL_IN_ONE_FOX_RUN),
+    ] {
+        fs::write(assets.join("Models").join(name), bytes)
+            .with_context(|| format!("Failed to write Assets/Models/{name}"))?;
+    }
     fs::write(assets.join("Models").join("CREDITS.md"), ALL_IN_ONE_CREDITS)
         .context("Failed to write Assets/Models/CREDITS.md")?;
 
@@ -236,7 +242,9 @@ const ALL_IN_ONE_TEMPLATE: &str = include_str!("../template/app/all-in-one.rs");
 const ALL_IN_ONE_SCENE: &[u8] = include_bytes!("../template/app/procgeo_demo.ron");
 
 const ALL_IN_ONE_HELMET: &[u8] = include_bytes!("../template/app/DamagedHelmet.glb");
-const ALL_IN_ONE_FOX: &[u8] = include_bytes!("../template/app/Fox.glb");
+const ALL_IN_ONE_FOX_SURVEY: &[u8] = include_bytes!("../template/app/Fox-Survey.glb");
+const ALL_IN_ONE_FOX_WALK: &[u8] = include_bytes!("../template/app/Fox-Walk.glb");
+const ALL_IN_ONE_FOX_RUN: &[u8] = include_bytes!("../template/app/Fox-Run.glb");
 const ALL_IN_ONE_CREDITS: &str = include_str!("../template/app/CREDITS.md");
 
 const ALL_IN_ONE_CUSTOM_SHADER: &str =

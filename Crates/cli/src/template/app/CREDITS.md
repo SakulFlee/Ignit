@@ -7,7 +7,7 @@ Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Dama
 © 2018 Microsoft. Licensed under [CC BY
 4.0](https://creativecommons.org/licenses/by/4.0/).
 
-## Fox.glb
+## Fox-Survey.glb, Fox-Walk.glb, Fox-Run.glb
 
 "Fox" from the [Khronos glTF Sample
 Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Fox).
@@ -16,7 +16,9 @@ Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Fox)
 - Rigging and animation by tomkranis, [CC BY
   4.0](https://creativecommons.org/licenses/by/4.0/).
 
-This copy bakes a transform into the top-level `fox` mesh node: a +90° X
-rotation for the engine's up axis, a uniform `0.03` scale, and a translation
-that places the model at engine `(3.0, 0, 2.2)` in room R1. The mesh, skeleton,
-and animation clips are unchanged.
+Each copy keeps one clip (Survey, Walk, Run) and bakes a transform into its
+top-level `fox` mesh node: a +90° X rotation for the engine's up axis, a 180°
+yaw so the model faces the room entrance, a uniform `0.03` scale, and a
+translation that places them at engine `(8, 0, 20)`, `(12, 0, 20)`, and
+`(20, 0, 20)` in rooms R9 and R10. The mesh, skeleton, and animation clips are
+otherwise unchanged.
