@@ -38,7 +38,7 @@ use ignit_ecs::{ComponentAccess, Entity, IntoSystem, Res, ResMut, System, World}
 use ignit_ecs_bridge::{
     ActiveCamera, AnimationClips, AnimationPlayer, CameraDescriptor, CameraDirty, CursorGrabState,
     DebugSelectedEntity, DeviceResource, EngineEvent, EngineEvents, InputSnapshot,
-    PerformanceLogConfig, TimingsHistoryConfig, VolumetricSettings,
+    PerformanceLogConfig, SkeletonComponent, TimingsHistoryConfig, VolumetricSettings,
 };
 use ignit_iced::{DEFAULT_REFRESH_INTERVAL, IcedLayerRenderer, IcedState, SMOOTH_REFRESH_INTERVAL};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -466,6 +466,10 @@ fn handle_debug_message(
         selected.0 = *entity;
     }
 
+    if let DebugMessage::SelectAnimationEntity(entity) = &message {
+        select_animation_entity(world, *entity);
+    }
+
     match message {
         DebugMessage::SetNumericField(key, value) => {
             let input = format!("{value}");
@@ -654,6 +658,14 @@ fn handle_debug_message(
             update_debug_settings(world, |settings| settings.bones = enabled);
             return;
         }
+        DebugMessage::SetDebugWeights(enabled) => {
+            update_debug_settings(world, |settings| settings.weights = enabled);
+            return;
+        }
+        DebugMessage::SetAnimationWeightJoint { entity, joint } => {
+            select_weight_joint(world, entity, &joint);
+            return;
+        }
         DebugMessage::SetBloomThreshold(threshold) => {
             update_render_settings(world, |settings| {
                 settings.bloom_threshold = threshold.max(0.0)
@@ -820,6 +832,36 @@ fn play_animation_clip(world: &mut World, entity: Entity, name: &str) {
 
     if let Some(clip) = clip {
         update_animation_player(world, entity, |player| player.crossfade(clip, 0.25));
+    }
+}
+
+/// Points weight debugging at `entity` and clears the joint that belonged to
+/// the previous selection.
+fn select_animation_entity(world: &mut World, entity: Option<Entity>) {
+    update_debug_settings(world, |settings| {
+        settings.weight_entity = entity;
+        settings.weight_joint = None;
+    });
+}
+
+/// Selects a skeleton joint by name for weight debugging.
+fn select_weight_joint(world: &mut World, entity: Entity, name: &str) {
+    let joint = world
+        .get_component_store::<SkeletonComponent>()
+        .and_then(|skeletons| {
+            let index = skeletons.sparse.get(entity.index).copied().flatten()?;
+            skeletons.components[index]
+                .0
+                .joints()
+                .iter()
+                .position(|candidate| candidate.name == name)
+        });
+
+    if let Some(joint) = joint {
+        update_debug_settings(world, |settings| {
+            settings.weight_entity = Some(entity);
+            settings.weight_joint = Some(joint);
+        });
     }
 }
 
@@ -1052,6 +1094,80 @@ mod tests {
         assert_eq!(player.clip.name, "walk");
         let blend = player.blend.as_ref().expect("outgoing clip");
         assert_eq!(blend.clip.name, "idle");
+    }
+
+    fn toggle_state() -> DebugToggleState {
+        DebugToggleState {
+            key: KeyCode::F1,
+            was_pressed: false,
+            settings: ignit_debug_render::DebugRenderSettings::default(),
+        }
+    }
+
+    fn skeleton_component() -> SkeletonComponent {
+        use cgmath::{Matrix4, Quaternion, SquareMatrix, Vector3};
+        use ignit_animation::{JointDescriptor, Skeleton, SkeletonDescriptor};
+        use ignit_math::Transform;
+
+        let descriptor = SkeletonDescriptor {
+            joints: vec![
+                JointDescriptor {
+                    node_index: 0,
+                    name: "root".into(),
+                    parent: None,
+                    rest: Transform::identity(),
+                },
+                JointDescriptor {
+                    node_index: 1,
+                    name: "hand".into(),
+                    parent: Some(0),
+                    rest: Transform::new(
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Quaternion::new(1.0, 0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 1.0, 1.0),
+                    ),
+                },
+            ],
+            inverse_bind_matrices: vec![Matrix4::identity(); 2],
+        };
+
+        SkeletonComponent(Skeleton::from_descriptor(&descriptor))
+    }
+
+    #[test]
+    fn selecting_an_animation_entity_retargets_weight_debugging() {
+        let mut world = World::new();
+        world.insert_resource(toggle_state());
+        let entity = world.spawn_entity();
+        update_debug_settings(&mut world, |settings| settings.weight_joint = Some(3));
+
+        select_animation_entity(&mut world, Some(entity));
+
+        let settings = world
+            .get_resource::<DebugToggleState>()
+            .expect("toggle state")
+            .settings;
+        assert_eq!(settings.weight_entity, Some(entity));
+        assert!(settings.weight_joint.is_none());
+    }
+
+    #[test]
+    fn selecting_a_weight_joint_resolves_it_by_name() {
+        let mut world = World::new();
+        world.insert_resource(toggle_state());
+        let entity = world.spawn_entity();
+        world
+            .attach_component(&entity, skeleton_component())
+            .expect("skeleton attach failed");
+
+        select_weight_joint(&mut world, entity, "hand");
+
+        let settings = world
+            .get_resource::<DebugToggleState>()
+            .expect("toggle state")
+            .settings;
+        assert_eq!(settings.weight_entity, Some(entity));
+        assert_eq!(settings.weight_joint, Some(1));
     }
 
     #[test]

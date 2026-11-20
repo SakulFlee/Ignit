@@ -1,9 +1,9 @@
 use cgmath::{InnerSpace, Matrix4, Point3, SquareMatrix, Vector3, Vector4};
 use ignit_app::{LayerRenderer, Module, RenderLayer, RenderOverlayContext};
-use ignit_ecs::{IntoSystem, Res, ResMut, System, World};
+use ignit_ecs::{Entity, IntoSystem, Res, ResMut, System, World};
 use ignit_ecs_bridge::{
     ActiveCamera, CameraStore, DebugSelectedEntity, InputSnapshot, LightDescriptor, ModelInstances,
-    ModelRealization, Position, ShadowDebugData, SkeletonComponent,
+    ModelRealization, Position, ShadowDebugData, SkeletonComponent, SkinComponent,
 };
 use ignit_instance::Instance;
 use ignit_light::LightType;
@@ -560,6 +560,13 @@ pub struct DebugRenderSettings {
     pub selection: bool,
     /// Draw skeleton joints as bone segments for every animated model.
     pub bones: bool,
+    /// Draw per-vertex skin weights for [`Self::weight_entity`] and
+    /// [`Self::weight_joint`] as coloured crosses.
+    pub weights: bool,
+    /// Entity whose skin weights are visualized.
+    pub weight_entity: Option<Entity>,
+    /// Joint whose skin weights are visualized.
+    pub weight_joint: Option<usize>,
 }
 
 impl Default for DebugRenderSettings {
@@ -574,6 +581,9 @@ impl Default for DebugRenderSettings {
             shadow_frusta: false,
             selection: false,
             bones: false,
+            weights: false,
+            weight_entity: None,
+            weight_joint: None,
         }
     }
 }
@@ -650,6 +660,9 @@ impl LayerRenderer for DebugRenderOverlay {
         }
         if settings.bones {
             extra_lines.extend(collect_bone_lines(ctx.ecs));
+        }
+        if settings.weights {
+            extra_lines.extend(collect_weight_lines(ctx.ecs, &settings));
         }
 
         let live_corners = settings
@@ -1001,6 +1014,151 @@ fn collect_bone_lines(ecs: &World) -> Vec<[f32; 6]> {
     }
 
     lines
+}
+
+/// Draws a small cross at every vertex the selected joint influences.
+///
+/// Crosses are coloured from blue (weak influence) to red (full influence).
+/// Vertices are sampled evenly so a dense mesh cannot overflow the line budget,
+/// and use the rest-pose positions where the weights are defined.
+fn collect_weight_lines(ecs: &World, settings: &DebugRenderSettings) -> Vec<[f32; 6]> {
+    const MAX_POINTS: usize = 1_200;
+    const MIN_WEIGHT: f32 = 0.01;
+
+    let (Some(entity), Some(joint)) = (settings.weight_entity, settings.weight_joint) else {
+        return Vec::new();
+    };
+
+    let Some(skins) = ecs.get_component_store::<SkinComponent>() else {
+        return Vec::new();
+    };
+    let Some(realizations) = ecs.get_component_store::<ModelRealization>() else {
+        return Vec::new();
+    };
+    let Some(instances) = ecs.get_component_store::<ModelInstances>() else {
+        return Vec::new();
+    };
+
+    let (Some(skin_index), Some(realization_index), Some(instance_index)) = (
+        skins.sparse.get(entity.index).copied().flatten(),
+        realizations.sparse.get(entity.index).copied().flatten(),
+        instances.sparse.get(entity.index).copied().flatten(),
+    ) else {
+        return Vec::new();
+    };
+
+    let skin = &skins.components[skin_index].0;
+    let vertices = &realizations.components[realization_index]
+        .0
+        .source_mesh()
+        .vertices;
+    let count = vertices.len().min(skin.len());
+    if count == 0 {
+        return Vec::new();
+    }
+
+    let stride = count.div_ceil(MAX_POINTS).max(1);
+    let mut lines = Vec::new();
+
+    for transform in instances.components[instance_index].0.values() {
+        let matrix = transform.to_matrix();
+        let scale = transform
+            .scale
+            .x
+            .max(transform.scale.y)
+            .max(transform.scale.z)
+            .max(0.001);
+        let half = 0.01 * scale;
+
+        for index in (0..count).step_by(stride) {
+            let Some(weight) = joint_weight(&skin.joints[index], &skin.weights[index], joint)
+            else {
+                continue;
+            };
+            if weight <= MIN_WEIGHT {
+                continue;
+            }
+
+            let position = matrix
+                * Vector4::new(
+                    vertices[index].position.x,
+                    vertices[index].position.y,
+                    vertices[index].position.z,
+                    1.0,
+                );
+            let color = weight_color(weight);
+
+            lines.push([
+                position.x - half,
+                position.y,
+                position.z,
+                color[0],
+                color[1],
+                color[2],
+            ]);
+            lines.push([
+                position.x + half,
+                position.y,
+                position.z,
+                color[0],
+                color[1],
+                color[2],
+            ]);
+            lines.push([
+                position.x,
+                position.y - half,
+                position.z,
+                color[0],
+                color[1],
+                color[2],
+            ]);
+            lines.push([
+                position.x,
+                position.y + half,
+                position.z,
+                color[0],
+                color[1],
+                color[2],
+            ]);
+            lines.push([
+                position.x,
+                position.y,
+                position.z - half,
+                color[0],
+                color[1],
+                color[2],
+            ]);
+            lines.push([
+                position.x,
+                position.y,
+                position.z + half,
+                color[0],
+                color[1],
+                color[2],
+            ]);
+        }
+    }
+
+    lines
+}
+
+/// Sums the weights of one joint in a vertex's four influences.
+fn joint_weight(joints: &[u16; 4], weights: &[f32; 4], joint: usize) -> Option<f32> {
+    let joint = u16::try_from(joint).ok()?;
+    let mut total = 0.0;
+    for index in 0..4 {
+        if joints[index] == joint {
+            total += weights[index];
+        }
+    }
+
+    (total > 0.0).then_some(total)
+}
+
+/// Maps a skin weight to a blue-to-red debug colour.
+fn weight_color(weight: f32) -> [f32; 3] {
+    let weight = weight.clamp(0.0, 1.0);
+    [0.15 + 0.85 * weight, 0.3 - 0.1 * weight, 1.0 - 0.9 * weight]
 }
 
 fn grid_axes_lines(ecs: &World) -> Vec<[f32; 6]> {
@@ -1393,6 +1551,36 @@ mod tests {
         assert!(!settings.shadow_frusta);
         assert!(!settings.selection);
         assert!(!settings.bones);
+        assert!(!settings.weights);
+        assert!(settings.weight_entity.is_none());
+        assert!(settings.weight_joint.is_none());
+    }
+
+    #[test]
+    fn joint_weight_sums_matching_influences() {
+        let joints = [2, 2, 5, 0];
+        let weights = [0.25, 0.5, 0.25, 0.0];
+
+        assert_eq!(joint_weight(&joints, &weights, 2), Some(0.75));
+        assert_eq!(joint_weight(&joints, &weights, 5), Some(0.25));
+        assert_eq!(joint_weight(&joints, &weights, 1), None);
+        assert_eq!(
+            joint_weight(&joints, &weights, usize::from(u16::MAX) + 1),
+            None
+        );
+    }
+
+    #[test]
+    fn weight_colour_runs_from_blue_to_red() {
+        let close = |actual: [f32; 3], expected: [f32; 3]| {
+            for (actual, expected) in actual.into_iter().zip(expected) {
+                assert!((actual - expected).abs() < 1e-6, "{actual} != {expected}");
+            }
+        };
+
+        close(weight_color(0.0), [0.15, 0.3, 1.0]);
+        close(weight_color(1.0), [1.0, 0.2, 0.1]);
+        assert_eq!(weight_color(-1.0), weight_color(0.0));
     }
 
     fn skeleton_component() -> SkeletonComponent {

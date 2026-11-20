@@ -129,6 +129,10 @@ pub enum DebugMessage {
     SetDebugSelection(bool),
     /// Toggle skeleton bone rendering.
     SetDebugBones(bool),
+    /// Toggle skin-weight visualization.
+    SetDebugWeights(bool),
+    /// Select the joint whose skin weights are visualized.
+    SetAnimationWeightJoint { entity: Entity, joint: String },
     /// Set the HDR brightness where bloom starts.
     SetBloomThreshold(f32),
     /// Set the bloom contribution strength.
@@ -586,6 +590,8 @@ impl DebugUiState {
             | DebugMessage::SetDebugShadowFrusta(_)
             | DebugMessage::SetDebugSelection(_)
             | DebugMessage::SetDebugBones(_)
+            | DebugMessage::SetDebugWeights(_)
+            | DebugMessage::SetAnimationWeightJoint { .. }
             | DebugMessage::SetBloomThreshold(_)
             | DebugMessage::SetBloomIntensity(_)
             | DebugMessage::SetContrast(_)

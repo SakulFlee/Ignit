@@ -6,7 +6,7 @@ use iced_widget::{button, checkbox, pick_list, slider, text};
 use iced_winit::core::{Color, Element, Length, Theme};
 
 use ignit_ecs::{Entity, World};
-use ignit_ecs_bridge::{AnimationClips, AnimationPlayer};
+use ignit_ecs_bridge::{AnimationClips, AnimationPlayer, SkeletonComponent};
 
 use crate::state::Renderer as IcedRenderer;
 use crate::state::{DebugMessage, DebugUiState};
@@ -197,6 +197,49 @@ pub fn animation_panel<'a>(ecs: &World) -> Element<'a, DebugMessage, Theme, Iced
             text(format!("Switches with a {CROSSFADE_SECS:.2}s crossfade."))
                 .size(10)
                 .color(MUTED)
+                .into(),
+        );
+    }
+
+    let joints = ecs
+        .get_component_store::<SkeletonComponent>()
+        .and_then(|skeletons| {
+            let index = skeletons.sparse.get(selected.index).copied().flatten()?;
+            let joints = skeletons.components[index].0.joints();
+            (!joints.is_empty()).then(|| {
+                joints
+                    .iter()
+                    .map(|joint| joint.name.clone())
+                    .collect::<Vec<_>>()
+            })
+        });
+
+    if let Some(joints) = joints {
+        let settings = ecs
+            .get_resource::<ignit_debug_render::DebugToggleState>()
+            .map(|state| state.settings);
+        let current = settings
+            .and_then(|settings| settings.weight_joint)
+            .filter(|index| *index < joints.len())
+            .map(|index| joints[index].clone())
+            .or_else(|| joints.first().cloned());
+
+        rows.push(crate::panels::caption("Skin weights", ACCENT));
+        rows.push(
+            checkbox(settings.is_some_and(|settings| settings.weights))
+                .label("Show weights")
+                .text_size(12)
+                .on_toggle(DebugMessage::SetDebugWeights)
+                .into(),
+        );
+        rows.push(
+            pick_list(current, joints, |name: &String| name.clone())
+                .width(Length::Fill)
+                .text_size(12)
+                .on_select(move |joint| DebugMessage::SetAnimationWeightJoint {
+                    entity: selected,
+                    joint,
+                })
                 .into(),
         );
     }

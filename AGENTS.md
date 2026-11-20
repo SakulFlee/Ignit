@@ -177,7 +177,7 @@ glTF skins and animations are imported into `ignit_animation` clip and skeleton 
 - `ignit_renderer` exposes `Renderer2D`, `TextRenderer`, and `UiRenderer`.
 - `ignit_ui` provides ECS widgets, layout, hit testing, and events; it is not automatically driven by `ModuleRuntime`.
 - `ignit_iced` is the production iced panel integration: events are processed before game systems and panels draw at `RenderLayer::UI`.
-- `ignit_debug_ui` provides the Performance, ECS, Console, and Rendering panels. Rendering exposes AA mode, SMAA quality, active-camera projection, live volumetrics controls, and raw render-stage debug views.
+- `ignit_debug_ui` provides the Performance, ECS, Console, Rendering, and Animation panels. Rendering exposes AA mode, SMAA quality, active-camera projection, live volumetrics controls, raw render-stage debug views, and the debug-overlay toggles including skeleton bones. Animation selects and crossfades clips, scrubs playback, and picks a joint for skin-weight visualization.
 - `ignit_touch_ui` renders a virtual joystick overlay.
 
 ---
