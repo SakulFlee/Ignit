@@ -370,7 +370,7 @@ pub fn entrypoint(
 
     let app_settings = AppSettings {
         vsync_enabled: false,
-        fullscreen: std::env::var_os("IGNIT_FULLSCREEN").is_some(),
+        fullscreen: std::env::var("IGNIT_FULLSCREEN").map_or(true, |value| value != "0"),
         present_mode,
         name: NAME.to_string(),
         // Showcase the higher-quality LUT-based SMAA path in the flagship example.
