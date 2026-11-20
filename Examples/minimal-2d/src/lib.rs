@@ -21,7 +21,6 @@ pub fn entrypoint(
     let event_loop = event_loop_result.expect("Event Loop failure");
 
     let app_settings = AppSettings {
-        vsync_enabled: true,
         fullscreen: std::env::var("IGNIT_FULLSCREEN").map_or(true, |value| value != "0"),
         name: NAME.to_string(),
         back_presses_to_exit: 3,

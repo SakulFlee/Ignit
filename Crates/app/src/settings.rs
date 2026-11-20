@@ -7,6 +7,11 @@ use winit::dpi::{PhysicalSize, Size};
 pub struct AppSettings {
     pub name: String,
     pub size: Size,
+    /// Present with VSync.
+    ///
+    /// Enabled by default. The shipped templates and examples inherit this
+    /// value instead of overriding it; set [`Self::present_mode`] to benchmark
+    /// a specific pacing mode.
     pub vsync_enabled: bool,
     /// Start the window in exclusive fullscreen.
     ///
@@ -108,5 +113,18 @@ impl Default for AppSettings {
             back_presses_to_exit: 0,
             back_exit_window: Duration::from_secs(2),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppSettings;
+
+    #[test]
+    fn vsync_is_enabled_by_default() {
+        let settings = AppSettings::default();
+
+        assert!(settings.vsync_enabled);
+        assert!(settings.present_mode.is_none());
     }
 }
