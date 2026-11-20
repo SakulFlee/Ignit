@@ -136,6 +136,13 @@ mod tests {
     }
 
     #[test]
+    fn animation_room_is_labelled() {
+        assert!(room_labels().iter().any(|(text, position, _)| {
+            *text == "Animation Gallery" && position.x == 10.0 && position.z == 14.75
+        }));
+    }
+
+    #[test]
     fn bundled_scene_includes_the_transparency_panes() {
         let scene = SceneBuilder::from_ron(include_str!("../Assets/Scenes/procgeo_demo.ron"))
             .expect("bundled all-in-one scene must parse");
@@ -217,7 +224,7 @@ fn room_shell_kind(label: &str) -> &'static str {
 }
 
 /// Floating room labels, as authored positions and orientations.
-fn room_labels() -> [(&'static str, Point3<f32>, BillboardMode); 9] {
+fn room_labels() -> [(&'static str, Point3<f32>, BillboardMode); 10] {
     [
         (
             "Metallic Materials",
@@ -257,6 +264,11 @@ fn room_labels() -> [(&'static str, Point3<f32>, BillboardMode); 9] {
         (
             "Custom Shader",
             Point3::new(0.0, 6.4, 14.75),
+            BillboardMode::YAxis,
+        ),
+        (
+            "Animation Gallery",
+            Point3::new(10.0, 6.4, 14.75),
             BillboardMode::YAxis,
         ),
         (
