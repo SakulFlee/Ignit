@@ -2125,6 +2125,7 @@ version = "1.6.3"
 dependencies = [
  "cgmath",
  "ignit-winit",
+ "ignit_animation",
  "ignit_app",
  "ignit_camera",
  "ignit_core",
@@ -2132,6 +2133,7 @@ dependencies = [
  "ignit_ecs_bridge",
  "ignit_instance",
  "ignit_light",
+ "ignit_math",
  "ignit_shadow",
  "ignit_vertex",
  "wgpu",
