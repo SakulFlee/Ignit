@@ -14,7 +14,7 @@ use ignit_ecs_bridge::{
     VolumetricSettings, WindowSize,
 };
 use ignit_material_shader::RenderQueue;
-use ignit_renderer::{AntiAliasing, SmaaQuality};
+use ignit_renderer::{AntiAliasing, DebugView, SmaaQuality};
 
 use crate::state::Renderer as IcedRenderer;
 use crate::state::{DebugMessage, DebugUiState};
@@ -236,6 +236,24 @@ pub fn rendering_panel<'a>(ecs: &World) -> Element<'a, DebugMessage, Theme, Iced
             .into(),
         );
     }
+
+    rows.push(crate::panels::divider());
+    rows.push(crate::panels::caption("Debug view", ACCENT));
+    rows.push(
+        pick_list(Some(render.debug_view), DebugView::ALL, |view| {
+            view.label().to_string()
+        })
+        .width(Length::Fill)
+        .text_size(12)
+        .on_select(DebugMessage::SetDebugView)
+        .into(),
+    );
+    rows.push(
+        text("Shows a raw render-stage buffer after the normal post chain.")
+            .size(10)
+            .color(MUTED)
+            .into(),
+    );
 
     rows.push(crate::panels::divider());
     rows.push(crate::panels::caption("Rendering path", ACCENT));

@@ -20,6 +20,7 @@ use ignit_shadow::{ShadowGpuData, ShadowRenderer};
 use ignit_texture::Texture;
 use ignit_world_environment::{GeneratedSkyParameters, WorldEnvironment};
 
+use crate::debug_view::{DebugView, DebugViewRenderer};
 use crate::deferred::DeferredLighting;
 use crate::fxaa::Fxaa;
 use crate::light_culling::LightCulling;
@@ -69,6 +70,7 @@ enum ScenePass {
     Tonemap,
     Fxaa,
     Smaa,
+    DebugView,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -484,6 +486,8 @@ pub struct Renderer {
     frame_index: u64,
     anti_aliasing: AntiAliasing,
     smaa_quality: SmaaQuality,
+    debug_view: DebugView,
+    debug_view_renderer: DebugViewRenderer,
     exposure: f32,
     bloom_enabled: bool,
     bloom_threshold: f32,
@@ -615,6 +619,14 @@ impl Renderer {
 
     pub fn smaa_quality(&self) -> SmaaQuality {
         self.smaa_quality
+    }
+
+    pub fn set_debug_view(&mut self, debug_view: DebugView) {
+        self.debug_view = debug_view;
+    }
+
+    pub fn debug_view(&self) -> DebugView {
+        self.debug_view
     }
 
     /// Exposure multiplier applied before the tonemap curve.
@@ -790,6 +802,8 @@ impl Renderer {
             frame_index: 0,
             anti_aliasing: AntiAliasing::default(),
             smaa_quality: SmaaQuality::default(),
+            debug_view: DebugView::Off,
+            debug_view_renderer: DebugViewRenderer::new(device, surface_texture_format),
             exposure: 1.0,
             bloom_enabled: false,
             bloom_threshold: 4.0,
@@ -856,6 +870,7 @@ impl Renderer {
         self.surface_texture_format = surface_texture_format;
         self.tonemap = Tonemap::new(device, surface_texture_format);
         self.fxaa = Fxaa::new(device, queue, surface_texture_format, self.resolution);
+        self.debug_view_renderer = DebugViewRenderer::new(device, surface_texture_format);
         self.smaa = None;
     }
 
@@ -1424,6 +1439,9 @@ impl Renderer {
             has_transparent,
             has_volumetrics,
         );
+        if self.debug_view != DebugView::Off {
+            graph.add_pass(ScenePass::DebugView, "debug-view", &[], &[]);
+        }
         graph.compile().expect("render graph must be acyclic");
 
         let mut command_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
@@ -1721,6 +1739,37 @@ impl Renderer {
                             context.encoder.write_timestamp(qs, 13);
                         }
                     }
+                    ScenePass::DebugView => {
+                        let source = match self.debug_view {
+                            DebugView::Off => None,
+                            DebugView::SceneColor => Some((&scene_color.view, false)),
+                            DebugView::Depth => Some((&depth.view, true)),
+                            DebugView::GbufferAlbedo => gbuffer
+                                .as_ref()
+                                .map(|gbuffer| (&gbuffer[0].view, false))
+                                .or(Some((&scene_color.view, false))),
+                            DebugView::GbufferNormal => gbuffer
+                                .as_ref()
+                                .map(|gbuffer| (&gbuffer[1].view, false))
+                                .or(Some((&scene_color.view, false))),
+                            DebugView::GbufferMaterial => gbuffer
+                                .as_ref()
+                                .map(|gbuffer| (&gbuffer[2].view, false))
+                                .or(Some((&scene_color.view, false))),
+                        };
+
+                        if let Some((view, is_depth)) = source {
+                            self.debug_view_renderer.record(
+                                context.encoder,
+                                context.device,
+                                context.queue,
+                                target_view,
+                                view,
+                                is_depth,
+                                [self.surface_resolution.x, self.surface_resolution.y],
+                            );
+                        }
+                    }
                 },
             )
             .expect("render graph must be compiled before execution");
@@ -1751,7 +1800,8 @@ impl Renderer {
                 | ScenePass::ClearDepth
                 | ScenePass::Tonemap
                 | ScenePass::Fxaa
-                | ScenePass::Smaa => {}
+                | ScenePass::Smaa
+                | ScenePass::DebugView => {}
             }
         }
         self.render_graph = graph;
@@ -2414,6 +2464,54 @@ mod tests {
                 .next(),
             Some("compute")
         );
+    }
+
+    #[test]
+    fn renderer_renders_debug_views_on_noop_backend() {
+        let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+        let mut renderer = Renderer::new(
+            TextureFormat::Bgra8UnormSrgb,
+            Vector2::new(320, 180),
+            &device,
+            &queue,
+        );
+        let target = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("Renderer debug-view noop target"),
+                size: wgpu::Extent3d {
+                    width: 320,
+                    height: 180,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: TextureFormat::Bgra8UnormSrgb,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
+
+        let world = ignit_ecs::World::new();
+        let scene = RenderScene::from_world(&world);
+        for debug_view in DebugView::ALL {
+            renderer.set_debug_view(debug_view);
+            renderer.render(
+                &target,
+                &scene,
+                &device,
+                &queue,
+                None,
+                &std::collections::HashSet::new(),
+                None,
+            );
+
+            let has_debug_pass = renderer
+                .render_graph
+                .ordered_passes()
+                .any(|(_, name)| name == "debug-view");
+            assert_eq!(has_debug_pass, debug_view != DebugView::Off);
+        }
     }
 
     #[test]

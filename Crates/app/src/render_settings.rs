@@ -1,6 +1,6 @@
 //! Runtime rendering controls shared by the app runtime and the debug UI.
 
-use ignit_renderer::{AntiAliasing, SmaaQuality};
+use ignit_renderer::{AntiAliasing, DebugView, SmaaQuality};
 
 use crate::render_scale::MAX_RENDER_SCALE;
 
@@ -44,6 +44,8 @@ pub struct RenderSettings {
     pub anti_aliasing: AntiAliasing,
     /// Quality preset used when `anti_aliasing` is [`AntiAliasing::Smaa`].
     pub smaa_quality: SmaaQuality,
+    /// Display a raw render-stage buffer instead of the normal final image.
+    pub debug_view: DebugView,
     /// Exposure multiplier applied before the tonemap curve.
     pub exposure: f32,
     /// Whether HDR glare is sampled during tonemapping.
@@ -81,6 +83,7 @@ impl Default for RenderSettings {
             max_render_scale: MAX_RENDER_SCALE,
             anti_aliasing: AntiAliasing::Fxaa,
             smaa_quality: SmaaQuality::default(),
+            debug_view: DebugView::Off,
             exposure: 1.0,
             bloom_enabled: false,
             bloom_threshold: 4.0,

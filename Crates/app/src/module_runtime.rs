@@ -778,6 +778,9 @@ impl ModuleRuntime {
             renderer.set_light_glare(settings.light_glare);
             renderer.set_contrast(settings.contrast);
             renderer.set_deferred_enabled(settings.deferred_enabled);
+            if renderer.debug_view() != settings.debug_view {
+                renderer.set_debug_view(settings.debug_view);
+            }
             renderer.set_glare_stars(
                 settings.glare_stars,
                 settings.glare_star_arms,
@@ -1955,6 +1958,7 @@ impl ApplicationHandler for ModuleRuntime {
                     max_render_scale: self.settings.max_render_scale,
                     anti_aliasing: self.settings.anti_aliasing,
                     smaa_quality: self.settings.smaa_quality,
+                    debug_view: ignit_renderer::DebugView::Off,
                     exposure: self.settings.exposure,
                     bloom_enabled: self.settings.bloom_enabled,
                     bloom_threshold: self.settings.bloom_threshold,
