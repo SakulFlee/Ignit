@@ -34,16 +34,76 @@ use ignit_app::input::InputButton;
 use ignit_app::{CameraControlSettings, LayerRenderer, Module, RenderSettings};
 use ignit_camera::ProjectionMode;
 use ignit_debug_render::DebugToggleState;
-use ignit_ecs::{IntoSystem, Res, ResMut, System, World};
+use ignit_ecs::{ComponentAccess, IntoSystem, Res, ResMut, System, World};
 use ignit_ecs_bridge::{
-    ActiveCamera, CameraDescriptor, CameraDirty, DebugSelectedEntity, DeviceResource,
-    InputSnapshot, PerformanceLogConfig, TimingsHistoryConfig, VolumetricSettings,
+    ActiveCamera, CameraDescriptor, CameraDirty, CursorGrabState, DebugSelectedEntity,
+    DeviceResource, EngineEvent, EngineEvents, InputSnapshot, PerformanceLogConfig,
+    TimingsHistoryConfig, VolumetricSettings,
 };
 use ignit_iced::{DEFAULT_REFRESH_INTERVAL, IcedLayerRenderer, IcedState, SMOOTH_REFRESH_INTERVAL};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 use crate::panels::{console_panel, ecs_panel, edit, performance_panel, rendering_panel};
 use crate::state::{DebugMessage, DebugUiState, PanelId};
+
+/// Releases the cursor while the debug overlay is visible and restores the
+/// previous grab state when it closes.
+///
+/// The overlay contains text fields and draggable controls, so keeping the
+/// game cursor grabbed and hidden would make it unusable.
+struct DebugUiCursorSync {
+    access: ComponentAccess,
+    last_visible: Option<bool>,
+    restore_grab: Option<bool>,
+}
+
+impl DebugUiCursorSync {
+    fn new() -> Self {
+        Self {
+            access: ComponentAccess::new(),
+            last_visible: None,
+            restore_grab: None,
+        }
+    }
+
+    fn set_cursor(world: &World, grabbed: bool) {
+        if let Some(mut state) = world.get_resource_mut::<CursorGrabState>() {
+            state.0 = grabbed;
+        }
+        if let Some(mut events) = world.get_resource_mut::<EngineEvents>() {
+            events.0.push(EngineEvent::CursorGrabbed(grabbed));
+            events.0.push(EngineEvent::CursorVisible(!grabbed));
+        }
+    }
+}
+
+impl System for DebugUiCursorSync {
+    fn name(&self) -> &str {
+        "debug_ui_cursor_sync"
+    }
+
+    fn access(&self) -> &ComponentAccess {
+        &self.access
+    }
+
+    fn run(&mut self, world: &World, _commands: &mut ignit_ecs::Commands) {
+        let visible = world
+            .get_resource::<DebugUiState>()
+            .is_some_and(|state| state.visible);
+
+        if self.last_visible == Some(visible) {
+            return;
+        }
+        self.last_visible = Some(visible);
+
+        if visible {
+            self.restore_grab = world.get_resource::<CursorGrabState>().map(|state| state.0);
+            Self::set_cursor(world, false);
+        } else if self.restore_grab.take().is_some_and(|grabbed| grabbed) {
+            Self::set_cursor(world, true);
+        }
+    }
+}
 
 /// Shows or hides the whole overlay when the configured key is pressed.
 ///
@@ -174,6 +234,7 @@ impl Module for DebugUiModule {
 
         vec![
             sys_debug_ui_toggle.into_system(),
+            Box::new(DebugUiCursorSync::new()),
             sys_sync_timings_history.into_system(),
         ]
     }
@@ -868,5 +929,27 @@ mod tests {
             .get_resource::<VolumetricSettings>()
             .map(|settings| settings.density);
         assert_eq!(density, Some(0.02));
+    }
+
+    #[test]
+    fn showing_the_debug_ui_releases_and_restores_the_cursor() {
+        let mut world = World::new();
+        world.insert_resource(DebugUiState::new(KeyCode::F1));
+        world.insert_resource(CursorGrabState(true));
+        world.insert_resource(EngineEvents::default());
+
+        let mut sync = DebugUiCursorSync::new();
+        let mut commands = ignit_ecs::Commands::new();
+        sync.run(&world, &mut commands);
+        assert!(world.get_resource::<CursorGrabState>().unwrap().0);
+
+        world.get_resource_mut::<DebugUiState>().unwrap().visible = true;
+        sync.run(&world, &mut commands);
+        assert!(!world.get_resource::<CursorGrabState>().unwrap().0);
+        assert_eq!(world.get_resource::<EngineEvents>().unwrap().0.len(), 2);
+
+        world.get_resource_mut::<DebugUiState>().unwrap().visible = false;
+        sync.run(&world, &mut commands);
+        assert!(world.get_resource::<CursorGrabState>().unwrap().0);
     }
 }
