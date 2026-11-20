@@ -32,4 +32,5 @@ iced_winit = { workspace = true }
 
 [dev-dependencies]
 ignit_animation = { path = "../animation", version = "1.6.3" }
+ignit_math = { path = "../math", version = "1.6.3" }
 ignit_mesh = { path = "../mesh", version = "1.6.3" }

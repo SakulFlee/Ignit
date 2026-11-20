@@ -2159,6 +2159,7 @@ dependencies = [
  "ignit_ecs_bridge",
  "ignit_iced",
  "ignit_material_shader",
+ "ignit_math",
  "ignit_mesh",
  "ignit_renderer",
  "log",
