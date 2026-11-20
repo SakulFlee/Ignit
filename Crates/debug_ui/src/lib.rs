@@ -523,6 +523,10 @@ fn handle_debug_message(
             mark_debug_dirty(world);
             return;
         }
+        DebugMessage::SetDebugView(view) => {
+            update_render_settings(world, |settings| settings.debug_view = view);
+            return;
+        }
         DebugMessage::SetSmaaQuality(quality) => {
             let mut settings = world
                 .get_resource::<RenderSettings>()

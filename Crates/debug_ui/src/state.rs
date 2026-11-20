@@ -7,7 +7,7 @@ use ignit_camera::ProjectionMode;
 use ignit_debug_render::BoundsMode;
 use ignit_ecs::Entity;
 use ignit_ecs_bridge::{TIMING_STAGES, VolumetricQuality};
-use ignit_renderer::{AntiAliasing, SmaaQuality};
+use ignit_renderer::{AntiAliasing, DebugView, SmaaQuality};
 
 /// The Iced renderer type the panels draw with.
 ///
@@ -73,6 +73,8 @@ pub enum DebugMessage {
     HideDebugUi,
     /// Select the 3D scene anti-aliasing mode.
     SetAntiAliasing(AntiAliasing),
+    /// Display a raw render-stage buffer.
+    SetDebugView(DebugView),
     /// Select the SMAA quality preset.
     SetSmaaQuality(SmaaQuality),
     /// Set the internal 3D render scale and switch to fixed scaling.
@@ -580,7 +582,8 @@ impl DebugUiState {
             | DebugMessage::SetVolumetricAnisotropy(_)
             | DebugMessage::SetVolumetricMaxDistance(_)
             | DebugMessage::SetVolumetricTemporalHistory(_)
-            | DebugMessage::SetVolumetricQuality(_) => {
+            | DebugMessage::SetVolumetricQuality(_)
+            | DebugMessage::SetDebugView(_) => {
                 // Applied in `handle_debug_message`, which has the world.
                 self.dirty = true;
             }

@@ -1,3 +1,4 @@
+mod debug_view;
 mod deferred;
 mod fxaa;
 mod light_culling;
@@ -11,6 +12,7 @@ mod timestamp_readback;
 mod tonemap;
 mod volumetric;
 
+pub use debug_view::DebugView;
 pub use renderer::*;
 pub use renderer_2d::{Camera2DUniform, Renderer2D};
 pub use renderer_text::{SdfParamsUniform, TextRenderer};
