@@ -34,16 +34,18 @@ use ignit_app::input::InputButton;
 use ignit_app::{CameraControlSettings, LayerRenderer, Module, RenderSettings};
 use ignit_camera::ProjectionMode;
 use ignit_debug_render::DebugToggleState;
-use ignit_ecs::{ComponentAccess, IntoSystem, Res, ResMut, System, World};
+use ignit_ecs::{ComponentAccess, Entity, IntoSystem, Res, ResMut, System, World};
 use ignit_ecs_bridge::{
-    ActiveCamera, CameraDescriptor, CameraDirty, CursorGrabState, DebugSelectedEntity,
-    DeviceResource, EngineEvent, EngineEvents, InputSnapshot, PerformanceLogConfig,
-    TimingsHistoryConfig, VolumetricSettings,
+    ActiveCamera, AnimationClips, AnimationPlayer, CameraDescriptor, CameraDirty, CursorGrabState,
+    DebugSelectedEntity, DeviceResource, EngineEvent, EngineEvents, InputSnapshot,
+    PerformanceLogConfig, TimingsHistoryConfig, VolumetricSettings,
 };
 use ignit_iced::{DEFAULT_REFRESH_INTERVAL, IcedLayerRenderer, IcedState, SMOOTH_REFRESH_INTERVAL};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
-use crate::panels::{console_panel, ecs_panel, edit, performance_panel, rendering_panel};
+use crate::panels::{
+    animation_panel, console_panel, ecs_panel, edit, performance_panel, rendering_panel,
+};
 use crate::state::{DebugMessage, DebugUiState, PanelId};
 
 /// Releases the cursor while the debug overlay is visible and restores the
@@ -273,7 +275,7 @@ impl Module for DebugUiModule {
         // a starting point. The console is deliberately wide and short, since
         // log lines are long.
         let refresh_interval = self.refresh_interval();
-        let panels: [PanelSpec; 4] = [
+        let panels: [PanelSpec; 5] = [
             (
                 "Performance",
                 (40.0, 40.0),
@@ -301,6 +303,13 @@ impl Module for DebugUiModule {
                 (300.0, 360.0),
                 PanelId::Rendering,
                 rendering_panel as PanelView,
+            ),
+            (
+                "Animation",
+                (960.0, 40.0),
+                (320.0, 260.0),
+                PanelId::Animation,
+                animation_panel as PanelView,
             ),
         ];
 
@@ -762,12 +771,72 @@ fn handle_debug_message(
             update_volumetrics(world, |settings| settings.quality = quality);
             return;
         }
+        DebugMessage::SetAnimationPlaying { entity, playing } => {
+            update_animation_player(world, entity, |player| player.playing = playing);
+            return;
+        }
+        DebugMessage::SetAnimationLooping { entity, looping } => {
+            update_animation_player(world, entity, |player| player.looping = looping);
+            return;
+        }
+        DebugMessage::SetAnimationSpeed { entity, speed } => {
+            update_animation_player(world, entity, |player| {
+                player.speed = speed.clamp(0.0, 16.0);
+            });
+            return;
+        }
+        DebugMessage::SetAnimationTime { entity, time } => {
+            update_animation_player(world, entity, |player| {
+                player.time = time.clamp(0.0, player.clip.duration.max(0.0));
+            });
+            return;
+        }
+        DebugMessage::PlayAnimationClip { entity, clip } => {
+            play_animation_clip(world, entity, &clip);
+            return;
+        }
         _ => {}
     }
 
     if let Some(mut state) = world.get_resource_mut::<DebugUiState>() {
         state.apply(&message);
     }
+}
+
+/// Crossfades one entity to an imported clip by name.
+fn play_animation_clip(world: &mut World, entity: Entity, name: &str) {
+    let clip = world
+        .component_debug(TypeId::of::<AnimationClips>(), &entity)
+        .and_then(|handle| {
+            handle
+                .as_any()
+                .downcast_ref::<AnimationClips>()
+                .and_then(|clips| clips.find(name))
+        });
+
+    if let Some(clip) = clip {
+        update_animation_player(world, entity, |player| player.crossfade(clip, 0.25));
+    }
+}
+
+/// Mutates one entity's animation player and requests a panel rebuild.
+fn update_animation_player(
+    world: &mut World,
+    entity: Entity,
+    update: impl FnOnce(&mut AnimationPlayer),
+) {
+    {
+        let Some(mut handle) = world.component_mut_any(TypeId::of::<AnimationPlayer>(), &entity)
+        else {
+            return;
+        };
+        let Some(player) = handle.as_any_mut().downcast_mut::<AnimationPlayer>() else {
+            return;
+        };
+        update(player);
+    }
+
+    mark_debug_dirty(world);
 }
 
 /// Marks the debug panels dirty after a world-side control change.
@@ -933,6 +1002,65 @@ mod tests {
             .get_resource::<VolumetricSettings>()
             .map(|settings| settings.density);
         assert_eq!(density, Some(0.02));
+    }
+
+    fn animated_world() -> (World, Entity) {
+        let mut world = World::new();
+        world.insert_resource(DebugUiState::new(KeyCode::F1));
+
+        let entity = world.spawn_entity();
+        let idle = std::sync::Arc::new(ignit_animation::AnimationClip::new("idle", Vec::new()));
+        let walk = std::sync::Arc::new(ignit_animation::AnimationClip::new("walk", Vec::new()));
+        world
+            .attach_component(&entity, AnimationPlayer::new(idle.clone()))
+            .expect("player attach failed");
+        world
+            .attach_component(&entity, AnimationClips(vec![idle, walk]))
+            .expect("clips attach failed");
+        (world, entity)
+    }
+
+    #[test]
+    fn animation_controls_update_the_player_and_request_a_rebuild() {
+        let (mut world, entity) = animated_world();
+
+        update_animation_player(&mut world, entity, |player| player.playing = false);
+        update_animation_player(&mut world, entity, |player| player.speed = 2.0);
+
+        let players = world
+            .get_component_store::<AnimationPlayer>()
+            .expect("player store");
+        assert!(!players.components[0].playing);
+        assert_eq!(players.components[0].speed, 2.0);
+        assert!(world.get_resource::<DebugUiState>().unwrap().dirty);
+    }
+
+    #[test]
+    fn choosing_a_clip_crossfades_to_it() {
+        let (mut world, entity) = animated_world();
+
+        play_animation_clip(&mut world, entity, "walk");
+
+        let players = world
+            .get_component_store::<AnimationPlayer>()
+            .expect("player store");
+        let player = &players.components[0];
+        assert_eq!(player.clip.name, "walk");
+        let blend = player.blend.as_ref().expect("outgoing clip");
+        assert_eq!(blend.clip.name, "idle");
+    }
+
+    #[test]
+    fn choosing_an_unknown_clip_leaves_the_player_alone() {
+        let (mut world, entity) = animated_world();
+
+        play_animation_clip(&mut world, entity, "run");
+
+        let players = world
+            .get_component_store::<AnimationPlayer>()
+            .expect("player store");
+        assert_eq!(players.components[0].clip.name, "idle");
+        assert!(players.components[0].blend.is_none());
     }
 
     #[test]

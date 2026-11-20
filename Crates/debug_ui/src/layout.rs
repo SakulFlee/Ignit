@@ -7,7 +7,7 @@
 //!
 //! Instead of shrinking the windows until their text becomes unreadable, the
 //! overlay switches to a tabbed layout: one full-screen panel at a time with a
-//! tab strip for Performance, ECS, Console and Rendering. The floating windows
+//! tab strip for Performance, ECS, Console, Rendering and Animation. The floating windows
 //! are still used whenever the viewport is large enough, and both layouts share
 //! the same panel views and messages.
 
@@ -16,7 +16,9 @@ use iced_winit::core::{Alignment, Background, Color, Element, Length, Theme};
 use ignit_ecs::World;
 use ignit_ecs_bridge::{IcedEventQueue, WindowSize};
 
-use crate::panels::{blank, console_panel, ecs_panel, performance_panel, rendering_panel};
+use crate::panels::{
+    animation_panel, blank, console_panel, ecs_panel, performance_panel, rendering_panel,
+};
 use crate::state::{DebugMessage, DebugUiState, PANEL_COUNT, PanelId, Renderer};
 
 /// Smallest logical viewport width in which the four floating windows fit.
@@ -117,6 +119,7 @@ pub fn tabbed_overlay(world: &World) -> Element<'static, DebugMessage, Theme, Re
         PanelId::Ecs => ecs_panel(world),
         PanelId::Console => console_panel(world),
         PanelId::Rendering => rendering_panel(world),
+        PanelId::Animation => animation_panel(world),
     };
 
     container(column![header, body])

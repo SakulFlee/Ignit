@@ -3,12 +3,14 @@
 //! Each panel is a pure function from the ECS world to a widget tree, which is
 //! what `ignit_iced` expects of `IcedState::with_view`.
 
+pub mod animation;
 pub mod console;
 pub mod ecs;
 pub mod edit;
 pub mod performance;
 pub mod rendering;
 
+pub use animation::animation_panel;
 pub use console::console_panel;
 pub use ecs::ecs_panel;
 

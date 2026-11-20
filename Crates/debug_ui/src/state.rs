@@ -61,6 +61,18 @@ pub enum DebugMessage {
     DespawnEntity(Entity),
     /// Remove one model instance by its ULID's integer representation.
     RemoveModelInstance { entity: Entity, ulid: u128 },
+    /// Select the entity the animation panel controls.
+    SelectAnimationEntity(Option<Entity>),
+    /// Pause or resume one entity's animation.
+    SetAnimationPlaying { entity: Entity, playing: bool },
+    /// Enable or disable looping for one entity's animation.
+    SetAnimationLooping { entity: Entity, looping: bool },
+    /// Set the playback speed of one entity's animation.
+    SetAnimationSpeed { entity: Entity, speed: f32 },
+    /// Seek one entity's animation to a time in seconds.
+    SetAnimationTime { entity: Entity, time: f32 },
+    /// Crossfade one entity to an imported clip by name.
+    PlayAnimationClip { entity: Entity, clip: String },
     /// Flip a panel's visibility.
     TogglePanel(PanelId),
     /// Close one panel's window.
@@ -218,6 +230,7 @@ pub enum PanelId {
     Ecs,
     Console,
     Rendering,
+    Animation,
 }
 
 impl PanelId {
@@ -228,6 +241,7 @@ impl PanelId {
             Self::Ecs => 1,
             Self::Console => 2,
             Self::Rendering => 3,
+            Self::Animation => 4,
         }
     }
 
@@ -238,6 +252,7 @@ impl PanelId {
             1 => Some(Self::Ecs),
             2 => Some(Self::Console),
             3 => Some(Self::Rendering),
+            4 => Some(Self::Animation),
             _ => None,
         }
     }
@@ -249,12 +264,13 @@ impl PanelId {
             Self::Ecs => "ECS",
             Self::Console => "Console",
             Self::Rendering => "Rendering",
+            Self::Animation => "Animation",
         }
     }
 }
 
 /// Number of registered debug panels.
-pub const PANEL_COUNT: usize = 4;
+pub const PANEL_COUNT: usize = 5;
 
 /// How many characters of a component's `Debug` output to show before
 /// truncating.
@@ -284,6 +300,8 @@ pub struct DebugUiState {
     pub active_tab: usize,
     /// The entity whose components are listed in the ECS panel.
     pub selected: Option<Entity>,
+    /// The entity whose animation the Animation panel controls.
+    pub animation_entity: Option<Entity>,
     /// Entities whose component list is expanded.
     pub expanded: HashSet<Entity>,
     /// Entity-tree filter; matches the entity index, label or component type
@@ -334,6 +352,7 @@ impl DebugUiState {
             panels: [true; PANEL_COUNT],
             active_tab: 0,
             selected: None,
+            animation_entity: None,
             expanded: HashSet::new(),
             filter: String::new(),
             graph_series: BTreeSet::from([GraphSeries::Cdt]),
@@ -437,6 +456,10 @@ impl DebugUiState {
                 if let Some(entity) = *entity {
                     self.expanded.insert(entity);
                 }
+                self.dirty = true;
+            }
+            DebugMessage::SelectAnimationEntity(entity) => {
+                self.animation_entity = *entity;
                 self.dirty = true;
             }
             DebugMessage::ToggleEntity(entity) => {
@@ -583,6 +606,11 @@ impl DebugUiState {
             | DebugMessage::SetVolumetricMaxDistance(_)
             | DebugMessage::SetVolumetricTemporalHistory(_)
             | DebugMessage::SetVolumetricQuality(_)
+            | DebugMessage::SetAnimationPlaying { .. }
+            | DebugMessage::SetAnimationLooping { .. }
+            | DebugMessage::SetAnimationSpeed { .. }
+            | DebugMessage::SetAnimationTime { .. }
+            | DebugMessage::PlayAnimationClip { .. }
             | DebugMessage::SetDebugView(_) => {
                 // Applied in `handle_debug_message`, which has the world.
                 self.dirty = true;
