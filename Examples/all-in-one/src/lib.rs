@@ -1000,16 +1000,19 @@ impl Module for ProcgeoSceneModule {
             }
         };
 
-        // Import the DamagedHelmet and the animated Fox into the galleries.
+        // Import the DamagedHelmet and the three animated Fox variants. Each
+        // Fox file carries a single clip so the gallery shows all three.
         if let Some(mut queue) = ecs.get_resource_mut::<ImportQueueResource>() {
             queue.push(ImportTask::Gltf {
                 file_path: "Models/DamagedHelmet.glb".into(),
                 task: GltfImport::WholeFile,
             });
-            queue.push(ImportTask::Gltf {
-                file_path: "Models/Fox.glb".into(),
-                task: GltfImport::WholeFile,
-            });
+            for file in ["Fox-Survey.glb", "Fox-Walk.glb", "Fox-Run.glb"] {
+                queue.push(ImportTask::Gltf {
+                    file_path: format!("Models/{file}"),
+                    task: GltfImport::WholeFile,
+                });
+            }
             info!("Queued DamagedHelmet and Fox imports");
         }
 
@@ -1166,6 +1169,19 @@ impl Module for ProcgeoSceneModule {
         ecs.attach_component(&r8_light, Position(Point3::new(0.0, 5.5, 18.0)))
             .unwrap();
         ecs.attach_component(&r8_light, LightDirty(true)).unwrap();
+
+        // ── R9/R10 — omni lights over the Fox animation gallery ─────
+        for room_x in [10.0, 20.0f32] {
+            let light = ecs.spawn_entity();
+            ecs.attach_component(
+                &light,
+                LightDescriptor::new_point(Vector3::new(1.0, 0.98, 0.92), 40.0),
+            )
+            .unwrap();
+            ecs.attach_component(&light, Position(Point3::new(room_x, 5.5, 20.0)))
+                .unwrap();
+            ecs.attach_component(&light, LightDirty(true)).unwrap();
+        }
 
         // ── R7 — shadow-casting spot across the AA staircase ────────
         let r7_spot = ecs.spawn_entity();

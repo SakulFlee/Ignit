@@ -85,7 +85,7 @@ cargo run -p template_minimal_2d
 ```
 
 `minimal-3d` and `minimal-2d` need no asset files. `all-in-one` ships the scene, the PBR
-helmet, and the animated Fox it uses in `Examples/all-in-one/Assets/`.
+helmet, and the animated Fox gallery it uses in `Examples/all-in-one/Assets/`.
 
 Install the CLI from crates.io and create a standalone project:
 
