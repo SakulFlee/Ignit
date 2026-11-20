@@ -573,9 +573,9 @@ impl Default for DebugRenderSettings {
     fn default() -> Self {
         Self {
             enabled: false,
-            bounds: BoundsMode::Spheres,
-            frustum: true,
-            lights: true,
+            bounds: BoundsMode::Off,
+            frustum: false,
+            lights: false,
             wireframe: false,
             grid_axes: false,
             shadow_frusta: false,
@@ -1600,12 +1600,12 @@ mod tests {
     }
 
     #[test]
-    fn debug_overlay_defaults_preserve_existing_behavior() {
+    fn debug_overlay_defaults_show_nothing() {
         let settings = DebugRenderSettings::default();
         assert!(!settings.enabled);
-        assert_eq!(settings.bounds, BoundsMode::Spheres);
-        assert!(settings.frustum);
-        assert!(settings.lights);
+        assert_eq!(settings.bounds, BoundsMode::Off);
+        assert!(!settings.frustum);
+        assert!(!settings.lights);
         assert!(!settings.wireframe);
         assert!(!settings.grid_axes);
         assert!(!settings.shadow_frusta);
