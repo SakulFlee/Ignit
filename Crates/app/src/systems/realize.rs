@@ -13,10 +13,19 @@ use ignit_ecs_bridge::{
     LightDirty, LightSlotIndex, LightSlotTracker, MAX_LIGHTS, MaterialCacheResource,
     MeshCacheResource, ModelDescriptor, ModelDirty, ModelInstances, ModelRealization,
     PipelineCacheResource, Position, PrevPosition, QueueResource, Rotation, ShadowDirtyFlag,
+    SkinComponent,
 };
 use ignit_model::Model;
 use ignit_world_environment::WorldEnvironmentDescriptor;
 use log::warn;
+
+type ModelRealizeEntry = (
+    usize,
+    ModelDescriptor,
+    ModelInstances,
+    Option<Arc<ignit_animation::SkinData>>,
+    bool,
+);
 
 fn camera_projection(desc: &CameraDescriptor) -> CameraProjection {
     match desc.projection_mode {
@@ -209,7 +218,7 @@ pub fn realize_models(ecs: &mut World) {
     };
 
     // Collect entities that need realization
-    let entities_to_realize: Vec<(usize, ModelDescriptor, ModelInstances, bool)> = {
+    let entities_to_realize: Vec<ModelRealizeEntry> = {
         let descs = match ecs.get_component_store::<ModelDescriptor>() {
             Some(s) => s,
             None => return,
@@ -218,6 +227,7 @@ pub fn realize_models(ecs: &mut World) {
             Some(s) => s,
             None => return,
         };
+        let skins = ecs.get_component_store::<SkinComponent>();
 
         let mut result = Vec::new();
         for &eid in descs.dense.as_slice() {
@@ -258,6 +268,13 @@ pub fn realize_models(ecs: &mut World) {
                 eid,
                 descs.components[desc_idx].clone(),
                 instances.components[inst_idx].clone(),
+                skins.as_ref().and_then(|store| {
+                    let index = store.sparse.get(eid).copied().flatten()?;
+                    store
+                        .components
+                        .get(index)
+                        .map(|component| Arc::clone(&component.0))
+                }),
                 !has_realization,
             ));
         }
@@ -265,14 +282,14 @@ pub fn realize_models(ecs: &mut World) {
     };
 
     // Realize each model
-    for (eid, desc, instances, needs_new) in entities_to_realize {
+    for (eid, desc, instances, skin, needs_new) in entities_to_realize {
         // Build a ModelDescriptor from ECS components
         let model_desc = ignit_model::ModelDescriptor {
             label: desc.label.clone(),
             mesh: desc.mesh.clone(),
             materials: desc.materials.clone(),
             transforms: instances.0.clone(),
-            skin: desc.skin.clone(),
+            skin,
             skeleton: None,
         };
         // Transform-only changes can update the existing instance buffer in

@@ -190,9 +190,6 @@ pub struct ModelDescriptor {
     pub mesh: std::sync::Arc<ignit_mesh::MeshDescriptor>,
     #[editable(skip)]
     pub materials: Vec<std::sync::Arc<ignit_material_shader::MaterialShaderDescriptor>>,
-    /// Per-vertex joint indices and weights for CPU skinning.
-    #[editable(skip)]
-    pub skin: Option<std::sync::Arc<ignit_animation::SkinData>>,
 }
 
 impl ModelDescriptor {
@@ -204,7 +201,6 @@ impl ModelDescriptor {
         let mut hasher = DefaultHasher::new();
         self.mesh.vertices.hash(&mut hasher);
         self.mesh.indices.hash(&mut hasher);
-        self.skin.hash(&mut hasher);
         for material in &self.materials {
             material.hash(&mut hasher);
         }
@@ -319,6 +315,10 @@ impl AnimationPlayer {
 /// Runtime skeleton state for an animated model entity.
 #[derive(Debug, Clone)]
 pub struct SkeletonComponent(pub ignit_animation::Skeleton);
+
+/// Per-vertex joint indices and weights for CPU skinning.
+#[derive(Debug, Clone)]
+pub struct SkinComponent(pub std::sync::Arc<ignit_animation::SkinData>);
 
 // ---------------------------------------------------------------------------
 // Light ECS types
@@ -558,13 +558,11 @@ mod tests {
             label: "test".into(),
             mesh: mesh.clone(),
             materials: vec![mat.clone()],
-            skin: None,
         };
         let desc2 = ModelDescriptor {
             label: "test".into(),
             mesh: mesh.clone(),
             materials: vec![mat.clone()],
-            skin: None,
         };
 
         assert_eq!(desc1.instance_hash(), desc2.instance_hash());
@@ -582,13 +580,11 @@ mod tests {
             label: "test".into(),
             mesh: mesh1,
             materials: vec![],
-            skin: None,
         };
         let desc2 = ModelDescriptor {
             label: "test".into(),
             mesh: mesh2,
             materials: vec![],
-            skin: None,
         };
 
         assert_ne!(desc1.instance_hash(), desc2.instance_hash());
