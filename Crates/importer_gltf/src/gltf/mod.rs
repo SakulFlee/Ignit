@@ -842,10 +842,7 @@ impl GltfImporter {
                 let interpolation = match sampler.interpolation() {
                     GltfInterpolation::Step => Interpolation::Step,
                     GltfInterpolation::Linear => Interpolation::Linear,
-                    GltfInterpolation::CubicSpline => {
-                        warn!("Cubic spline animation '{}' is imported as linear", name);
-                        Interpolation::Linear
-                    }
+                    GltfInterpolation::CubicSpline => Interpolation::CubicSpline,
                 };
 
                 let reader = channel.reader(|buffer| Some(&buffers[buffer.index()]));
@@ -871,7 +868,11 @@ impl GltfImporter {
                         .into_f32()
                         .map(|value| {
                             let rotation = Quaternion::new(value[3], value[0], value[1], value[2]);
-                            AnimationValue::Quat(Self::convert_rotation(rotation))
+                            AnimationValue::Quat(if cubic {
+                                Self::convert_rotation_tangent(rotation)
+                            } else {
+                                Self::convert_rotation(rotation)
+                            })
                         })
                         .collect::<Vec<_>>(),
                     ReadOutputs::Scales(values) => values
@@ -884,18 +885,47 @@ impl GltfImporter {
                     ReadOutputs::MorphTargetWeights(_) => continue,
                 };
 
+                let mut in_tangents = Vec::new();
+                let mut out_tangents = Vec::new();
                 if cubic {
-                    values = values.into_iter().skip(1).step_by(3).collect();
+                    let mut ins = Vec::new();
+                    let mut mids = Vec::new();
+                    let mut outs = Vec::new();
+                    for (index, value) in values.drain(..).enumerate() {
+                        match index % 3 {
+                            0 => ins.push(value),
+                            1 => mids.push(value),
+                            _ => outs.push(value),
+                        }
+                    }
+                    in_tangents = ins;
+                    out_tangents = outs;
+                    values = mids;
                 }
 
                 if times.is_empty() || values.is_empty() {
                     continue;
                 }
+                if cubic
+                    && (in_tangents.len() != values.len() || out_tangents.len() != values.len())
+                {
+                    warn!(
+                        "Cubic spline animation '{}' has inconsistent tangents; skipping channel",
+                        name
+                    );
+                    continue;
+                }
+
+                let sampler = if cubic {
+                    AnimationSampler::new_cubic_spline(times, values, in_tangents, out_tangents)
+                } else {
+                    AnimationSampler::new(times, values, interpolation)
+                };
 
                 channels.push(AnimationChannel {
                     node_index: target.node().index(),
                     path,
-                    sampler: AnimationSampler::new(times, values, interpolation),
+                    sampler,
                 });
             }
 
@@ -950,6 +980,15 @@ impl GltfImporter {
     fn convert_rotation(value: Quaternion<f32>) -> Quaternion<f32> {
         let conversion = Self::coordinate_rotation();
         (conversion * value * conversion.conjugate()).normalize()
+    }
+
+    /// Rotates a quaternion tangent into engine space without normalizing it.
+    ///
+    /// Cubic spline tangents encode magnitude, so unlike keyframe values they
+    /// must keep their length.
+    fn convert_rotation_tangent(value: Quaternion<f32>) -> Quaternion<f32> {
+        let conversion = Self::coordinate_rotation();
+        conversion * value * conversion.conjugate()
     }
 
     fn convert_matrix(value: Matrix4<f32>) -> Matrix4<f32> {
@@ -1787,6 +1826,70 @@ mod tests {
             panic!("expected a sampled vec3");
         };
         assert_eq!(value, Vector3::new(0.5, 1.5, -1.0));
+    }
+
+    #[test]
+    fn parse_animations_reads_cubic_spline_channels() {
+        use ignit_animation::AnimationValue;
+
+        const CUBIC_SPLINE_GLTF: &str = r#"{
+            "asset": { "version": "2.0" },
+            "buffers": [{ "byteLength": 80 }],
+            "bufferViews": [
+                { "buffer": 0, "byteOffset": 0, "byteLength": 8 },
+                { "buffer": 0, "byteOffset": 8, "byteLength": 72 }
+            ],
+            "accessors": [
+                { "bufferView": 0, "componentType": 5126, "count": 2, "type": "SCALAR" },
+                { "bufferView": 1, "componentType": 5126, "count": 6, "type": "VEC3" }
+            ],
+            "nodes": [{ "name": "root" }],
+            "scenes": [{ "nodes": [0] }],
+            "scene": 0,
+            "animations": [{
+                "name": "Cubic",
+                "samplers": [{
+                    "input": 0,
+                    "output": 1,
+                    "interpolation": "CUBICSPLINE"
+                }],
+                "channels": [{
+                    "sampler": 0,
+                    "target": { "node": 0, "path": "translation" }
+                }]
+            }]
+        }"#;
+
+        let mut bytes = Vec::new();
+        for value in [0.0f32, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        // Per key: in-tangent, value, out-tangent.
+        for value in [
+            0.0f32, 0.0, 0.0, // in 0
+            0.0, 0.0, 0.0, // value 0
+            1.0, 0.0, 0.0, // out 0
+            0.0, 0.0, 0.0, // in 1
+            1.0, 0.0, 0.0, // value 1
+            0.0, 0.0, 0.0, // out 1
+        ] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+
+        let gltf = gltf::Gltf::from_slice(CUBIC_SPLINE_GLTF.as_bytes()).expect("fixture is valid");
+        let clips = GltfImporter::parse_animations(&gltf.document, &[gltf::buffer::Data(bytes)]);
+
+        assert_eq!(clips.len(), 1);
+        let channel = &clips[0].channels[0];
+        assert_eq!(channel.sampler.interpolation, Interpolation::CubicSpline);
+        assert_eq!(channel.sampler.in_tangents.len(), 2);
+        assert_eq!(channel.sampler.out_tangents.len(), 2);
+
+        let Some(AnimationValue::Vec3(value)) = channel.sampler.sample(0.5) else {
+            panic!("expected a sampled vec3");
+        };
+        // 0.625 before the Y-up to Z-up conversion, which keeps X.
+        assert!((value.x - 0.625).abs() < 1e-6, "{value:?}");
     }
 
     #[test]
