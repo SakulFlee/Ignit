@@ -16,3 +16,6 @@ cgmath = { workspace = true }
 image = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
+
+[dev-dependencies]
+wgpu = { workspace = true, features = ["noop"] }

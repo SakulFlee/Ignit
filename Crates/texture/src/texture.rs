@@ -118,6 +118,72 @@ fn classify_data_size(
     }
 }
 
+/// Number of bytes a compact, row-packed mip chain occupies.
+///
+/// Every level halves the extents, clamping at one, and covers all array
+/// layers. Returns `None` when the extents overflow `usize`.
+fn mip_chain_byte_len(
+    width: u32,
+    height: u32,
+    depth_or_array_layers: u32,
+    mip_levels: u32,
+    bytes_per_pixel: u32,
+) -> Option<usize> {
+    let mut total = 0usize;
+    for level in 0..mip_levels.max(1) {
+        let level_width = (width >> level).max(1);
+        let level_height = (height >> level).max(1);
+        let level_bytes = level_width
+            .checked_mul(level_height)?
+            .checked_mul(depth_or_array_layers)?
+            .checked_mul(bytes_per_pixel)?;
+        total = total.checked_add(level_bytes as usize)?;
+    }
+
+    Some(total)
+}
+
+/// Uploads a compact mip chain, one `write_texture` per level.
+fn write_mip_chain(
+    texture: &WTexture,
+    pixels: &[u8],
+    size: &TextureSize,
+    bytes_per_pixel: u32,
+    queue: &Queue,
+) {
+    let mut offset = 0usize;
+    for level in 0..size.mip_levels {
+        let width = (size.width >> level).max(1);
+        let height = (size.height >> level).max(1);
+        let level_bytes = width as usize
+            * height as usize
+            * size.depth_or_array_layers as usize
+            * bytes_per_pixel as usize;
+
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture,
+                aspect: TextureAspect::All,
+                origin: Origin3d::ZERO,
+                mip_level: level,
+            },
+            &pixels[offset..offset + level_bytes],
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * bytes_per_pixel),
+                rows_per_image: Some(height),
+            },
+            Extent3d {
+                width,
+                height,
+                depth_or_array_layers: size.depth_or_array_layers,
+            },
+        );
+
+        offset += level_bytes;
+    }
+}
+
 /// Rejects a pixel buffer that is too small for the extent it is uploaded to.
 ///
 /// Surplus data is only warned about: uploading a whole mip chain, as the
@@ -519,6 +585,22 @@ impl Texture {
         };
         let calculated_bytes_per_row = size.width * bytes_per_pixel;
 
+        // A compact chain is uploaded one level at a time. Row-padded
+        // readbacks (for example the cube-map IBL descriptors) do not match the
+        // compact length and keep the single-level upload below.
+        if size.mip_levels > 1
+            && mip_chain_byte_len(
+                size.width,
+                size.height,
+                size.depth_or_array_layers,
+                size.mip_levels,
+                bytes_per_pixel,
+            ) == Some(pixels.len())
+        {
+            write_mip_chain(texture.texture(), pixels, size, bytes_per_pixel, queue);
+            return Ok(texture);
+        }
+
         // Too little data: `write_texture` would leave the tail of the texture
         // undefined, so refuse the upload instead of corrupting it.
         validate_data_size(
@@ -870,6 +952,67 @@ mod tests {
     fn validate_data_size_accepts_exact_and_surplus_uploads() {
         assert!(validate_data_size(4, 4, 1, 4, TextureFormat::Rgba8Unorm, 64).is_ok());
         assert!(validate_data_size(4, 4, 1, 4, TextureFormat::Rgba8Unorm, 4096).is_ok());
+    }
+
+    #[test]
+    fn mip_chain_length_sums_every_level() {
+        // 4x4 Rgba8Unorm: 64 + 16 + 4 bytes over three levels.
+        assert_eq!(mip_chain_byte_len(4, 4, 1, 3, 4), Some(84));
+        // Odd extents clamp at one, so 3x3 R8 has 9 + 1 bytes.
+        assert_eq!(mip_chain_byte_len(3, 3, 1, 2, 1), Some(10));
+        // Array layers are covered by every level: 2x2x6 Rgba8 has 96 + 24 bytes.
+        assert_eq!(mip_chain_byte_len(2, 2, 6, 2, 4), Some(120));
+    }
+
+    #[test]
+    fn compact_mip_chains_upload_every_level() {
+        let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+        let base = vec![0x60u8; 4 * 4 * 4];
+        let (chain, levels) = crate::build_mip_chain_8bit(&base, 4, 4, 4, false).expect("chain");
+
+        let descriptor = TextureDescriptor::Data {
+            pixels: chain,
+            size: TextureSize {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+                base_mip: 0,
+                mip_levels: levels,
+            },
+            usages: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            format: TextureFormat::Rgba8Unorm,
+            texture_dimension: TextureDimension::D2,
+            texture_view_dimension: TextureViewDimension::D2,
+            filter_mode: FilterMode::linear(),
+        };
+
+        let texture = Texture::from_descriptor(&descriptor, &device, &queue).expect("upload");
+        assert_eq!(texture.texture().mip_level_count(), levels);
+    }
+
+    #[test]
+    fn base_only_uploads_still_accept_a_mip_count() {
+        let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+        let descriptor = TextureDescriptor::Data {
+            pixels: vec![0u8; 4 * 4 * 4],
+            size: TextureSize {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+                base_mip: 0,
+                mip_levels: 3,
+            },
+            usages: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            format: TextureFormat::Rgba8Unorm,
+            texture_dimension: TextureDimension::D2,
+            texture_view_dimension: TextureViewDimension::D2,
+            filter_mode: FilterMode::linear(),
+        };
+
+        // A buffer that only covers the base level keeps the single-level
+        // upload path instead of being rejected as undersized.
+        let texture = Texture::from_descriptor(&descriptor, &device, &queue).expect("upload");
+        assert_eq!(texture.texture().mip_level_count(), 3);
     }
 
     #[test]

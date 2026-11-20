@@ -537,6 +537,20 @@ impl GltfImporter {
         }
     }
 
+    /// Interleaved channel count of the 8-bit formats the CPU mip builder
+    /// understands.
+    ///
+    /// Wider formats (16-bit and float) keep a single level: the builder only
+    /// filters normalized bytes.
+    fn u8_unorm_channels(format: TextureFormat) -> Option<u32> {
+        match format {
+            TextureFormat::R8Unorm => Some(1),
+            TextureFormat::Rg8Unorm => Some(2),
+            TextureFormat::Rgba8Unorm | TextureFormat::Rgba8UnormSrgb => Some(4),
+            _ => None,
+        }
+    }
+
     /// Handles parsing of glTF textures ([`gltf::image::Data`]) and turns it into a [`TextureDescriptor`].
     fn parse_texture(data: &gltf::image::Data, srgb: bool) -> TextureDescriptor {
         let (format, need_alpha_channel) = Self::gltf_texture_format_to_ignit(data.format);
@@ -634,6 +648,26 @@ impl GltfImporter {
             (data.pixels.clone(), data.width, data.height)
         };
 
+        // glTF images only carry the base level. Build the chain on the CPU so
+        // material textures filter correctly at distance instead of sampling
+        // undefined levels.
+        let (pixel_data, mip_levels) = match Self::u8_unorm_channels(format) {
+            Some(channels) => {
+                let srgb = format == TextureFormat::Rgba8UnormSrgb;
+                match ignit_texture::build_mip_chain_8bit(
+                    &pixel_data,
+                    width,
+                    height,
+                    channels,
+                    srgb,
+                ) {
+                    Some(chain) => chain,
+                    None => (pixel_data, 1),
+                }
+            }
+            None => (pixel_data, 1),
+        };
+
         TextureDescriptor::Data {
             // Use the correctly determined pixel data
             pixels: pixel_data,
@@ -642,7 +676,7 @@ impl GltfImporter {
                 height,
                 depth_or_array_layers: 1, // A standard 2D texture has 1 layer
                 base_mip: 0,
-                mip_levels: 1, // glTF image data is typically just the base mip level
+                mip_levels,
             },
             usages: TextureUsages::TEXTURE_BINDING
                 | TextureUsages::COPY_DST
@@ -1691,6 +1725,49 @@ mod tests {
 
         assert_eq!(descriptor.near, 0.1);
         assert_eq!(descriptor.far, 100.0);
+    }
+
+    #[test]
+    fn parse_texture_builds_a_full_mip_chain_for_eight_bit_images() {
+        let data = gltf::image::Data {
+            format: Format::R8G8B8A8,
+            width: 4,
+            height: 4,
+            pixels: vec![0x80; 4 * 4 * 4],
+        };
+
+        let descriptor = GltfImporter::parse_texture(&data, true);
+
+        let TextureDescriptor::Data {
+            pixels,
+            size,
+            format,
+            ..
+        } = descriptor
+        else {
+            panic!("image data parses into a data descriptor");
+        };
+        assert_eq!(format, TextureFormat::Rgba8UnormSrgb);
+        assert_eq!(size.mip_levels, 3);
+        // 4x4 + 2x2 + 1x1, four bytes per pixel.
+        assert_eq!(pixels.len(), (16 + 4 + 1) * 4);
+    }
+
+    #[test]
+    fn parse_texture_keeps_wide_formats_single_level() {
+        let data = gltf::image::Data {
+            format: Format::R16G16B16A16,
+            width: 4,
+            height: 4,
+            pixels: vec![0; 4 * 4 * 8],
+        };
+
+        let descriptor = GltfImporter::parse_texture(&data, false);
+
+        let TextureDescriptor::Data { size, .. } = descriptor else {
+            panic!("image data parses into a data descriptor");
+        };
+        assert_eq!(size.mip_levels, 1);
     }
 
     /// `zfar` is optional for perspective cameras; the far plane must then fall

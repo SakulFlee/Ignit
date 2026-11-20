@@ -16,6 +16,9 @@ pub use size::*;
 mod error;
 pub use error::*;
 
+mod mip;
+pub use mip::*;
+
 mod descriptor;
 pub use descriptor::*;
 
