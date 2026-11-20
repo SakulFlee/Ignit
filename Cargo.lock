@@ -2147,6 +2147,7 @@ dependencies = [
  "ignit-iced-widget",
  "ignit-iced-winit",
  "ignit-winit",
+ "ignit_animation",
  "ignit_app",
  "ignit_billboard",
  "ignit_camera",
