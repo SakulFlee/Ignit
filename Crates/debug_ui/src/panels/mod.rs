@@ -341,7 +341,6 @@ mod tests {
                     label: "procgeo".to_string(),
                     mesh: Arc::new(MeshDescriptor::new(Vec::new(), Vec::new())),
                     materials: Vec::new(),
-                    skin: None,
                 },
             )
             .expect("descriptor attach failed");

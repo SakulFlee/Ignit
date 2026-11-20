@@ -228,7 +228,6 @@ impl System for BillboardSystem {
                         label: format!("Billboard {entity_index}"),
                         mesh: billboard.mesh.clone().unwrap_or_else(|| quad.0.clone()),
                         materials: vec![billboard.material.clone()],
-                        skin: None,
                     },
                 );
                 commands.attach_component(&entity, instances);

@@ -12,7 +12,7 @@ use ignit_ecs_bridge::{
     ActiveCamera, AnimationPlayer, CameraDescriptor, CameraDirty, CameraRealization, CameraStore,
     DeviceResource, ImportQueueResource, ImporterResource, LightDescriptor, LightDirty,
     ModelDescriptor, ModelDirty, ModelInstances, Position, QueueResource, Rotation,
-    SkeletonComponent,
+    SkeletonComponent, SkinComponent,
 };
 use ignit_shadow::ShadowCaster;
 use log::warn;
@@ -79,11 +79,16 @@ pub fn sys_poll_importer(ecs: &mut World) {
                 label: model_desc.label.clone(),
                 mesh: model_desc.mesh.clone(),
                 materials: model_desc.materials.clone(),
-                skin: model_desc.skin.clone(),
             };
             if let Err(e) = ecs.attach_component(&entity, desc) {
                 warn!("Failed to attach ModelDescriptor: {:?}", e);
                 continue;
+            }
+
+            if let Some(skin) = &model_desc.skin
+                && let Err(e) = ecs.attach_component(&entity, SkinComponent(skin.clone()))
+            {
+                warn!("Failed to attach SkinComponent: {:?}", e);
             }
 
             let first_position = model_desc
