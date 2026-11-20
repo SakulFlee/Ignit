@@ -367,8 +367,8 @@ pub fn entrypoint(
         _ => None,
     };
 
+    // `IGNIT_PRESENT_MODE` overrides the default VSync mode for benchmarks.
     let app_settings = AppSettings {
-        vsync_enabled: false,
         fullscreen: std::env::var("IGNIT_FULLSCREEN").map_or(true, |value| value != "0"),
         present_mode,
         name: NAME.to_string(),
