@@ -6,6 +6,8 @@ struct DebugParams {
 struct DepthRange {
     min_depth: u32,
     max_depth: u32,
+    smoothed_min: u32,
+    smoothed_max: u32,
 }
 
 @group(0) @binding(0) var source: texture_depth_2d;
@@ -35,9 +37,9 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     // range pass found visible geometry, stretch the scene's actual depth range
     // across the full ramp instead of drawing everything as near-uniform grey.
     var value = 1.0 - depth;
-    if (range.max_depth > range.min_depth) {
-        let min_depth = bitcast<f32>(range.min_depth);
-        let max_depth = bitcast<f32>(range.max_depth);
+    if (range.smoothed_max > range.smoothed_min) {
+        let min_depth = bitcast<f32>(range.smoothed_min);
+        let max_depth = bitcast<f32>(range.smoothed_max);
         let span = max(max_depth - min_depth, 1e-6);
         value = clamp(1.0 - (depth - min_depth) / span, 0.0, 1.0);
     }
