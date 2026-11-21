@@ -10,8 +10,8 @@ use ignit_camera::ProjectionMode;
 use ignit_debug_render::{BoundsMode, DebugToggleState};
 use ignit_ecs::World;
 use ignit_ecs_bridge::{
-    ActiveCamera, CameraDescriptor, LightDescriptor, ModelDescriptor, VolumetricQuality,
-    VolumetricSettings, WindowSize,
+    ActiveCamera, CameraDescriptor, EnvironmentDescriptorLast, LightDescriptor, ModelDescriptor,
+    VolumetricQuality, VolumetricSettings, WindowSize,
 };
 use ignit_material_shader::RenderQueue;
 use ignit_renderer::{AntiAliasing, DebugView, SmaaQuality};
@@ -616,6 +616,66 @@ pub fn rendering_panel<'a>(ecs: &World) -> Element<'a, DebugMessage, Theme, Iced
         );
     }
 
+    let dynamic_sky = ecs
+        .get_resource::<EnvironmentDescriptorLast>()
+        .and_then(|last| last.dynamic_sky_time());
+    let sky = ecs
+        .get_resource::<DebugUiState>()
+        .map(|state| state.sky)
+        .unwrap_or_default();
+
+    if dynamic_sky.is_some() {
+        rows.push(crate::panels::divider());
+        rows.push(crate::panels::caption("Sky (dynamic)", ACCENT));
+
+        let preset = SkyPreset::nearest(sky.hours);
+        rows.push(
+            pick_list(Some(preset), SkyPreset::ALL, |preset: &SkyPreset| {
+                preset.label().to_string()
+            })
+            .width(Length::Fill)
+            .text_size(12)
+            .on_select(|preset| DebugMessage::SetSkyHours(preset.hours()))
+            .into(),
+        );
+
+        rows.push(slider_row(
+            "Time of day",
+            0.0..=24.0,
+            sky.hours,
+            DebugMessage::SetSkyHours,
+        ));
+        rows.push(
+            column![
+                row![
+                    text("Azimuth").size(12).width(Length::Fixed(LABEL_WIDTH)),
+                    text(format!("{:.0}°", sky.azimuth.to_degrees()))
+                        .size(11)
+                        .color(MUTED)
+                        .width(Length::Fixed(VALUE_WIDTH)),
+                ],
+                slider(-180.0..=180.0, sky.azimuth.to_degrees(), |degrees| {
+                    DebugMessage::SetSkyAzimuth(degrees.to_radians())
+                }),
+            ]
+            .spacing(1)
+            .into(),
+        );
+        rows.push(slider_row(
+            "Day speed",
+            0.0..=4.0,
+            sky.speed,
+            DebugMessage::SetSkySpeed,
+        ));
+        rows.push(
+            checkbox(sky.paused)
+                .label("Pause sky clock")
+                .text_size(12)
+                .on_toggle(DebugMessage::SetSkyPaused)
+                .into(),
+        );
+    }
+
     rows.push(crate::panels::divider());
     rows.push(crate::panels::caption("Debug overlays", ACCENT));
     match ecs.get_resource::<DebugToggleState>() {
@@ -764,6 +824,58 @@ pub fn rendering_panel<'a>(ecs: &World) -> Element<'a, DebugMessage, Theme, Iced
     .width(Length::Fill)
     .height(Length::Fill)
     .into()
+}
+
+/// Quick time-of-day presets for the dynamic sky clock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SkyPreset {
+    Midnight,
+    Sunrise,
+    Noon,
+    Sunset,
+}
+
+impl SkyPreset {
+    const ALL: [Self; 4] = [Self::Midnight, Self::Sunrise, Self::Noon, Self::Sunset];
+
+    fn hours(self) -> f32 {
+        match self {
+            Self::Midnight => 0.0,
+            Self::Sunrise => 6.0,
+            Self::Noon => 12.0,
+            Self::Sunset => 18.0,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Midnight => "Midnight",
+            Self::Sunrise => "Sunrise",
+            Self::Noon => "Noon",
+            Self::Sunset => "Sunset",
+        }
+    }
+
+    fn nearest(hours: f32) -> Self {
+        Self::ALL
+            .into_iter()
+            .min_by(|a, b| {
+                let distance = |preset: Self| {
+                    let delta = (hours - preset.hours()).rem_euclid(24.0);
+                    delta.min(24.0 - delta)
+                };
+                distance(*a)
+                    .partial_cmp(&distance(*b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap_or(Self::Noon)
+    }
+}
+
+impl std::fmt::Display for SkyPreset {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.label())
+    }
 }
 
 fn slider_row(

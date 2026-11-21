@@ -1466,6 +1466,70 @@ pub struct EnvironmentDescriptorResource(
     pub Option<ignit_world_environment::WorldEnvironmentDescriptor>,
 );
 
+/// Most recently realized world environment descriptor.
+///
+/// [`EnvironmentDescriptorResource`] is consumed when the environment is
+/// realized, so controls that need to rebuild the descriptor keep a copy here.
+#[derive(Debug, Clone, Default)]
+pub struct EnvironmentDescriptorLast(
+    pub Option<ignit_world_environment::WorldEnvironmentDescriptor>,
+);
+
+impl EnvironmentDescriptorLast {
+    /// Hours since midnight and sun azimuth, for a dynamic generated sky.
+    pub fn dynamic_sky_time(&self) -> Option<(f32, f32)> {
+        use ignit_world_environment::{SunPosition, WorldEnvironmentDescriptor};
+
+        let WorldEnvironmentDescriptor::Generated {
+            dynamic: true,
+            parameters,
+            ..
+        } = self.0.as_ref()?
+        else {
+            return None;
+        };
+
+        let parameters = parameters.clone().unwrap_or_default();
+        let hours = match parameters.sun_position {
+            SunPosition::TimeOfDay { hours } => hours,
+            SunPosition::Elevation { .. } => return None,
+        };
+        Some((hours, parameters.sun_azimuth))
+    }
+
+    /// A copy of the descriptor with the dynamic sky moved to `hours` and
+    /// `azimuth`.
+    pub fn with_dynamic_sky_time(
+        &self,
+        hours: f32,
+        azimuth: f32,
+    ) -> Option<ignit_world_environment::WorldEnvironmentDescriptor> {
+        use ignit_world_environment::{SunPosition, WorldEnvironmentDescriptor};
+
+        let WorldEnvironmentDescriptor::Generated {
+            dynamic: true,
+            parameters,
+            ..
+        } = self.0.as_ref()?
+        else {
+            return None;
+        };
+
+        let mut updated = self.0.clone()?;
+        if let WorldEnvironmentDescriptor::Generated {
+            parameters: updated_parameters,
+            ..
+        } = &mut updated
+        {
+            let mut parameters = parameters.clone().unwrap_or_default();
+            parameters.sun_position = SunPosition::TimeOfDay { hours };
+            parameters.sun_azimuth = azimuth;
+            *updated_parameters = Some(parameters);
+        }
+        Some(updated)
+    }
+}
+
 /// Realized world environment GPU state (IBL textures, skybox).
 /// Created by `realize_environment` from the descriptor.
 #[derive(Debug, Clone)]
@@ -2030,5 +2094,49 @@ mod volumetric_tests {
     #[test]
     fn settings_are_disabled_by_default() {
         assert!(!VolumetricSettings::default().enabled);
+    }
+
+    fn dynamic_sky(
+        hours: f32,
+        azimuth: f32,
+    ) -> ignit_world_environment::WorldEnvironmentDescriptor {
+        use ignit_world_environment::{
+            GeneratedSkyParameters, SunPosition, WorldEnvironmentDescriptor,
+        };
+
+        WorldEnvironmentDescriptor::Generated {
+            cube_face_size: 32,
+            sampling_type: WorldEnvironmentDescriptor::DEFAULT_SAMPLING_TYPE,
+            custom_specular_mip_level_count: None,
+            parameters: Some(GeneratedSkyParameters {
+                sun_position: SunPosition::TimeOfDay { hours },
+                sun_azimuth: azimuth,
+                ..GeneratedSkyParameters::default()
+            }),
+            dynamic: true,
+        }
+    }
+
+    #[test]
+    fn dynamic_sky_time_round_trips_through_the_last_descriptor() {
+        let last = EnvironmentDescriptorLast(Some(dynamic_sky(9.0, 0.5)));
+
+        let (hours, azimuth) = last.dynamic_sky_time().expect("dynamic sky");
+        assert!((hours - 9.0).abs() < 1e-6);
+        assert!((azimuth - 0.5).abs() < 1e-6);
+
+        let updated = last.with_dynamic_sky_time(20.0, 1.25).expect("updated");
+        let updated = EnvironmentDescriptorLast(Some(updated));
+        assert_eq!(updated.dynamic_sky_time(), Some((20.0, 1.25)));
+    }
+
+    #[test]
+    fn static_environments_have_no_dynamic_sky_controls() {
+        let last = EnvironmentDescriptorLast(Some(
+            ignit_world_environment::WorldEnvironmentDescriptor::None,
+        ));
+
+        assert!(last.dynamic_sky_time().is_none());
+        assert!(last.with_dynamic_sky_time(1.0, 0.0).is_none());
     }
 }

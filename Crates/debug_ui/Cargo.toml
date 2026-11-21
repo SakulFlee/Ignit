@@ -34,3 +34,4 @@ iced_winit = { workspace = true }
 ignit_animation = { path = "../animation", version = "1.6.3" }
 ignit_math = { path = "../math", version = "1.6.3" }
 ignit_mesh = { path = "../mesh", version = "1.6.3" }
+ignit_world_environment = { path = "../world_environment", version = "1.6.3" }

@@ -131,6 +131,14 @@ pub enum DebugMessage {
     SetDebugBones(bool),
     /// Toggle skin-weight visualization.
     SetDebugWeights(bool),
+    /// Set the dynamic sky's time of day, in hours since midnight.
+    SetSkyHours(f32),
+    /// Set the dynamic sky's sun azimuth, in radians.
+    SetSkyAzimuth(f32),
+    /// Set how many hours the sky clock advances per real second.
+    SetSkySpeed(f32),
+    /// Pause or resume the dynamic sky clock.
+    SetSkyPaused(bool),
     /// Select the joint whose skin weights are visualized.
     SetAnimationWeightJoint { entity: Entity, joint: String },
     /// Set the HDR brightness where bloom starts.
@@ -292,6 +300,37 @@ pub const VALUE_PREVIEW_CHARS: usize = 200;
 /// scrolled.
 pub const MAX_ROWS: usize = 200;
 
+/// Debug control over a dynamic generated sky.
+#[derive(Debug, Clone, Copy)]
+pub struct SkyControl {
+    /// Hours since midnight, 0..24.
+    pub hours: f32,
+    /// Sun azimuth in radians.
+    pub azimuth: f32,
+    /// Hours advanced per real second while unpaused.
+    pub speed: f32,
+    pub paused: bool,
+    /// Whether the values were seeded from the realized descriptor.
+    pub initialized: bool,
+    /// Last values pushed into the environment descriptor.
+    pub pushed_hours: f32,
+    pub pushed_azimuth: f32,
+}
+
+impl Default for SkyControl {
+    fn default() -> Self {
+        Self {
+            hours: 14.0,
+            azimuth: 0.0,
+            speed: 0.5,
+            paused: true,
+            initialized: false,
+            pushed_hours: 0.0,
+            pushed_azimuth: 0.0,
+        }
+    }
+}
+
 /// All debug-UI state, held as an ECS resource.
 ///
 /// The Iced bridge rebuilds each panel's widget tree every frame, so this is
@@ -308,6 +347,8 @@ pub struct DebugUiState {
     pub selected: Option<Entity>,
     /// The entity whose animation the Animation panel controls.
     pub animation_entity: Option<Entity>,
+    /// Time-of-day controls for a dynamic generated sky.
+    pub sky: SkyControl,
     /// Entities whose component list is expanded.
     pub expanded: HashSet<Entity>,
     /// Entity-tree filter; matches the entity index, label or component type
@@ -359,6 +400,7 @@ impl DebugUiState {
             active_tab: 0,
             selected: None,
             animation_entity: None,
+            sky: SkyControl::default(),
             expanded: HashSet::new(),
             filter: String::new(),
             graph_series: BTreeSet::from([GraphSeries::Cdt]),
@@ -466,6 +508,22 @@ impl DebugUiState {
             }
             DebugMessage::SelectAnimationEntity(entity) => {
                 self.animation_entity = *entity;
+                self.dirty = true;
+            }
+            DebugMessage::SetSkyHours(hours) => {
+                self.sky.hours = hours.rem_euclid(24.0);
+                self.dirty = true;
+            }
+            DebugMessage::SetSkyAzimuth(azimuth) => {
+                self.sky.azimuth = azimuth.clamp(-std::f32::consts::PI, std::f32::consts::PI);
+                self.dirty = true;
+            }
+            DebugMessage::SetSkySpeed(speed) => {
+                self.sky.speed = speed.clamp(0.0, 4.0);
+                self.dirty = true;
+            }
+            DebugMessage::SetSkyPaused(paused) => {
+                self.sky.paused = *paused;
                 self.dirty = true;
             }
             DebugMessage::ToggleEntity(entity) => {

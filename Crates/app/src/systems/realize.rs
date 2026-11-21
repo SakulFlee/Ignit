@@ -9,11 +9,11 @@ use ignit_camera::{Camera, CameraProjection};
 use ignit_ecs::World;
 use ignit_ecs_bridge::{
     ActiveCamera, CameraDescriptor, CameraDirty, CameraRealization, CameraStore, DeviceResource,
-    EnvironmentDescriptorResource, EnvironmentGpuResource, LightBufferResource, LightDescriptor,
-    LightDirty, LightSlotIndex, LightSlotTracker, MAX_LIGHTS, MaterialCacheResource,
-    MeshCacheResource, ModelDescriptor, ModelDirty, ModelInstances, ModelRealization,
-    PipelineCacheResource, Position, PrevPosition, QueueResource, Rotation, ShadowDirtyFlag,
-    SkinComponent,
+    EnvironmentDescriptorLast, EnvironmentDescriptorResource, EnvironmentGpuResource,
+    LightBufferResource, LightDescriptor, LightDirty, LightSlotIndex, LightSlotTracker, MAX_LIGHTS,
+    MaterialCacheResource, MeshCacheResource, ModelDescriptor, ModelDirty, ModelInstances,
+    ModelRealization, PipelineCacheResource, Position, PrevPosition, QueueResource, Rotation,
+    ShadowDirtyFlag, SkinComponent,
 };
 use ignit_model::Model;
 use ignit_world_environment::WorldEnvironmentDescriptor;
@@ -760,6 +760,7 @@ pub fn realize_environment(ecs: &mut World) {
             // Explicitly disable the environment (no skybox, no IBL).
             ecs.insert_resource(EnvironmentGpuResource(None));
             ecs.insert_resource(EnvironmentDescriptorResource(None));
+            ecs.insert_resource(EnvironmentDescriptorLast(None));
             return;
         }
         Some(d) => d,
@@ -774,6 +775,9 @@ pub fn realize_environment(ecs: &mut World) {
             }
         }
     };
+
+    // Keep a copy for debug controls: the descriptor below is consumed.
+    ecs.insert_resource(EnvironmentDescriptorLast(Some(descriptor.clone())));
 
     // Fast path: a `Generated { dynamic: true }` descriptor that matches the
     // existing environment's size/mips updates the sky **in place** — no
