@@ -6,11 +6,12 @@
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
-    BufferDescriptor, BufferUsages, Color, ColorTargetState, ColorWrites, CommandEncoder, Device,
-    FragmentState, LoadOp, Operations, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology,
-    Queue, RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline,
-    RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, StoreOp,
-    TextureSampleType, TextureView, TextureViewDimension, VertexState,
+    BufferDescriptor, BufferUsages, Color, ColorTargetState, ColorWrites, CommandEncoder,
+    ComputePassDescriptor, ComputePipeline, ComputePipelineDescriptor, Device, FragmentState,
+    LoadOp, Operations, PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue,
+    RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StoreOp, TextureSampleType, TextureView,
+    TextureViewDimension, VertexState,
 };
 
 /// Render-stage buffer to display instead of the normal final image.
@@ -53,13 +54,17 @@ impl DebugView {
 
 const COLOR_WGSL: &str = include_str!("debug_view_color.wgsl");
 const DEPTH_WGSL: &str = include_str!("debug_view_depth.wgsl");
+const DEPTH_RANGE_WGSL: &str = include_str!("debug_depth_range.wgsl");
 
 pub(crate) struct DebugViewRenderer {
     color_pipeline: RenderPipeline,
     depth_pipeline: RenderPipeline,
+    depth_range_pipeline: ComputePipeline,
     color_layout: BindGroupLayout,
     depth_layout: BindGroupLayout,
+    depth_range_layout: BindGroupLayout,
     params: Buffer,
+    depth_range: Buffer,
 }
 
 impl DebugViewRenderer {
@@ -71,6 +76,10 @@ impl DebugViewRenderer {
         let depth_module = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Ignit::DebugViewDepthShader"),
             source: ShaderSource::Wgsl(DEPTH_WGSL.into()),
+        });
+        let depth_range_module = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("Ignit::DebugViewDepthRangeShader"),
+            source: ShaderSource::Wgsl(DEPTH_RANGE_WGSL.into()),
         });
 
         let color_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -121,8 +130,50 @@ impl DebugViewRenderer {
                     },
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
+        let depth_range_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("Ignit::DebugViewDepthRangeLayout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Depth,
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let depth_range_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("Ignit::DebugViewDepthRangePipelineLayout"),
+                bind_group_layouts: &[Some(&depth_range_layout)],
+                immediate_size: 0,
+            });
 
         let color_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Ignit::DebugViewColorPipelineLayout"),
@@ -184,12 +235,27 @@ impl DebugViewRenderer {
                 &depth_module,
                 "fs_main",
             ),
+            depth_range_pipeline: device.create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some("Ignit::DebugViewDepthRangePipeline"),
+                layout: Some(&depth_range_pipeline_layout),
+                module: &depth_range_module,
+                entry_point: Some("cs_main"),
+                compilation_options: Default::default(),
+                cache: None,
+            }),
             color_layout,
             depth_layout,
+            depth_range_layout,
             params: device.create_buffer(&BufferDescriptor {
                 label: Some("Ignit::DebugViewParams"),
                 size: 16,
                 usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }),
+            depth_range: device.create_buffer(&BufferDescriptor {
+                label: Some("Ignit::DebugViewDepthRange"),
+                size: 8,
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }),
         }
@@ -219,19 +285,60 @@ impl DebugViewRenderer {
             (&self.color_layout, &self.color_pipeline)
         };
 
+        if depth {
+            // Reset the range, then sample the depth buffer on a coarse grid so
+            // the view can stretch the scene's actual depth range.
+            let mut reset = [0u8; 8];
+            reset[..4].copy_from_slice(&u32::MAX.to_le_bytes());
+            queue.write_buffer(&self.depth_range, 0, &reset);
+
+            let range_bind_group = device.create_bind_group(&BindGroupDescriptor {
+                label: Some("Ignit::DebugViewDepthRangeBindGroup"),
+                layout: &self.depth_range_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::TextureView(source_view),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: BindingResource::Buffer(
+                            self.depth_range.as_entire_buffer_binding(),
+                        ),
+                    },
+                ],
+            });
+
+            let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("Ignit::DebugViewDepthRange"),
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.depth_range_pipeline);
+            pass.set_bind_group(0, &range_bind_group, &[]);
+            pass.dispatch_workgroups(32, 32, 1);
+        }
+
+        let mut entries = vec![
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(source_view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Buffer(self.params.as_entire_buffer_binding()),
+            },
+        ];
+        if depth {
+            entries.push(BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::Buffer(self.depth_range.as_entire_buffer_binding()),
+            });
+        }
+
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("Ignit::DebugViewBindGroup"),
             layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(source_view),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::Buffer(self.params.as_entire_buffer_binding()),
-                },
-            ],
+            entries: &entries,
         });
 
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
