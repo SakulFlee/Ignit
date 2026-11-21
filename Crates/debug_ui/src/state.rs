@@ -6,7 +6,7 @@ use ignit_app::OrthographicForwardMode;
 use ignit_camera::ProjectionMode;
 use ignit_debug_render::BoundsMode;
 use ignit_ecs::Entity;
-use ignit_ecs_bridge::{TIMING_STAGES, VolumetricQuality};
+use ignit_ecs_bridge::{SkinningMode, TIMING_STAGES, VolumetricQuality};
 use ignit_renderer::{AntiAliasing, DebugView, SmaaQuality};
 
 /// The Iced renderer type the panels draw with.
@@ -139,8 +139,8 @@ pub enum DebugMessage {
     SetSkySpeed(f32),
     /// Pause or resume the dynamic sky clock.
     SetSkyPaused(bool),
-    /// Switch skinned models between CPU and compute deformation.
-    SetComputeSkinning(bool),
+    /// Switch one animation's model between deformation paths.
+    SetAnimationSkinning { entity: Entity, mode: SkinningMode },
     /// Select the joint whose skin weights are visualized.
     SetAnimationWeightJoint { entity: Entity, joint: String },
     /// Set the HDR brightness where bloom starts.
@@ -652,7 +652,7 @@ impl DebugUiState {
             | DebugMessage::SetDebugBones(_)
             | DebugMessage::SetDebugWeights(_)
             | DebugMessage::SetAnimationWeightJoint { .. }
-            | DebugMessage::SetComputeSkinning(_)
+            | DebugMessage::SetAnimationSkinning { .. }
             | DebugMessage::SetBloomThreshold(_)
             | DebugMessage::SetBloomIntensity(_)
             | DebugMessage::SetContrast(_)

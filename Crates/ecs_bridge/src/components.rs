@@ -285,6 +285,8 @@ pub struct AnimationPlayer {
     pub playing: bool,
     /// Clip fading out after a [`Self::crossfade`].
     pub blend: Option<AnimationBlend>,
+    /// Deformation path for this model.
+    pub skinning: crate::SkinningMode,
 }
 
 /// Fading-out layer of an [`AnimationPlayer`].
@@ -307,6 +309,7 @@ impl AnimationPlayer {
             looping: true,
             playing: true,
             blend: None,
+            skinning: crate::SkinningMode::Auto,
         }
     }
 
@@ -787,6 +790,13 @@ mod tests {
 
         assert!(!player.playing);
         assert!((player.time - 0.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn animation_players_default_to_auto_skinning() {
+        let player = AnimationPlayer::new(clip("idle", 1.0));
+
+        assert_eq!(player.skinning, crate::SkinningMode::Auto);
     }
 
     #[test]

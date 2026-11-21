@@ -9,7 +9,7 @@ use cgmath::{Matrix4, SquareMatrix};
 use ignit_ecs::World;
 use ignit_ecs_bridge::{
     AnimationPlayer, DeviceResource, ModelRealization, QueueResource, SkeletonComponent,
-    SkinningMode, SkinningSettings,
+    SkinningMode,
 };
 
 /// Animation layers for the current clip and an optional fade-out layer.
@@ -47,14 +47,8 @@ pub fn sys_animate(ecs: &World, delta_time: f32) {
         (device.0.clone(), queue.0.clone())
     };
 
-    let compute = ecs
-        .get_resource::<SkinningSettings>()
-        .is_some_and(|settings| settings.mode == SkinningMode::Compute);
-    let compute_skinning = if compute {
-        ecs.get_resource::<crate::systems::skinning::ComputeSkinning>()
-    } else {
-        None
-    };
+    let compute_skinning = ecs.get_resource::<crate::systems::skinning::ComputeSkinning>();
+    let compute_available = compute_skinning.is_some();
 
     let mut updates = {
         let Some(players) = ecs.get_component_store::<AnimationPlayer>() else {
@@ -90,7 +84,12 @@ pub fn sys_animate(ecs: &World, delta_time: f32) {
             skeleton.apply_clips(&animation_layers(&player));
             skeleton.update_world(Matrix4::identity());
 
-            let vertices = if compute {
+            let use_compute = match player.skinning {
+                SkinningMode::Auto => compute_available,
+                SkinningMode::Cpu => false,
+                SkinningMode::Compute => compute_available,
+            };
+            let vertices = if use_compute {
                 Vec::new()
             } else {
                 _skin.skinned_vertices(&model.source_mesh().vertices, skeleton.skin_matrices())
@@ -102,6 +101,7 @@ pub fn sys_animate(ecs: &World, delta_time: f32) {
                 model_index,
                 player,
                 skeleton,
+                use_compute,
                 vertices,
             ));
         }
@@ -125,10 +125,10 @@ pub fn sys_animate(ecs: &World, delta_time: f32) {
             return;
         };
 
-        for (player_index, skeleton_index, model_index, player, skeleton, vertices) in
+        for (player_index, skeleton_index, model_index, player, skeleton, use_compute, vertices) in
             updates.drain(..)
         {
-            let skin_matrices = compute.then(|| skeleton.skin_matrices().to_vec());
+            let skin_matrices = use_compute.then(|| skeleton.skin_matrices().to_vec());
 
             players.get_mut_store().components[player_index] = player;
             skeletons.get_mut_store().components[skeleton_index] = SkeletonComponent(skeleton);
@@ -143,7 +143,9 @@ pub fn sys_animate(ecs: &World, delta_time: f32) {
         }
     }
 
-    if let Some(skinner) = compute_skinning {
+    if let Some(skinner) = compute_skinning
+        && !compute_models.is_empty()
+    {
         let Some(models) = ecs.get_component_store::<ModelRealization>() else {
             return;
         };
@@ -239,13 +241,6 @@ mod tests {
         .expect("skinned model");
 
         let mut world = ignit_ecs::World::new();
-        world.insert_resource(SkinningSettings {
-            mode: if compute {
-                SkinningMode::Compute
-            } else {
-                SkinningMode::Cpu
-            },
-        });
         if compute {
             world.insert_resource(crate::systems::skinning::ComputeSkinning::new(&device));
         }
@@ -263,9 +258,13 @@ mod tests {
                 )),
             )
             .unwrap();
-        world
-            .attach_component(&entity, AnimationPlayer::new(clip))
-            .unwrap();
+        let mut player = AnimationPlayer::new(clip);
+        player.skinning = if compute {
+            SkinningMode::Compute
+        } else {
+            SkinningMode::Cpu
+        };
+        world.attach_component(&entity, player).unwrap();
 
         world
     }
