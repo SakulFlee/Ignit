@@ -22,5 +22,6 @@ pub fn make_core_schedule() -> ignit_ecs::Schedule {
     let mut schedule = ignit_ecs::Schedule::new();
     schedule.add_system(sys_accumulate_time);
     schedule.add_system(sys_update_frame_counter);
+    schedule.add_system_boxed(crate::systems::sky::sky_system());
     schedule
 }

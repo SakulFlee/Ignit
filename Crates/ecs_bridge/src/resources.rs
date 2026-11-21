@@ -1490,6 +1490,35 @@ impl SkinningMode {
     }
 }
 
+/// Drives a dynamic generated sky.
+///
+/// Insert this resource to opt a generated sky into time-of-day animation and
+/// manual control. The engine updates the environment descriptor from it; the
+/// Debug UI edits the same resource.
+#[derive(Debug, Clone, Copy)]
+pub struct SkyClock {
+    /// Hours since midnight, 0..24.
+    pub hours: f32,
+    /// Sun azimuth in radians.
+    pub azimuth: f32,
+    /// Hours advanced per real second.
+    pub speed: f32,
+    /// Whether time stands still.
+    pub paused: bool,
+}
+
+impl Default for SkyClock {
+    fn default() -> Self {
+        Self {
+            hours: 14.0,
+            azimuth: 0.0,
+            // A full day/night cycle every two minutes.
+            speed: 0.2,
+            paused: false,
+        }
+    }
+}
+
 /// Most recently realized world environment descriptor.
 ///
 /// [`EnvironmentDescriptorResource`] is consumed when the environment is

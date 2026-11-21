@@ -5,6 +5,7 @@ pub mod cursor;
 pub mod import;
 pub mod realize;
 pub mod skinning;
+pub mod sky;
 pub mod stagger;
 pub use animation::sys_animate;
 pub use camera::{

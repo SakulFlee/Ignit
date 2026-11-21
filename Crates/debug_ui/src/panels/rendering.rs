@@ -10,8 +10,8 @@ use ignit_camera::ProjectionMode;
 use ignit_debug_render::{BoundsMode, DebugToggleState};
 use ignit_ecs::World;
 use ignit_ecs_bridge::{
-    ActiveCamera, CameraDescriptor, EnvironmentDescriptorLast, LightDescriptor, ModelDescriptor,
-    VolumetricQuality, VolumetricSettings, WindowSize,
+    ActiveCamera, CameraDescriptor, LightDescriptor, ModelDescriptor, SkyClock, VolumetricQuality,
+    VolumetricSettings, WindowSize,
 };
 use ignit_material_shader::RenderQueue;
 use ignit_renderer::{AntiAliasing, DebugView, SmaaQuality};
@@ -616,15 +616,7 @@ pub fn rendering_panel<'a>(ecs: &World) -> Element<'a, DebugMessage, Theme, Iced
         );
     }
 
-    let dynamic_sky = ecs
-        .get_resource::<EnvironmentDescriptorLast>()
-        .and_then(|last| last.dynamic_sky_time());
-    let sky = ecs
-        .get_resource::<DebugUiState>()
-        .map(|state| state.sky)
-        .unwrap_or_default();
-
-    if dynamic_sky.is_some() {
+    if let Some(sky) = ecs.get_resource::<SkyClock>().map(|clock| *clock) {
         rows.push(crate::panels::divider());
         rows.push(crate::panels::caption("Sky (dynamic)", ACCENT));
 
