@@ -2162,6 +2162,7 @@ dependencies = [
  "ignit_math",
  "ignit_mesh",
  "ignit_renderer",
+ "ignit_world_environment",
  "log",
 ]
 

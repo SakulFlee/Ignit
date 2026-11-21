@@ -34,11 +34,15 @@ use ignit_app::input::InputButton;
 use ignit_app::{CameraControlSettings, LayerRenderer, Module, RenderSettings};
 use ignit_camera::ProjectionMode;
 use ignit_debug_render::DebugToggleState;
-use ignit_ecs::{ComponentAccess, Entity, IntoSystem, Res, ResMut, System, World};
+use ignit_ecs::{
+    ComponentAccess, Entity, FunctionSystem, FunctionSystemMetadata, IntoSystem, Res, ResMut,
+    System, World,
+};
 use ignit_ecs_bridge::{
     ActiveCamera, AnimationClips, AnimationPlayer, CameraDescriptor, CameraDirty, CursorGrabState,
-    DebugSelectedEntity, DeviceResource, EngineEvent, EngineEvents, InputSnapshot,
-    PerformanceLogConfig, SkeletonComponent, TimingsHistoryConfig, VolumetricSettings,
+    DebugSelectedEntity, DeltaTime, DeviceResource, EngineEvent, EngineEvents,
+    EnvironmentDescriptorLast, EnvironmentDescriptorResource, InputSnapshot, PerformanceLogConfig,
+    SkeletonComponent, TimingsHistoryConfig, VolumetricSettings,
 };
 use ignit_iced::{DEFAULT_REFRESH_INTERVAL, IcedLayerRenderer, IcedState, SMOOTH_REFRESH_INTERVAL};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -142,6 +146,68 @@ pub fn sys_sync_timings_history(
     config.window_secs = state.graph_window_secs as f64;
 }
 
+/// Builds the sky-control system with its resource access declaration.
+fn sky_control_system() -> Box<dyn System> {
+    Box::new(FunctionSystem::new(
+        FunctionSystemMetadata {
+            name: "sys_sky_control",
+            access: ComponentAccess::new()
+                .reads::<DeltaTime>()
+                .reads::<EnvironmentDescriptorLast>()
+                .writes::<DebugUiState>()
+                .writes::<EnvironmentDescriptorResource>(),
+        },
+        Box::new(|world, _commands| sys_sky_control(world)),
+    ))
+}
+
+/// Pushes the debug sky clock into the environment descriptor.
+///
+/// Only dynamic generated skies can update in place; static or image-based
+/// environments are left alone.
+pub fn sys_sky_control(world: &World) {
+    let Some(delta) = world.get_resource::<DeltaTime>() else {
+        return;
+    };
+    let Some(last) = world.get_resource::<EnvironmentDescriptorLast>() else {
+        return;
+    };
+    let Some((descriptor_hours, descriptor_azimuth)) = last.dynamic_sky_time() else {
+        return;
+    };
+    let Some(mut state) = world.get_resource_mut::<DebugUiState>() else {
+        return;
+    };
+
+    if !state.sky.initialized {
+        state.sky.hours = descriptor_hours;
+        state.sky.azimuth = descriptor_azimuth;
+        state.sky.pushed_hours = descriptor_hours;
+        state.sky.pushed_azimuth = descriptor_azimuth;
+        state.sky.initialized = true;
+    }
+
+    if !state.sky.paused {
+        state.sky.hours = (state.sky.hours + delta.0 as f32 * state.sky.speed).rem_euclid(24.0);
+    }
+
+    let changed = (state.sky.hours - state.sky.pushed_hours).abs() > 1e-4
+        || (state.sky.azimuth - state.sky.pushed_azimuth).abs() > 1e-4;
+    if !changed {
+        return;
+    }
+
+    let (hours, azimuth) = (state.sky.hours, state.sky.azimuth);
+    let Some(descriptor) = last.with_dynamic_sky_time(hours, azimuth) else {
+        return;
+    };
+    if let Some(mut queued) = world.get_resource_mut::<EnvironmentDescriptorResource>() {
+        queued.0 = Some(descriptor);
+        state.sky.pushed_hours = hours;
+        state.sky.pushed_azimuth = azimuth;
+    }
+}
+
 /// Registers the debug panels with the runtime.
 ///
 /// Debug-only: in a release build the module does nothing, so a shipped game
@@ -233,11 +299,21 @@ impl Module for DebugUiModule {
         if ecs.get_resource::<TimingsHistoryConfig>().is_none() {
             ecs.insert_resource(TimingsHistoryConfig::default());
         }
+        if ecs.get_resource::<EnvironmentDescriptorLast>().is_none() {
+            ecs.insert_resource(EnvironmentDescriptorLast(None));
+        }
+        if ecs
+            .get_resource::<EnvironmentDescriptorResource>()
+            .is_none()
+        {
+            ecs.insert_resource(EnvironmentDescriptorResource(None));
+        }
 
         vec![
             sys_debug_ui_toggle.into_system(),
             Box::new(DebugUiCursorSync::new()),
             sys_sync_timings_history.into_system(),
+            sky_control_system(),
         ]
     }
 
@@ -1070,6 +1146,44 @@ mod tests {
             .attach_component(&entity, AnimationClips(vec![idle, walk]))
             .expect("clips attach failed");
         (world, entity)
+    }
+
+    #[test]
+    fn sky_clock_writes_a_dynamic_sky_descriptor() {
+        use ignit_world_environment::{
+            GeneratedSkyParameters, SunPosition, WorldEnvironmentDescriptor,
+        };
+
+        let mut world = World::new();
+        world.insert_resource(DeltaTime(0.5));
+        world.insert_resource(DebugUiState::new(KeyCode::F1));
+        world.insert_resource(EnvironmentDescriptorResource(None));
+        world.insert_resource(EnvironmentDescriptorLast(Some(
+            WorldEnvironmentDescriptor::Generated {
+                cube_face_size: 32,
+                sampling_type: WorldEnvironmentDescriptor::DEFAULT_SAMPLING_TYPE,
+                custom_specular_mip_level_count: None,
+                parameters: Some(GeneratedSkyParameters {
+                    sun_position: SunPosition::TimeOfDay { hours: 14.0 },
+                    ..GeneratedSkyParameters::default()
+                }),
+                dynamic: true,
+            },
+        )));
+        {
+            let mut state = world.get_resource_mut::<DebugUiState>().expect("state");
+            state.sky.paused = false;
+            state.sky.speed = 2.0;
+        }
+
+        sys_sky_control(&world);
+
+        let queued = world
+            .get_resource::<EnvironmentDescriptorResource>()
+            .expect("descriptor resource");
+        let queued = EnvironmentDescriptorLast(queued.0.clone());
+        let (hours, _) = queued.dynamic_sky_time().expect("queued dynamic sky");
+        assert!((hours - 15.0).abs() < 1e-5, "{hours}");
     }
 
     #[test]
