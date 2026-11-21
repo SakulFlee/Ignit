@@ -60,6 +60,7 @@ pub(crate) struct DebugViewRenderer {
     color_pipeline: RenderPipeline,
     depth_pipeline: RenderPipeline,
     depth_range_pipeline: ComputePipeline,
+    depth_smooth_pipeline: ComputePipeline,
     color_layout: BindGroupLayout,
     depth_layout: BindGroupLayout,
     depth_range_layout: BindGroupLayout,
@@ -239,7 +240,15 @@ impl DebugViewRenderer {
                 label: Some("Ignit::DebugViewDepthRangePipeline"),
                 layout: Some(&depth_range_pipeline_layout),
                 module: &depth_range_module,
-                entry_point: Some("cs_main"),
+                entry_point: Some("cs_reduce"),
+                compilation_options: Default::default(),
+                cache: None,
+            }),
+            depth_smooth_pipeline: device.create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some("Ignit::DebugViewDepthSmoothPipeline"),
+                layout: Some(&depth_range_pipeline_layout),
+                module: &depth_range_module,
+                entry_point: Some("cs_smooth"),
                 compilation_options: Default::default(),
                 cache: None,
             }),
@@ -254,7 +263,7 @@ impl DebugViewRenderer {
             }),
             depth_range: device.create_buffer(&BufferDescriptor {
                 label: Some("Ignit::DebugViewDepthRange"),
-                size: 8,
+                size: 16,
                 usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }),
@@ -316,6 +325,8 @@ impl DebugViewRenderer {
             pass.set_pipeline(&self.depth_range_pipeline);
             pass.set_bind_group(0, &range_bind_group, &[]);
             pass.dispatch_workgroups(32, 32, 1);
+            pass.set_pipeline(&self.depth_smooth_pipeline);
+            pass.dispatch_workgroups(1, 1, 1);
         }
 
         let mut entries = vec![
