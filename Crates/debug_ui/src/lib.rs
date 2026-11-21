@@ -42,7 +42,7 @@ use ignit_ecs_bridge::{
     ActiveCamera, AnimationClips, AnimationPlayer, CameraDescriptor, CameraDirty, CursorGrabState,
     DebugSelectedEntity, DeltaTime, DeviceResource, EngineEvent, EngineEvents,
     EnvironmentDescriptorLast, EnvironmentDescriptorResource, InputSnapshot, PerformanceLogConfig,
-    SkeletonComponent, SkinningMode, SkinningSettings, TimingsHistoryConfig, VolumetricSettings,
+    SkeletonComponent, TimingsHistoryConfig, VolumetricSettings,
 };
 use ignit_iced::{DEFAULT_REFRESH_INTERVAL, IcedLayerRenderer, IcedState, SMOOTH_REFRESH_INTERVAL};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -730,15 +730,8 @@ fn handle_debug_message(
             update_debug_settings(world, |settings| settings.selection = enabled);
             return;
         }
-        DebugMessage::SetComputeSkinning(enabled) => {
-            if let Some(mut settings) = world.get_resource_mut::<SkinningSettings>() {
-                settings.mode = if enabled {
-                    SkinningMode::Compute
-                } else {
-                    SkinningMode::Cpu
-                };
-            }
-            mark_debug_dirty(world);
+        DebugMessage::SetAnimationSkinning { entity, mode } => {
+            update_animation_player(world, entity, |player| player.skinning = mode);
             return;
         }
         DebugMessage::SetDebugBones(enabled) => {

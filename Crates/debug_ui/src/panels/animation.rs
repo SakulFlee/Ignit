@@ -6,9 +6,7 @@ use iced_widget::{button, checkbox, pick_list, slider, text};
 use iced_winit::core::{Color, Element, Length, Theme};
 
 use ignit_ecs::{Entity, World};
-use ignit_ecs_bridge::{
-    AnimationClips, AnimationPlayer, SkeletonComponent, SkinningMode, SkinningSettings,
-};
+use ignit_ecs_bridge::{AnimationClips, AnimationPlayer, SkeletonComponent, SkinningMode};
 
 use crate::state::Renderer as IcedRenderer;
 use crate::state::{DebugMessage, DebugUiState};
@@ -112,15 +110,20 @@ pub fn animation_panel<'a>(ecs: &World) -> Element<'a, DebugMessage, Theme, Iced
         .into(),
     );
 
-    let compute_skinning = ecs
-        .get_resource::<SkinningSettings>()
-        .is_some_and(|settings| settings.mode == SkinningMode::Compute);
+    rows.push(crate::panels::caption("Skinning", ACCENT));
     rows.push(
-        checkbox(compute_skinning)
-            .label("Compute skinning")
-            .text_size(12)
-            .on_toggle(DebugMessage::SetComputeSkinning)
-            .into(),
+        pick_list(
+            Some(player.skinning),
+            SkinningMode::ALL,
+            |mode: &SkinningMode| mode.label().to_string(),
+        )
+        .width(Length::Fill)
+        .text_size(12)
+        .on_select(move |mode| DebugMessage::SetAnimationSkinning {
+            entity: selected,
+            mode,
+        })
+        .into(),
     );
 
     rows.push(

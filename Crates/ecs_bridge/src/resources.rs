@@ -1466,20 +1466,28 @@ pub struct EnvironmentDescriptorResource(
     pub Option<ignit_world_environment::WorldEnvironmentDescriptor>,
 );
 
-/// How skinned models are deformed.
+/// How a skinned model is deformed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SkinningMode {
-    /// Deform vertices on the CPU and upload them.
+    /// Use compute skinning when the device path is available, CPU otherwise.
     #[default]
+    Auto,
+    /// Deform vertices on the CPU and upload them.
     Cpu,
     /// Deform vertices in a compute shader.
     Compute,
 }
 
-/// Runtime skinning mode selection.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SkinningSettings {
-    pub mode: SkinningMode,
+impl SkinningMode {
+    pub const ALL: [Self; 3] = [Self::Auto, Self::Cpu, Self::Compute];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Auto => "Auto",
+            Self::Cpu => "CPU",
+            Self::Compute => "Compute",
+        }
+    }
 }
 
 /// Most recently realized world environment descriptor.
