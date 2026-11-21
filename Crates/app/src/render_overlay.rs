@@ -37,6 +37,11 @@ pub struct RenderOverlayContext<'a> {
     pub ecs: &'a ignit_ecs::World,
     /// Screen dimensions (width, height) in pixels.
     pub screen_size: (f32, f32),
+    /// Scene depth attachment, when it matches the target resolution.
+    ///
+    /// Overlays that must respect scene occlusion (for example the world grid)
+    /// attach this to their pass and depth-test against it.
+    pub depth_view: Option<&'a wgpu::TextureView>,
 }
 
 /// How a layer renderer submits its work.

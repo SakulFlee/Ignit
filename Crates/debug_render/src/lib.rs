@@ -190,6 +190,7 @@ pub struct SphereInstance {
 /// GPU debug renderer for bounding spheres and camera frustum wireframes.
 pub struct DebugRenderer {
     pipeline: RenderPipeline,
+    depth_pipeline: RenderPipeline,
     wireframe_pipeline: Option<RenderPipeline>,
     bind_group_layout: BindGroupLayout,
     vertex_buffer: Buffer,
@@ -244,50 +245,64 @@ impl DebugRenderer {
             ],
         };
 
-        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("Debug Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(vertex_buffer_layout)],
-            },
-            primitive: PrimitiveState {
-                topology: PrimitiveTopology::LineList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: MultisampleState::default(),
-            fragment: Some(FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(ColorTargetState {
-                    format,
-                    blend: Some(BlendState {
-                        color: BlendComponent {
-                            src_factor: BlendFactor::SrcAlpha,
-                            dst_factor: BlendFactor::OneMinusSrcAlpha,
-                            operation: BlendOperation::Add,
-                        },
-                        alpha: BlendComponent {
-                            src_factor: BlendFactor::One,
-                            dst_factor: BlendFactor::Zero,
-                            operation: BlendOperation::Add,
-                        },
-                    }),
-                    write_mask: ColorWrites::ALL,
-                })],
+        let create_pipeline = |label: &str, depth_stencil: Option<wgpu::DepthStencilState>| {
+            device.create_render_pipeline(&RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&pipeline_layout),
+                vertex: VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[Some(vertex_buffer_layout.clone())],
+                },
+                primitive: PrimitiveState {
+                    topology: PrimitiveTopology::LineList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    unclipped_depth: false,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    conservative: false,
+                },
+                depth_stencil,
+                multisample: MultisampleState::default(),
+                fragment: Some(FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(ColorTargetState {
+                        format,
+                        blend: Some(BlendState {
+                            color: BlendComponent {
+                                src_factor: BlendFactor::SrcAlpha,
+                                dst_factor: BlendFactor::OneMinusSrcAlpha,
+                                operation: BlendOperation::Add,
+                            },
+                            alpha: BlendComponent {
+                                src_factor: BlendFactor::One,
+                                dst_factor: BlendFactor::Zero,
+                                operation: BlendOperation::Add,
+                            },
+                        }),
+                        write_mask: ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+
+        let pipeline = create_pipeline("Debug Pipeline", None);
+        let depth_pipeline = create_pipeline(
+            "Debug Depth-Tested Pipeline",
+            Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
             }),
-            multiview_mask: None,
-            cache: None,
-        });
+        );
 
         let vertex_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Debug Vertex Buffer"),
@@ -343,6 +358,7 @@ impl DebugRenderer {
 
         Self {
             pipeline,
+            depth_pipeline,
             wireframe_pipeline,
             bind_group_layout,
             vertex_buffer,
@@ -382,6 +398,7 @@ impl DebugRenderer {
         frustum_corners: Option<&[Point3<f32>; 8]>,
         frustum_color: [f32; 3],
         extra_lines: &[[f32; 6]],
+        depth_tested: bool,
         queue: &Queue,
     ) {
         if !self.enabled {
@@ -433,7 +450,12 @@ impl DebugRenderer {
         self.ensure_camera_bind_group(camera_buffer);
 
         let num_verts = verts.len() as u32 / 6;
-        render_pass.set_pipeline(&self.pipeline);
+        let pipeline = if depth_tested {
+            &self.depth_pipeline
+        } else {
+            &self.pipeline
+        };
+        render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, self.bind_group.as_ref().unwrap(), &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.draw(0..num_verts, 0..1);
@@ -649,9 +671,11 @@ impl LayerRenderer for DebugRenderOverlay {
         if settings.lights {
             extra_lines.extend(collect_light_lines(ctx.ecs));
         }
-        if settings.grid_axes {
-            extra_lines.extend(grid_axes_lines(ctx.ecs));
-        }
+        let grid_lines = if settings.grid_axes {
+            grid_axes_lines(ctx.ecs)
+        } else {
+            Vec::new()
+        };
         if settings.shadow_frusta {
             extra_lines.extend(shadow_frustum_lines(ctx.ecs));
         }
@@ -678,6 +702,50 @@ impl LayerRenderer for DebugRenderOverlay {
         let Some(enc) = ctx.encoder else {
             return;
         };
+
+        // The world grid is the one overlay that must respect scene geometry,
+        // so it gets its own depth-tested pass. Other debug lines stay
+        // readable through meshes, which is what their users expect.
+        if !grid_lines.is_empty() {
+            if let Some(depth_view) = ctx.depth_view {
+                let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Debug Grid RenderPass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: ctx.target_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                self.inner.render(
+                    &mut pass,
+                    ctx.camera_buffer,
+                    &[],
+                    None,
+                    [1.0, 1.0, 0.0],
+                    &grid_lines,
+                    true,
+                    ctx.queue,
+                );
+            } else {
+                extra_lines.extend(grid_lines);
+            }
+        }
+
         {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Debug Overlay RenderPass"),
@@ -704,6 +772,7 @@ impl LayerRenderer for DebugRenderOverlay {
                     Some(&frozen_corners),
                     [1.0, 1.0, 0.0],
                     &extra_lines,
+                    false,
                     ctx.queue,
                 );
                 if let Some(corners) = live_corners {
@@ -714,6 +783,7 @@ impl LayerRenderer for DebugRenderOverlay {
                         Some(&corners),
                         [0.0, 1.0, 1.0],
                         &[],
+                        false,
                         ctx.queue,
                     );
                 }
@@ -725,6 +795,7 @@ impl LayerRenderer for DebugRenderOverlay {
                     live_corners.as_ref(),
                     [1.0, 1.0, 0.0],
                     &extra_lines,
+                    false,
                     ctx.queue,
                 );
             }
