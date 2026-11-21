@@ -190,6 +190,23 @@ pub fn sys_sky_control(world: &World) {
     if !state.sky.paused {
         state.sky.hours = (state.sky.hours + delta.0 as f32 * state.sky.speed).rem_euclid(24.0);
     }
+    drop(state);
+
+    push_sky_change(world);
+}
+
+/// Queues the current sky clock values when they differ from the last push.
+///
+/// Runs from the sky-clock system and directly after sky UI messages, so
+/// changing the time while paused updates the sky on the next frame instead of
+/// waiting for the clock to resume.
+fn push_sky_change(world: &World) {
+    let Some(last) = world.get_resource::<EnvironmentDescriptorLast>() else {
+        return;
+    };
+    let Some(mut state) = world.get_resource_mut::<DebugUiState>() else {
+        return;
+    };
 
     let changed = (state.sky.hours - state.sky.pushed_hours).abs() > 1e-4
         || (state.sky.azimuth - state.sky.pushed_azimuth).abs() > 1e-4;
@@ -910,6 +927,8 @@ fn handle_debug_message(
     if let Some(mut state) = world.get_resource_mut::<DebugUiState>() {
         state.apply(&message);
     }
+
+    push_sky_change(world);
 }
 
 /// Crossfades one entity to an imported clip by name.
@@ -1157,6 +1176,42 @@ mod tests {
             .attach_component(&entity, AnimationClips(vec![idle, walk]))
             .expect("clips attach failed");
         (world, entity)
+    }
+
+    #[test]
+    fn paused_sky_clock_still_pushes_manual_time_changes() {
+        use ignit_world_environment::{
+            GeneratedSkyParameters, SunPosition, WorldEnvironmentDescriptor,
+        };
+
+        let mut world = World::new();
+        world.insert_resource(DeltaTime(0.0));
+        world.insert_resource(DebugUiState::new(KeyCode::F1));
+        world.insert_resource(EnvironmentDescriptorResource(None));
+        world.insert_resource(EnvironmentDescriptorLast(Some(
+            WorldEnvironmentDescriptor::Generated {
+                cube_face_size: 32,
+                sampling_type: WorldEnvironmentDescriptor::DEFAULT_SAMPLING_TYPE,
+                custom_specular_mip_level_count: None,
+                parameters: Some(GeneratedSkyParameters {
+                    sun_position: SunPosition::TimeOfDay { hours: 14.0 },
+                    ..GeneratedSkyParameters::default()
+                }),
+                dynamic: true,
+            },
+        )));
+
+        // Let the clock seed itself, then change the time while paused.
+        sys_sky_control(&world);
+        world.get_resource_mut::<DebugUiState>().unwrap().sky.hours = 5.0;
+        sys_sky_control(&world);
+
+        let queued = world
+            .get_resource::<EnvironmentDescriptorResource>()
+            .expect("descriptor resource");
+        let queued = EnvironmentDescriptorLast(queued.0.clone());
+        let (hours, _) = queued.dynamic_sky_time().expect("queued dynamic sky");
+        assert!((hours - 5.0).abs() < 1e-5, "{hours}");
     }
 
     #[test]
