@@ -11,11 +11,11 @@ use ignit::billboard::{
 };
 use ignit::cgmath::{InnerSpace, Point3, Quaternion, Rad, Rotation3, Vector3};
 use ignit::debug_render::DebugModule;
-use ignit::ecs::{Commands, ComponentAccess, IntoSystem, Res, ResMut, System, World};
+use ignit::ecs::{Commands, ComponentAccess, System, World};
 use ignit::ecs_bridge::{
-    ActiveCamera, CameraDescriptor, CursorGrabConfig, CursorGrabState, DeltaTime,
+    ActiveCamera, CameraDescriptor, CursorGrabConfig, CursorGrabState,
     EnvironmentDescriptorResource, ImportQueueResource, LightDescriptor, LightDirty,
-    ModelDescriptor, ModelDirty, ModelInstances, Position, Rotation, VolumetricQuality,
+    ModelDescriptor, ModelDirty, ModelInstances, Position, Rotation, SkyClock, VolumetricQuality,
     VolumetricSettings,
 };
 use ignit::importer::{ImportTask, gltf::GltfImport};
@@ -28,7 +28,7 @@ use ignit::renderer::{AntiAliasing, Camera2DUniform, Renderer2D};
 use ignit::resources::WorldEnvironmentDescriptor;
 use ignit::resources::{
     AlphaMode, GeneratedSkyParameters, MaterialShaderDescriptor, SamplingType, ShadowCaster,
-    SunPosition, Transform, VertexStageLayout,
+    Transform, VertexStageLayout,
 };
 use ignit::text::{DefaultFont, TextConfig};
 use ignit::twod::Vertex2D;
@@ -800,38 +800,6 @@ impl LayerRenderer for ShapeOverlay {
 const DYNAMIC_SKY_CUBE_SIZE: u32 = 256;
 const DYNAMIC_SKY_MIP_LEVELS: u32 = 3;
 
-fn sys_animate_dynamic_sky(
-    initial_hours: f32,
-) -> impl FnMut(Res<DeltaTime>, ResMut<EnvironmentDescriptorResource>) {
-    // The sun moves smoothly enough at 30 Hz; regenerating the full sky at
-    // render rate is unnecessary and dominates the dynamic-sky update count.
-    const UPDATE_INTERVAL: f32 = 1.0 / 30.0;
-
-    let mut clock = initial_hours;
-    let mut accumulator = UPDATE_INTERVAL;
-
-    move |dt: Res<DeltaTime>, mut descriptor: ResMut<EnvironmentDescriptorResource>| {
-        // Full day/night cycle every ~2 minutes of real time.
-        clock = (clock + dt.0 as f32 / 5.0).rem_euclid(24.0);
-        accumulator += dt.0 as f32;
-        if accumulator < UPDATE_INTERVAL {
-            return;
-        }
-        accumulator %= UPDATE_INTERVAL;
-
-        descriptor.0 = Some(WorldEnvironmentDescriptor::Generated {
-            cube_face_size: DYNAMIC_SKY_CUBE_SIZE,
-            sampling_type: SamplingType::GaussianBlur,
-            custom_specular_mip_level_count: Some(DYNAMIC_SKY_MIP_LEVELS),
-            parameters: Some(GeneratedSkyParameters {
-                sun_position: SunPosition::TimeOfDay { hours: clock },
-                ..GeneratedSkyParameters::default()
-            }),
-            dynamic: true,
-        });
-    }
-}
-
 impl Module for ProcgeoSceneModule {
     fn setup(
         &self,
@@ -916,6 +884,7 @@ impl Module for ProcgeoSceneModule {
                 dynamic: true,
             },
         )));
+        ecs.insert_resource(SkyClock::default());
 
         // Load scene from RON file
         let scene = match SceneBuilder::load("Scenes/procgeo_demo.ron") {
@@ -1248,7 +1217,6 @@ impl Module for ProcgeoSceneModule {
             Box::new(CursorToggle::new(true)),
             Box::new(HelmetAdjuster::new()),
             Box::new(moving_spot),
-            sys_animate_dynamic_sky(14.0).into_system(),
         ];
         if let Some(async_room_labels) = async_room_labels {
             systems.push(async_room_labels);
