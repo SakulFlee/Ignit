@@ -9,6 +9,7 @@ use cgmath::{Matrix4, SquareMatrix};
 use ignit_ecs::World;
 use ignit_ecs_bridge::{
     AnimationPlayer, DeviceResource, ModelRealization, QueueResource, SkeletonComponent,
+    SkinningMode, SkinningSettings,
 };
 
 /// Animation layers for the current clip and an optional fade-out layer.
@@ -34,7 +35,7 @@ fn animation_layers(player: &AnimationPlayer) -> Vec<ignit_animation::AnimationL
     }
 }
 
-/// Advances animation players and writes CPU-skinned vertices.
+/// Advances animation players and deforms skinned vertices.
 pub fn sys_animate(ecs: &World, delta_time: f32) {
     let (device, queue) = {
         let Some(device) = ecs.get_resource::<DeviceResource>() else {
@@ -44,6 +45,15 @@ pub fn sys_animate(ecs: &World, delta_time: f32) {
             return;
         };
         (device.0.clone(), queue.0.clone())
+    };
+
+    let compute = ecs
+        .get_resource::<SkinningSettings>()
+        .is_some_and(|settings| settings.mode == SkinningMode::Compute);
+    let compute_skinning = if compute {
+        ecs.get_resource::<crate::systems::skinning::ComputeSkinning>()
+    } else {
+        None
     };
 
     let mut updates = {
@@ -71,7 +81,7 @@ pub fn sys_animate(ecs: &World, delta_time: f32) {
 
             let mut player = players.components[player_index].clone();
             let model = Arc::clone(&models.components[model_index].0);
-            let Some(skin) = model.skin() else {
+            let Some(_skin) = model.skin() else {
                 continue;
             };
 
@@ -80,8 +90,11 @@ pub fn sys_animate(ecs: &World, delta_time: f32) {
             skeleton.apply_clips(&animation_layers(&player));
             skeleton.update_world(Matrix4::identity());
 
-            let vertices =
-                skin.skinned_vertices(&model.source_mesh().vertices, skeleton.skin_matrices());
+            let vertices = if compute {
+                Vec::new()
+            } else {
+                _skin.skinned_vertices(&model.source_mesh().vertices, skeleton.skin_matrices())
+            };
 
             updates.push((
                 player_index,
@@ -100,23 +113,48 @@ pub fn sys_animate(ecs: &World, delta_time: f32) {
         return;
     }
 
-    let Some(players) = ecs.get_component_store_mut::<AnimationPlayer>() else {
-        return;
-    };
-    let Some(skeletons) = ecs.get_component_store_mut::<SkeletonComponent>() else {
-        return;
-    };
-    let Some(models) = ecs.get_component_store_mut::<ModelRealization>() else {
-        return;
-    };
-
-    for (player_index, skeleton_index, model_index, player, skeleton, vertices) in updates.drain(..)
+    let mut compute_models = Vec::new();
     {
-        players.get_mut_store().components[player_index] = player;
-        skeletons.get_mut_store().components[skeleton_index] = SkeletonComponent(skeleton);
+        let Some(players) = ecs.get_component_store_mut::<AnimationPlayer>() else {
+            return;
+        };
+        let Some(skeletons) = ecs.get_component_store_mut::<SkeletonComponent>() else {
+            return;
+        };
+        let Some(models) = ecs.get_component_store_mut::<ModelRealization>() else {
+            return;
+        };
 
-        let model = Arc::make_mut(&mut models.get_mut_store().components[model_index].0);
-        model.update_skinned_vertices(&vertices, &device, &queue);
+        for (player_index, skeleton_index, model_index, player, skeleton, vertices) in
+            updates.drain(..)
+        {
+            let skin_matrices = compute.then(|| skeleton.skin_matrices().to_vec());
+
+            players.get_mut_store().components[player_index] = player;
+            skeletons.get_mut_store().components[skeleton_index] = SkeletonComponent(skeleton);
+
+            let model = Arc::make_mut(&mut models.get_mut_store().components[model_index].0);
+            if let Some(matrices) = skin_matrices {
+                model.update_skin_matrices(&matrices, &device, &queue);
+                compute_models.push(model_index);
+            } else {
+                model.update_skinned_vertices(&vertices, &device, &queue);
+            }
+        }
+    }
+
+    if let Some(skinner) = compute_skinning {
+        let Some(models) = ecs.get_component_store::<ModelRealization>() else {
+            return;
+        };
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Ignit::SkinCompute"),
+        });
+        for model_index in compute_models {
+            skinner.dispatch(&mut encoder, &device, &models.components[model_index].0);
+        }
+        queue.submit([encoder.finish()]);
     }
 }
 
@@ -136,8 +174,7 @@ mod tests {
     use ignit_mesh::{MeshDescriptor, Vertex};
     use ignit_model::{Model, ModelDescriptor};
 
-    #[test]
-    fn sys_animate_advances_players_and_skins_vertices() {
+    fn animated_world(compute: bool) -> World {
         let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
 
         let mesh = Arc::new(MeshDescriptor::new(
@@ -202,6 +239,16 @@ mod tests {
         .expect("skinned model");
 
         let mut world = ignit_ecs::World::new();
+        world.insert_resource(SkinningSettings {
+            mode: if compute {
+                SkinningMode::Compute
+            } else {
+                SkinningMode::Cpu
+            },
+        });
+        if compute {
+            world.insert_resource(crate::systems::skinning::ComputeSkinning::new(&device));
+        }
         world.insert_resource(DeviceResource(Arc::new(device)));
         world.insert_resource(QueueResource(Arc::new(queue)));
         let entity = world.spawn_entity();
@@ -220,6 +267,13 @@ mod tests {
             .attach_component(&entity, AnimationPlayer::new(clip))
             .unwrap();
 
+        world
+    }
+
+    #[test]
+    fn sys_animate_advances_players_and_skins_vertices() {
+        let world = animated_world(false);
+
         sys_animate(&world, 0.5);
 
         let players = world.get_component_store::<AnimationPlayer>().unwrap();
@@ -236,6 +290,19 @@ mod tests {
                 .abs()
                 < 1e-6
         );
+    }
+
+    #[test]
+    fn sys_animate_dispatches_compute_skinning() {
+        let world = animated_world(true);
+
+        sys_animate(&world, 0.5);
+
+        let models = world.get_component_store::<ModelRealization>().unwrap();
+        let model = &models.components[0].0;
+        assert!(model.skin_matrix_buffer().is_some());
+        assert!(model.compute_skinned_vertex_buffer().is_some());
+        assert_eq!(model.skinned_vertex_count(), 1);
     }
 
     #[test]

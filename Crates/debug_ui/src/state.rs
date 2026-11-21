@@ -139,6 +139,8 @@ pub enum DebugMessage {
     SetSkySpeed(f32),
     /// Pause or resume the dynamic sky clock.
     SetSkyPaused(bool),
+    /// Switch skinned models between CPU and compute deformation.
+    SetComputeSkinning(bool),
     /// Select the joint whose skin weights are visualized.
     SetAnimationWeightJoint { entity: Entity, joint: String },
     /// Set the HDR brightness where bloom starts.
@@ -650,6 +652,7 @@ impl DebugUiState {
             | DebugMessage::SetDebugBones(_)
             | DebugMessage::SetDebugWeights(_)
             | DebugMessage::SetAnimationWeightJoint { .. }
+            | DebugMessage::SetComputeSkinning(_)
             | DebugMessage::SetBloomThreshold(_)
             | DebugMessage::SetBloomIntensity(_)
             | DebugMessage::SetContrast(_)
