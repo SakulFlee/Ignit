@@ -746,7 +746,6 @@ impl<M: Clone + PartialEq + Send + Sync + 'static> LayerRendererTrait for IcedLa
                         && !captured.0
                     {
                         captured.capture();
-                        log::info!("iced: mouse look-drag captured by the UI");
                     }
                 }
                 MouseDragAction::Release => {
