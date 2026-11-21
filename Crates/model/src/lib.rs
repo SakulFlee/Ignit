@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use cgmath::{EuclideanSpace, Point3, Vector3, Vector4};
+use cgmath::{EuclideanSpace, Matrix4, Point3, Vector3, Vector4};
 use hashbrown::HashMap;
 use wgpu::{Buffer, BufferDescriptor, BufferUsages, Device, Queue, TextureFormat};
 
@@ -42,9 +42,18 @@ pub struct Model {
     source_materials: Vec<Arc<MaterialShaderDescriptor>>,
     /// Skin binding used by the CPU skinning path.
     source_skin: Option<Arc<ignit_animation::SkinData>>,
-    /// Optional GPU buffer receiving CPU-skinned vertices.
+    /// Optional GPU buffer receiving CPU- or compute-skinned vertices.
     skinned_vertex_buffer: Option<Buffer>,
     skinned_vertex_capacity: u32,
+    /// Rest-pose vertex bytes for compute skinning.
+    skin_rest_vertex_buffer: Option<Buffer>,
+    /// Per-vertex joint indices as `u32x4`, for compute skinning.
+    skin_joint_buffer: Option<Buffer>,
+    /// Per-vertex weights as `f32x4`, for compute skinning.
+    skin_weight_buffer: Option<Buffer>,
+    /// Skin matrices consumed by compute skinning.
+    skin_matrix_buffer: Option<Buffer>,
+    skin_matrix_capacity: u32,
     instance_count: u32,
     instance_capacity: u32,
     instance_buffer: Buffer,
@@ -127,13 +136,62 @@ impl Model {
             device.create_buffer(&BufferDescriptor {
                 label: Some("Model Skinned Vertex Buffer"),
                 size: u64::from(skinned_vertex_capacity) * Vertex::BYTE_SIZE as u64,
-                usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+                usage: BufferUsages::VERTEX | BufferUsages::COPY_DST | BufferUsages::STORAGE,
                 mapped_at_creation: false,
             })
         });
         if let Some(buffer) = &skinned_vertex_buffer {
             queue.write_buffer(buffer, 0, &vertices_to_bytes(&descriptor.mesh.vertices));
         }
+
+        let (skin_rest_vertex_buffer, skin_joint_buffer, skin_weight_buffer) =
+            match descriptor.skin.as_ref() {
+                Some(skin) => {
+                    let rest = vertices_to_bytes(&descriptor.mesh.vertices);
+                    let rest_buffer = device.create_buffer(&BufferDescriptor {
+                        label: Some("Model Skin Rest Vertex Buffer"),
+                        size: rest.len().max(4) as u64,
+                        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    });
+                    queue.write_buffer(&rest_buffer, 0, &rest);
+
+                    let joints = skin_joints_to_bytes(skin);
+                    let joint_buffer = device.create_buffer(&BufferDescriptor {
+                        label: Some("Model Skin Joint Buffer"),
+                        size: joints.len().max(4) as u64,
+                        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    });
+                    queue.write_buffer(&joint_buffer, 0, &joints);
+
+                    let weights = skin_weights_to_bytes(skin);
+                    let weight_buffer = device.create_buffer(&BufferDescriptor {
+                        label: Some("Model Skin Weight Buffer"),
+                        size: weights.len().max(4) as u64,
+                        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    });
+                    queue.write_buffer(&weight_buffer, 0, &weights);
+
+                    (Some(rest_buffer), Some(joint_buffer), Some(weight_buffer))
+                }
+                None => (None, None, None),
+            };
+
+        let skin_matrix_capacity = descriptor
+            .skeleton
+            .as_ref()
+            .map(|skeleton| skeleton.joints.len().max(1) as u32)
+            .unwrap_or(1);
+        let skin_matrix_buffer = descriptor.skin.as_ref().map(|_| {
+            device.create_buffer(&BufferDescriptor {
+                label: Some("Model Skin Matrix Buffer"),
+                size: u64::from(skin_matrix_capacity) * 64,
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        });
 
         let mut model = Self {
             mesh,
@@ -143,6 +201,11 @@ impl Model {
             source_skin: descriptor.skin.clone(),
             skinned_vertex_buffer,
             skinned_vertex_capacity,
+            skin_rest_vertex_buffer,
+            skin_joint_buffer,
+            skin_weight_buffer,
+            skin_matrix_buffer,
+            skin_matrix_capacity,
             instance_count: 0,
             instance_capacity,
             instance_buffer,
@@ -260,6 +323,64 @@ impl Model {
         }
     }
 
+    /// Rest-pose vertex storage buffer used by compute skinning.
+    pub fn skin_rest_buffer(&self) -> Option<&Buffer> {
+        self.skin_rest_vertex_buffer.as_ref()
+    }
+
+    /// Per-vertex joint indices used by compute skinning.
+    pub fn skin_joint_buffer(&self) -> Option<&Buffer> {
+        self.skin_joint_buffer.as_ref()
+    }
+
+    /// Per-vertex weights used by compute skinning.
+    pub fn skin_weight_buffer(&self) -> Option<&Buffer> {
+        self.skin_weight_buffer.as_ref()
+    }
+
+    /// Skin-matrix storage buffer used by compute skinning.
+    pub fn skin_matrix_buffer(&self) -> Option<&Buffer> {
+        self.skin_matrix_buffer.as_ref()
+    }
+
+    /// Output buffer written by compute skinning.
+    pub fn compute_skinned_vertex_buffer(&self) -> Option<&Buffer> {
+        self.skinned_vertex_buffer.as_ref()
+    }
+
+    /// Number of vertices in the skinned output.
+    pub fn skinned_vertex_count(&self) -> u32 {
+        self.source_mesh.vertices.len() as u32
+    }
+
+    /// Uploads the skin matrices consumed by compute skinning.
+    pub fn update_skin_matrices(
+        &mut self,
+        matrices: &[Matrix4<f32>],
+        device: &Device,
+        queue: &Queue,
+    ) {
+        if self.source_skin.is_none() {
+            return;
+        }
+
+        let required = matrices.len().max(1) as u32;
+        if self.skin_matrix_buffer.is_none() || required > self.skin_matrix_capacity {
+            let capacity = required.next_power_of_two().max(1);
+            self.skin_matrix_buffer = Some(device.create_buffer(&BufferDescriptor {
+                label: Some("Model Skin Matrix Buffer"),
+                size: u64::from(capacity) * 64,
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+            self.skin_matrix_capacity = capacity;
+        }
+
+        if let Some(buffer) = &self.skin_matrix_buffer {
+            queue.write_buffer(buffer, 0, &matrices_to_bytes(matrices));
+        }
+    }
+
     pub fn materials(&self) -> &Vec<Arc<MaterialShader>> {
         &self.materials
     }
@@ -330,6 +451,38 @@ fn vertices_to_bytes(vertices: &[Vertex]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(vertices.len() * Vertex::BYTE_SIZE);
     for vertex in vertices {
         bytes.extend(vertex.to_bytes());
+    }
+    bytes
+}
+
+fn skin_joints_to_bytes(skin: &ignit_animation::SkinData) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(skin.len() * 16);
+    for (joints, _) in skin.joints.iter().zip(skin.weights.iter()) {
+        for joint in joints {
+            bytes.extend_from_slice(&u32::from(*joint).to_le_bytes());
+        }
+    }
+    bytes
+}
+
+fn skin_weights_to_bytes(skin: &ignit_animation::SkinData) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(skin.len() * 16);
+    for (_, weights) in skin.joints.iter().zip(skin.weights.iter()) {
+        for weight in weights {
+            bytes.extend_from_slice(&weight.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+fn matrices_to_bytes(matrices: &[Matrix4<f32>]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(matrices.len() * 64);
+    for matrix in matrices {
+        for column in 0..4 {
+            for row in 0..4 {
+                bytes.extend_from_slice(&matrix[column][row].to_le_bytes());
+            }
+        }
     }
     bytes
 }

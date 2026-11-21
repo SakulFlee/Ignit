@@ -1466,6 +1466,22 @@ pub struct EnvironmentDescriptorResource(
     pub Option<ignit_world_environment::WorldEnvironmentDescriptor>,
 );
 
+/// How skinned models are deformed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SkinningMode {
+    /// Deform vertices on the CPU and upload them.
+    #[default]
+    Cpu,
+    /// Deform vertices in a compute shader.
+    Compute,
+}
+
+/// Runtime skinning mode selection.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SkinningSettings {
+    pub mode: SkinningMode,
+}
+
 /// Most recently realized world environment descriptor.
 ///
 /// [`EnvironmentDescriptorResource`] is consumed when the environment is
