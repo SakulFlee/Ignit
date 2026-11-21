@@ -284,8 +284,8 @@ pub struct RendererCpuTimings {
 
 /// Records main-encoder overlays and returns command buffers to append to the
 /// scene submission.
-pub type OverlayCallback<'a> =
-    dyn FnMut(&mut wgpu::CommandEncoder) -> Vec<wgpu::CommandBuffer> + 'a;
+pub type OverlayCallback<'a> = dyn FnMut(&mut wgpu::CommandEncoder, Option<&wgpu::TextureView>) -> Vec<wgpu::CommandBuffer>
+    + 'a;
 
 /// Records compute work into the scene encoder before the scene graph runs.
 pub type ComputeCallback<'a> = dyn FnMut(&mut CommandEncoder) + 'a;
@@ -1775,8 +1775,11 @@ impl Renderer {
             .expect("render graph must be compiled before execution");
         self.smaa = smaa;
 
+        // Depth is recorded at the internal render resolution, so it can only
+        // be attached to the final target when no upscaling is in the way.
+        let overlay_depth = (self.resolution == self.surface_resolution).then_some(&depth.view);
         let overlay_commands = if let Some(overlay) = overlay {
-            overlay(&mut command_encoder)
+            overlay(&mut command_encoder, overlay_depth)
         } else {
             Vec::new()
         };

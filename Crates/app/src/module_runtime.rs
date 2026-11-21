@@ -1038,49 +1038,52 @@ impl ModuleRuntime {
                     }
                 }
             };
-            let mut overlay_callback =
-                |encoder: &mut wgpu::CommandEncoder| -> Vec<wgpu::CommandBuffer> {
-                    let start = Instant::now();
-                    for layer in layer_renderers.iter_mut() {
-                        if layer.submission() != crate::OverlaySubmission::MainEncoder {
-                            continue;
-                        }
-                        let ctx = crate::RenderOverlayContext {
-                            target_view: &view,
-                            camera_buffer,
-                            device,
-                            queue,
-                            encoder: Some(encoder),
-                            ecs,
-                            screen_size,
-                        };
-                        layer.render(ctx);
+            let mut overlay_callback = |encoder: &mut wgpu::CommandEncoder,
+                                        depth_view: Option<&wgpu::TextureView>|
+             -> Vec<wgpu::CommandBuffer> {
+                let start = Instant::now();
+                for layer in layer_renderers.iter_mut() {
+                    if layer.submission() != crate::OverlaySubmission::MainEncoder {
+                        continue;
                     }
-                    d_overlay_main.set(start.elapsed());
+                    let ctx = crate::RenderOverlayContext {
+                        target_view: &view,
+                        camera_buffer,
+                        device,
+                        queue,
+                        encoder: Some(encoder),
+                        ecs,
+                        screen_size,
+                        depth_view,
+                    };
+                    layer.render(ctx);
+                }
+                d_overlay_main.set(start.elapsed());
 
-                    // Main-submit layers record their own command buffers, but
-                    // those buffers join the scene submission below so the
-                    // frame still costs a single `queue.submit`.
-                    let start = Instant::now();
-                    let mut commands = Vec::new();
-                    for layer in layer_renderers.iter_mut() {
-                        if layer.submission() != crate::OverlaySubmission::MainSubmit {
-                            continue;
-                        }
-                        let ctx = crate::RenderOverlayContext {
-                            target_view: &view,
-                            camera_buffer,
-                            device,
-                            queue,
-                            encoder: None,
-                            ecs,
-                            screen_size,
-                        };
-                        commands.extend(layer.render_main_submit(ctx));
+                // Main-submit layers record their own command buffers, but
+                // those buffers join the scene submission below so the
+                // frame still costs a single `queue.submit`.
+                let start = Instant::now();
+                let mut commands = Vec::new();
+                for layer in layer_renderers.iter_mut() {
+                    if layer.submission() != crate::OverlaySubmission::MainSubmit {
+                        continue;
                     }
-                    d_overlay_submit.set(start.elapsed());
-                    commands
-                };
+                    let ctx = crate::RenderOverlayContext {
+                        target_view: &view,
+                        camera_buffer,
+                        device,
+                        queue,
+                        encoder: None,
+                        ecs,
+                        screen_size,
+                        depth_view: None,
+                    };
+                    commands.extend(layer.render_main_submit(ctx));
+                }
+                d_overlay_submit.set(start.elapsed());
+                commands
+            };
 
             let compute_arg: Option<&mut ignit_renderer::ComputeCallback<'_>> = if has_compute {
                 Some(&mut compute_callback)
@@ -1158,6 +1161,7 @@ impl ModuleRuntime {
                     encoder: None,
                     ecs: &self.ecs_world,
                     screen_size,
+                    depth_view: None,
                 };
                 layer.render(ctx);
                 let timings = layer.take_render_timings();
