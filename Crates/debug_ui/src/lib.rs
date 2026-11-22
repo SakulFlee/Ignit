@@ -654,6 +654,10 @@ fn handle_debug_message(
             update_debug_settings(world, |settings| settings.selection = enabled);
             return;
         }
+        DebugMessage::SetDebugShadowLayer(layer) => {
+            update_render_settings(world, |settings| settings.debug_shadow_layer = layer);
+            return;
+        }
         DebugMessage::SetShadowPcf(pcf) => {
             if let Some(mut settings) = world.get_resource_mut::<ShadowSettings>() {
                 settings.pcf = pcf;

@@ -1490,6 +1490,10 @@ impl SkinningMode {
     }
 }
 
+/// Number of layers in the shadow depth array, for debug UI selection.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ShadowLayerCount(pub u32);
+
 /// Shadow comparison-tap quality.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ShadowPcf {

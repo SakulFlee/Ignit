@@ -131,6 +131,8 @@ pub enum DebugMessage {
     SetDebugBones(bool),
     /// Toggle skin-weight visualization.
     SetDebugWeights(bool),
+    /// Select which shadow-map layer the debug view shows.
+    SetDebugShadowLayer(u32),
     /// Select the shadow comparison-tap quality.
     SetShadowPcf(ShadowPcf),
     /// Set the dynamic sky's time of day, in hours since midnight.
@@ -605,6 +607,7 @@ impl DebugUiState {
             | DebugMessage::SetDebugWeights(_)
             | DebugMessage::SetAnimationWeightJoint { .. }
             | DebugMessage::SetAnimationSkinning { .. }
+            | DebugMessage::SetDebugShadowLayer(_)
             | DebugMessage::SetShadowPcf(_)
             | DebugMessage::SetSkyHours(_)
             | DebugMessage::SetSkyAzimuth(_)

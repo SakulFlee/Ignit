@@ -487,6 +487,7 @@ pub struct Renderer {
     anti_aliasing: AntiAliasing,
     smaa_quality: SmaaQuality,
     debug_view: DebugView,
+    debug_shadow_layer: u32,
     debug_view_renderer: DebugViewRenderer,
     exposure: f32,
     bloom_enabled: bool,
@@ -619,6 +620,14 @@ impl Renderer {
 
     pub fn smaa_quality(&self) -> SmaaQuality {
         self.smaa_quality
+    }
+
+    pub fn set_debug_shadow_layer(&mut self, layer: u32) {
+        self.debug_shadow_layer = layer;
+    }
+
+    pub fn debug_shadow_layer(&self) -> u32 {
+        self.debug_shadow_layer
     }
 
     pub fn set_debug_view(&mut self, debug_view: DebugView) {
@@ -803,6 +812,7 @@ impl Renderer {
             anti_aliasing: AntiAliasing::default(),
             smaa_quality: SmaaQuality::default(),
             debug_view: DebugView::Off,
+            debug_shadow_layer: 0,
             debug_view_renderer: DebugViewRenderer::new(device, surface_texture_format),
             exposure: 1.0,
             bloom_enabled: false,
@@ -1761,7 +1771,12 @@ impl Renderer {
                             DebugView::ShadowMap => self
                                 .shadow_renderer
                                 .as_ref()
-                                .and_then(|shadow| shadow.layer_views().first())
+                                .and_then(|shadow| {
+                                    shadow
+                                        .layer_views()
+                                        .get(self.debug_shadow_layer as usize)
+                                        .or_else(|| shadow.layer_views().first())
+                                })
                                 .map(|view| (view, true))
                                 .or(Some((&depth.view, true))),
                         };

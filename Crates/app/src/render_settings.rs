@@ -46,6 +46,8 @@ pub struct RenderSettings {
     pub smaa_quality: SmaaQuality,
     /// Display a raw render-stage buffer instead of the normal final image.
     pub debug_view: DebugView,
+    /// Shadow-map array layer shown by [`DebugView::ShadowMap`].
+    pub debug_shadow_layer: u32,
     /// Exposure multiplier applied before the tonemap curve.
     pub exposure: f32,
     /// Whether HDR glare is sampled during tonemapping.
@@ -84,6 +86,7 @@ impl Default for RenderSettings {
             anti_aliasing: AntiAliasing::Fxaa,
             smaa_quality: SmaaQuality::default(),
             debug_view: DebugView::Off,
+            debug_shadow_layer: 0,
             exposure: 1.0,
             bloom_enabled: false,
             bloom_threshold: 4.0,

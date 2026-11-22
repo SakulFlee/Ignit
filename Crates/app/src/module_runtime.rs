@@ -52,8 +52,9 @@ use ignit_ecs_bridge::{
     STAGE_REALIZE_LIGHTS, STAGE_REALIZE_MODELS, STAGE_RENDER_TOTAL, STAGE_SCENE_ENCODE,
     STAGE_SCENE_SUBMIT, STAGE_STAGGER, STAGE_SURFACE_ACQ, STAGE_SURFACE_ACQUIRE,
     STAGE_SURFACE_LOCK, STAGE_SURFACE_VIEW, STAGE_TIMESTAMP_READBACK, STAGE_UI_EVENTS,
-    STAGE_UPDATE, STAGE_VOLUMETRICS, ShadowDebugData, ShadowSettings, SurfaceFormatResource,
-    TIMING_STAGES, TimingsHistoryConfig, TotalTime, VolumetricSettings, WindowSize,
+    STAGE_UPDATE, STAGE_VOLUMETRICS, ShadowDebugData, ShadowLayerCount, ShadowSettings,
+    SurfaceFormatResource, TIMING_STAGES, TimingsHistoryConfig, TotalTime, VolumetricSettings,
+    WindowSize,
 };
 use ignit_renderer::GPU_TIMESTAMP_COUNT;
 
@@ -782,6 +783,9 @@ impl ModuleRuntime {
             if renderer.debug_view() != settings.debug_view {
                 renderer.set_debug_view(settings.debug_view);
             }
+            if renderer.debug_shadow_layer() != settings.debug_shadow_layer {
+                renderer.set_debug_shadow_layer(settings.debug_shadow_layer);
+            }
             renderer.set_glare_stars(
                 settings.glare_stars,
                 settings.glare_star_arms,
@@ -982,6 +986,8 @@ impl ModuleRuntime {
         {
             self.ecs_world
                 .insert_resource(ShadowDebugData(*shadow.gpu_data()));
+            self.ecs_world
+                .insert_resource(ShadowLayerCount(shadow.layer_count()));
         }
 
         // Keep a borrow of the cull resource for the render call below.
@@ -1968,6 +1974,7 @@ impl ApplicationHandler for ModuleRuntime {
                     anti_aliasing: self.settings.anti_aliasing,
                     smaa_quality: self.settings.smaa_quality,
                     debug_view: ignit_renderer::DebugView::Off,
+                    debug_shadow_layer: 0,
                     exposure: self.settings.exposure,
                     bloom_enabled: self.settings.bloom_enabled,
                     bloom_threshold: self.settings.bloom_threshold,
