@@ -71,7 +71,8 @@ impl ShadowGpuData {
                 near_plane: 0.1,
                 _padding: [0; 2],
             }; MAX_SHADOW_SLOTS as usize],
-            header: [0; 4],
+            // [cascade_count, pcf_taps, ..]; 9 taps matches the default quality.
+            header: [0, 9, 0, 0],
             first_slot: [[0; 4]; 64],
             slot_count: [[0; 4]; 64],
         }

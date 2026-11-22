@@ -38,7 +38,8 @@ use ignit_ecs::{ComponentAccess, Entity, IntoSystem, Res, ResMut, System, World}
 use ignit_ecs_bridge::{
     ActiveCamera, AnimationClips, AnimationPlayer, CameraDescriptor, CameraDirty, CursorGrabState,
     DebugSelectedEntity, DeviceResource, EngineEvent, EngineEvents, InputSnapshot,
-    PerformanceLogConfig, SkeletonComponent, SkyClock, TimingsHistoryConfig, VolumetricSettings,
+    PerformanceLogConfig, ShadowSettings, SkeletonComponent, SkyClock, TimingsHistoryConfig,
+    VolumetricSettings,
 };
 use ignit_iced::{DEFAULT_REFRESH_INTERVAL, IcedLayerRenderer, IcedState, SMOOTH_REFRESH_INTERVAL};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -651,6 +652,13 @@ fn handle_debug_message(
         }
         DebugMessage::SetDebugSelection(enabled) => {
             update_debug_settings(world, |settings| settings.selection = enabled);
+            return;
+        }
+        DebugMessage::SetShadowPcf(pcf) => {
+            if let Some(mut settings) = world.get_resource_mut::<ShadowSettings>() {
+                settings.pcf = pcf;
+            }
+            mark_debug_dirty(world);
             return;
         }
         DebugMessage::SetSkyHours(hours) => {

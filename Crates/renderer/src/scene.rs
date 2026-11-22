@@ -109,6 +109,8 @@ pub struct RenderScene {
     pub glare_lights: Vec<GlareLight>,
     /// Optional volumetric lighting/fog settings.
     pub volumetrics: Option<VolumetricSettings>,
+    /// Comparison taps used by shadowed shading.
+    pub shadow_pcf_taps: u32,
 }
 
 impl RenderScene {
@@ -130,6 +132,10 @@ impl RenderScene {
                 .unwrap_or(0),
             glare_lights: collect_glare_lights(world),
             volumetrics: world.get_resource::<VolumetricSettings>().map(|s| *s),
+            shadow_pcf_taps: world
+                .get_resource::<ignit_ecs_bridge::ShadowSettings>()
+                .map(|settings| settings.pcf.taps())
+                .unwrap_or(9),
         }
     }
 }

@@ -6,7 +6,7 @@ use ignit_app::OrthographicForwardMode;
 use ignit_camera::ProjectionMode;
 use ignit_debug_render::BoundsMode;
 use ignit_ecs::Entity;
-use ignit_ecs_bridge::{SkinningMode, TIMING_STAGES, VolumetricQuality};
+use ignit_ecs_bridge::{ShadowPcf, SkinningMode, TIMING_STAGES, VolumetricQuality};
 use ignit_renderer::{AntiAliasing, DebugView, SmaaQuality};
 
 /// The Iced renderer type the panels draw with.
@@ -131,6 +131,8 @@ pub enum DebugMessage {
     SetDebugBones(bool),
     /// Toggle skin-weight visualization.
     SetDebugWeights(bool),
+    /// Select the shadow comparison-tap quality.
+    SetShadowPcf(ShadowPcf),
     /// Set the dynamic sky's time of day, in hours since midnight.
     SetSkyHours(f32),
     /// Set the dynamic sky's sun azimuth, in radians.
@@ -603,6 +605,7 @@ impl DebugUiState {
             | DebugMessage::SetDebugWeights(_)
             | DebugMessage::SetAnimationWeightJoint { .. }
             | DebugMessage::SetAnimationSkinning { .. }
+            | DebugMessage::SetShadowPcf(_)
             | DebugMessage::SetSkyHours(_)
             | DebugMessage::SetSkyAzimuth(_)
             | DebugMessage::SetSkySpeed(_)

@@ -52,8 +52,8 @@ use ignit_ecs_bridge::{
     STAGE_REALIZE_LIGHTS, STAGE_REALIZE_MODELS, STAGE_RENDER_TOTAL, STAGE_SCENE_ENCODE,
     STAGE_SCENE_SUBMIT, STAGE_STAGGER, STAGE_SURFACE_ACQ, STAGE_SURFACE_ACQUIRE,
     STAGE_SURFACE_LOCK, STAGE_SURFACE_VIEW, STAGE_TIMESTAMP_READBACK, STAGE_UI_EVENTS,
-    STAGE_UPDATE, STAGE_VOLUMETRICS, ShadowDebugData, SurfaceFormatResource, TIMING_STAGES,
-    TimingsHistoryConfig, TotalTime, VolumetricSettings, WindowSize,
+    STAGE_UPDATE, STAGE_VOLUMETRICS, ShadowDebugData, ShadowSettings, SurfaceFormatResource,
+    TIMING_STAGES, TimingsHistoryConfig, TotalTime, VolumetricSettings, WindowSize,
 };
 use ignit_renderer::GPU_TIMESTAMP_COUNT;
 
@@ -462,6 +462,7 @@ impl ModuleRuntime {
         runtime
             .ecs_world
             .insert_resource(crate::CameraControlSettings::default());
+        runtime.ecs_world.insert_resource(ShadowSettings::default());
         runtime.ecs_world.insert_resource(FpsStats::default());
         runtime.ecs_world.insert_resource(FrameTimings::default());
         runtime

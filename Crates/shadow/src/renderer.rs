@@ -371,9 +371,12 @@ impl ShadowRenderer {
         device: &Device,
         queue: &Queue,
         dirty_set: &std::collections::HashSet<u32>,
+        pcf_taps: u32,
     ) {
         let prev_gpu_data = self.gpu_data;
         self.gpu_data = ShadowGpuData::new();
+        // header[1] carries the comparison-tap count used by PBR shading.
+        self.gpu_data.header[1] = pcf_taps.max(1);
 
         // Pre-compute needed texture capacities BEFORE the render loop to
         // avoid mid-loop reallocations that silently discard previously-rendered

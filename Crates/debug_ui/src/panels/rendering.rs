@@ -10,8 +10,8 @@ use ignit_camera::ProjectionMode;
 use ignit_debug_render::{BoundsMode, DebugToggleState};
 use ignit_ecs::World;
 use ignit_ecs_bridge::{
-    ActiveCamera, CameraDescriptor, LightDescriptor, ModelDescriptor, SkyClock, VolumetricQuality,
-    VolumetricSettings, WindowSize,
+    ActiveCamera, CameraDescriptor, LightDescriptor, ModelDescriptor, ShadowPcf, ShadowSettings,
+    SkyClock, VolumetricQuality, VolumetricSettings, WindowSize,
 };
 use ignit_material_shader::RenderQueue;
 use ignit_renderer::{AntiAliasing, DebugView, SmaaQuality};
@@ -256,6 +256,21 @@ pub fn rendering_panel<'a>(ecs: &World) -> Element<'a, DebugMessage, Theme, Iced
     );
 
     rows.push(crate::panels::divider());
+    let shadow_pcf = ecs
+        .get_resource::<ShadowSettings>()
+        .map(|settings| settings.pcf)
+        .unwrap_or_default();
+    rows.push(crate::panels::caption("Shadows", ACCENT));
+    rows.push(
+        pick_list(Some(shadow_pcf), ShadowPcf::ALL, |pcf: &ShadowPcf| {
+            pcf.label().to_string()
+        })
+        .width(Length::Fill)
+        .text_size(12)
+        .on_select(DebugMessage::SetShadowPcf)
+        .into(),
+    );
+
     rows.push(crate::panels::caption("Rendering path", ACCENT));
     let model_count = ecs
         .get_component_store::<ModelDescriptor>()
