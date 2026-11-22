@@ -1,4 +1,30 @@
+// PBR shading keeps the 3x3 comparison kernel; volumetrics use the single
+// tap below because fog is low-frequency and pays for every light in every
+// froxel.
 fn compute_shadow_for_light(world_pos: vec3<f32>, view_depth: f32, light_idx: u32, normal: vec3<f32>) -> f32 {
+    return compute_shadow_for_light_with_taps(world_pos, view_depth, light_idx, normal, true);
+}
+
+fn compute_shadow_for_light_single_tap(world_pos: vec3<f32>, view_depth: f32, light_idx: u32, normal: vec3<f32>) -> f32 {
+    return compute_shadow_for_light_with_taps(world_pos, view_depth, light_idx, normal, false);
+}
+
+fn sample_shadow_2d_single(layer: u32, shadow_coord: vec3<f32>, depth: f32) -> f32 {
+    let dims = vec2<f32>(textureDimensions(shadow_map_array));
+    let texel = 1.0 / dims;
+    let clamped_uv = clamp(shadow_coord.xy, texel, vec2<f32>(1.0) - texel);
+    return textureSampleCompareLevel(
+        shadow_map_array, shadow_sampler, clamped_uv, i32(layer), depth
+    );
+}
+
+fn compute_shadow_for_light_with_taps(
+    world_pos: vec3<f32>,
+    view_depth: f32,
+    light_idx: u32,
+    normal: vec3<f32>,
+    pcf: bool,
+) -> f32 {
     var factor = 1.0;
     let light = light_store[light_idx];
 
@@ -33,7 +59,11 @@ fn compute_shadow_for_light(world_pos: vec3<f32>, view_depth: f32, light_idx: u3
             let ndc = clip_pos.xyz / clip_pos.w;
             let shadow_coord = vec3<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, ndc.z);
             if (all(shadow_coord.xy >= vec2<f32>(0.0)) && all(shadow_coord.xy < vec2<f32>(1.0)) && shadow_coord.z >= 0.0 && shadow_coord.z <= 1.0) {
-                factor = sample_shadow_2d_pcf(slot.layer_index, shadow_coord, shadow_coord.z - bias);
+                if (pcf) {
+                    factor = sample_shadow_2d_pcf(slot.layer_index, shadow_coord, shadow_coord.z - bias);
+                } else {
+                    factor = sample_shadow_2d_single(slot.layer_index, shadow_coord, shadow_coord.z - bias);
+                }
                 return factor;
             }
         } else if (slot.shadow_type == SHADOW_TYPE_SPOT) {
@@ -52,7 +82,11 @@ fn compute_shadow_for_light(world_pos: vec3<f32>, view_depth: f32, light_idx: u3
             let ndc = clip_pos.xyz / clip_pos.w;
             let shadow_coord = vec3<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, ndc.z);
             if (all(shadow_coord.xy >= vec2<f32>(0.0)) && all(shadow_coord.xy < vec2<f32>(1.0)) && shadow_coord.z >= 0.0 && shadow_coord.z <= 1.0) {
-                factor = sample_shadow_2d_pcf(slot.layer_index, shadow_coord, shadow_coord.z - bias * bias_scale);
+                if (pcf) {
+                    factor = sample_shadow_2d_pcf(slot.layer_index, shadow_coord, shadow_coord.z - bias * bias_scale);
+                } else {
+                    factor = sample_shadow_2d_single(slot.layer_index, shadow_coord, shadow_coord.z - bias * bias_scale);
+                }
                 return factor;
             }
             continue;

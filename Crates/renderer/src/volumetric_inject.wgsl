@@ -157,7 +157,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let phase_denom = max(1.0 + g * g - 2.0 * g * cos_theta, 1.0e-4);
         let phase = (1.0 - g * g) / (4.0 * 3.14159265 * pow(phase_denom, 1.5));
 
-        let shadow = compute_shadow_for_light(
+        let shadow = compute_shadow_for_light_single_tap(
             world_position,
             view_depth,
             i,
