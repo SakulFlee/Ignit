@@ -24,7 +24,9 @@ fn surface(fragment_data: FragmentData) -> Surface {
     );
     let albedo_factored = albedo_sample.rgb * pbr_factors.albedo_factor.rgb;
     let albedo_clamped = clamp(albedo_factored, vec3(0.0), vec3(1.0));
-    out.albedo = pow(albedo_clamped, vec3(camera.global_gamma));
+    // sRGB albedo textures are decoded by the sampler; procedural colours are
+    // uploaded in an sRGB format for the same reason. Do not decode again here.
+    out.albedo = albedo_clamped;
     out.alpha = clamp(albedo_sample.a * pbr_factors.alpha_factor, 0.0, 1.0);
 
     let metallic_sample = textureSample(
@@ -54,7 +56,8 @@ fn surface(fragment_data: FragmentData) -> Surface {
         fragment_data.uv
     ).rgb;
     let emissive_clamped = clamp(emissive_sample, vec3(0.0), vec3(1.0));
-    out.emissive = pow(emissive_clamped, vec3(camera.global_gamma));
+    // Same as albedo: the sRGB texture fetch already returns linear values.
+    out.emissive = emissive_clamped;
 
     return out;
 }
