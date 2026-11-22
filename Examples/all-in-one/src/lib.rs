@@ -1151,7 +1151,10 @@ impl Module for ProcgeoSceneModule {
             .unwrap();
         ecs.attach_component(&r8_light, LightDirty(true)).unwrap();
 
-        // ── R9/R10 — omni lights over the Fox animation gallery ─────
+        // ── R9/R10 — shadow-casting omni lights over the Fox gallery ─
+        // The foxes are the only animated models in the scene. Without a
+        // shadow caster here the room is lit but the animals have no contact
+        // shadows, which makes the animation look like it floats.
         for room_x in [10.0, 20.0f32] {
             let light = ecs.spawn_entity();
             ecs.attach_component(
@@ -1162,6 +1165,14 @@ impl Module for ProcgeoSceneModule {
             ecs.attach_component(&light, Position(Point3::new(room_x, 5.5, 20.0)))
                 .unwrap();
             ecs.attach_component(&light, LightDirty(true)).unwrap();
+            ecs.attach_component(
+                &light,
+                ShadowCaster {
+                    bias: 0.0002,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         }
 
         // ── R7 — shadow-casting spot across the AA staircase ────────
