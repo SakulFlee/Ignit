@@ -35,6 +35,24 @@ struct ShadowPipelineEntry {
     pipeline: Arc<RenderPipeline>,
 }
 
+/// Which projection a shadow pass is rendering with.
+///
+/// Point-light cube faces flip Y in their projection while spot lights and
+/// directional cascades do not. Flipping Y flips the screen-space winding, so
+/// the two families need different front-face declarations to cull the same
+/// geometric side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShadowProjection {
+    TwoD,
+    Cube,
+}
+
+struct DepthPipelines {
+    two_d: RenderPipeline,
+    cube: RenderPipeline,
+    two_sided: RenderPipeline,
+}
+
 const POINT_LIGHT_FAR: f32 = 20.0;
 const POINT_LIGHT_NEAR: f32 = 0.1;
 /// Spot shadow map clip planes. The far plane is intentionally tight:
@@ -69,7 +87,9 @@ pub struct ShadowRenderer {
     sampler: wgpu::Sampler,
     /// Comparison sampler for point light cube shadows.
     cube_sampler: wgpu::Sampler,
-    depth_pipeline: RenderPipeline,
+    depth_pipeline_2d: RenderPipeline,
+    depth_pipeline_cube: RenderPipeline,
+    depth_pipeline_two_sided: RenderPipeline,
     depth_bind_group_layout: BindGroupLayout,
     /// Material shadow pipelines keyed by shader-program identity.
     shadow_pipelines: HashMap<u64, ShadowPipelineEntry>,
@@ -136,7 +156,7 @@ impl ShadowRenderer {
             border_color: None,
         });
 
-        let (depth_pipeline, depth_bind_group_layout) = Self::create_depth_pipeline(device);
+        let (depth_pipelines, depth_bind_group_layout) = Self::create_depth_pipelines(device);
 
         // Per-slot matrix buffer (dynamic offset)
         let alignment = device.limits().min_uniform_buffer_offset_alignment;
@@ -174,7 +194,9 @@ impl ShadowRenderer {
             slot_data_buffer,
             sampler,
             cube_sampler,
-            depth_pipeline,
+            depth_pipeline_2d: depth_pipelines.two_d,
+            depth_pipeline_cube: depth_pipelines.cube,
+            depth_pipeline_two_sided: depth_pipelines.two_sided,
             depth_bind_group_layout,
             shadow_pipelines: HashMap::new(),
             matrix_buffer,
@@ -284,7 +306,7 @@ impl ShadowRenderer {
         )
     }
 
-    fn create_depth_pipeline(device: &Device) -> (RenderPipeline, BindGroupLayout) {
+    fn create_depth_pipelines(device: &Device) -> (DepthPipelines, BindGroupLayout) {
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shadow Depth Shader"),
             source: wgpu::ShaderSource::Wgsl(SHADOW_DEPTH_SHADER.into()),
@@ -310,51 +332,77 @@ impl ShadowRenderer {
             immediate_size: 0,
         });
 
-        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("Shadow Depth Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: VertexState {
-                module: &shader_module,
-                entry_point: Some("entrypoint_vertex"),
-                buffers: &[
-                    Some(Vertex::complex_vertex_buffer_layout_descriptor()),
-                    Some(ignit_instance::Instance::vertex_buffer_layout_descriptor()),
-                ],
-                compilation_options: Default::default(),
-            },
-            fragment: None,
-            depth_stencil: Some(DepthStencilState {
-                format: TextureFormat::Depth32Float,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(CompareFunction::LessEqual),
-                stencil: Default::default(),
-                bias: wgpu::DepthBiasState {
-                    constant: 0,
-                    slope_scale: 0.0,
-                    clamp: 0.0,
-                },
-            }),
-            primitive: PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                // Two-sided for now. One-sided culling needs two conditions
-                // that are not met yet: every mesh must agree on the winding
-                // convention and open surfaces must opt into two-sided
-                // rendering. The point-light cube pass also flips Y in its
-                // projection while the spot/CSM pass does not, so a single
-                // cull mode is wrong for one of them.
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: PolygonMode::Fill,
-                conservative: false,
-            },
-            multisample: MultisampleState::default(),
-            cache: None,
-            multiview_mask: None,
-        });
+        let create =
+            |label: &'static str, front_face: wgpu::FrontFace, cull_mode: Option<wgpu::Face>| {
+                device.create_render_pipeline(&RenderPipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(&pipeline_layout),
+                    vertex: VertexState {
+                        module: &shader_module,
+                        entry_point: Some("entrypoint_vertex"),
+                        buffers: &[
+                            Some(Vertex::complex_vertex_buffer_layout_descriptor()),
+                            Some(ignit_instance::Instance::vertex_buffer_layout_descriptor()),
+                        ],
+                        compilation_options: Default::default(),
+                    },
+                    fragment: None,
+                    depth_stencil: Some(DepthStencilState {
+                        format: TextureFormat::Depth32Float,
+                        depth_write_enabled: Some(true),
+                        depth_compare: Some(CompareFunction::LessEqual),
+                        stencil: Default::default(),
+                        bias: wgpu::DepthBiasState {
+                            constant: 0,
+                            slope_scale: 0.0,
+                            clamp: 0.0,
+                        },
+                    }),
+                    primitive: PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face,
+                        cull_mode,
+                        unclipped_depth: false,
+                        polygon_mode: PolygonMode::Fill,
+                        conservative: false,
+                    },
+                    multisample: MultisampleState::default(),
+                    cache: None,
+                    multiview_mask: None,
+                })
+            };
 
-        (pipeline, bind_group_layout)
+        // Spot lights and directional cascades keep the engine's Y
+        // orientation, so culling front faces matches the material pipelines.
+        let two_d = create(
+            "Shadow Depth Pipeline 2D",
+            wgpu::FrontFace::Ccw,
+            Some(wgpu::Face::Front),
+        );
+        // Point-light cube faces flip Y, which flips the winding. Declaring CW
+        // as front keeps the same geometric side as the 2D pass.
+        let cube = create(
+            "Shadow Depth Pipeline Cube",
+            wgpu::FrontFace::Cw,
+            Some(wgpu::Face::Front),
+        );
+        // Open surfaces are single-layer, so they have to block light from
+        // both sides.
+        let two_sided = create(
+            "Shadow Depth Pipeline Two-Sided",
+            wgpu::FrontFace::Ccw,
+            None,
+        );
+
+        (
+            DepthPipelines {
+                two_d,
+                cube,
+                two_sided,
+            },
+            bind_group_layout,
+        )
     }
 
     /// Render all shadow maps for the current frame.
@@ -517,7 +565,13 @@ impl ShadowRenderer {
                             * self.slot_stride) as u32;
                         let frustum =
                             Frustum::from_view_projection_matrix(&face_mats[face as usize]);
-                        self.draw_shadow_models(&mut pass, models, matrix_offset, Some(&frustum));
+                        self.draw_shadow_models(
+                            &mut pass,
+                            models,
+                            matrix_offset,
+                            Some(&frustum),
+                            ShadowProjection::Cube,
+                        );
                     }
 
                     slot_index += 1;
@@ -685,7 +739,13 @@ impl ShadowRenderer {
             });
 
             let matrix_offset = (slot_matrix_offsets[i as usize] as u64 * self.slot_stride) as u32;
-            self.draw_shadow_models(&mut pass, models, matrix_offset, Some(&frustum));
+            self.draw_shadow_models(
+                &mut pass,
+                models,
+                matrix_offset,
+                Some(&frustum),
+                ShadowProjection::TwoD,
+            );
         }
     }
 
@@ -727,6 +787,7 @@ impl ShadowRenderer {
         models: &[Arc<Model>],
         matrix_offset: u32,
         frustum: Option<&Frustum>,
+        projection: ShadowProjection,
     ) {
         for model in models {
             if let Some(frustum) = frustum {
@@ -742,6 +803,17 @@ impl ShadowRenderer {
                     continue;
                 }
             }
+
+            // Open surfaces cannot be culled by side: a plane or disk still
+            // blocks light from whichever side the light reaches it.
+            let depth_pipeline = if model.mesh().is_open() {
+                &self.depth_pipeline_two_sided
+            } else {
+                match projection {
+                    ShadowProjection::TwoD => &self.depth_pipeline_2d,
+                    ShadowProjection::Cube => &self.depth_pipeline_cube,
+                }
+            };
 
             pass.set_vertex_buffer(0, model.vertex_buffer().slice(..));
             pass.set_vertex_buffer(1, model.instance_buffer().slice(..));
@@ -772,7 +844,7 @@ impl ShadowRenderer {
                         pass.set_bind_group(1, &self.matrix_bind_group, &[matrix_offset]);
                     }
                 } else {
-                    pass.set_pipeline(&self.depth_pipeline);
+                    pass.set_pipeline(depth_pipeline);
                     pass.set_bind_group(0, &self.matrix_bind_group, &[matrix_offset]);
                 }
 
@@ -822,8 +894,9 @@ impl ShadowRenderer {
         &self.gpu_data
     }
 
+    /// The 2D (spot light and directional cascade) depth pipeline.
     pub fn depth_pipeline(&self) -> &RenderPipeline {
-        &self.depth_pipeline
+        &self.depth_pipeline_2d
     }
 
     pub fn depth_bind_group_layout(&self) -> &BindGroupLayout {
