@@ -338,11 +338,13 @@ impl ShadowRenderer {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                // Match the material pipelines, which cull front faces. Culling
-                // back faces here instead put the opposite side of every wall
-                // and floor into the shadow map, which self-shadowed the
-                // visible surfaces.
-                cull_mode: Some(wgpu::Face::Front),
+                // Two-sided for now. One-sided culling needs two conditions
+                // that are not met yet: every mesh must agree on the winding
+                // convention and open surfaces must opt into two-sided
+                // rendering. The point-light cube pass also flips Y in its
+                // projection while the spot/CSM pass does not, so a single
+                // cull mode is wrong for one of them.
+                cull_mode: None,
                 unclipped_depth: false,
                 polygon_mode: PolygonMode::Fill,
                 conservative: false,
