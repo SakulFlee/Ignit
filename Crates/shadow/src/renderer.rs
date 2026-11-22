@@ -338,7 +338,10 @@ impl ShadowRenderer {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
+                // Shadow maps only need the surface facing the light. Culling
+                // back faces halves rasterization for closed meshes and keeps
+                // single-sided geometry that faces the light.
+                cull_mode: Some(wgpu::Face::Back),
                 unclipped_depth: false,
                 polygon_mode: PolygonMode::Fill,
                 conservative: false,
