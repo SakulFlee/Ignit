@@ -1,34 +1,25 @@
 use std::collections::HashSet;
 
 use ignit_ecs::World;
-use ignit_ecs_bridge::{LightSlotIndex, ShadowDirtyFlag, StaggerState, StaggeredLightConfig};
+use ignit_ecs_bridge::{LightSlotIndex, ShadowDirtyFlag, StaggeredLightConfig};
 use ignit_shadow::ShadowCaster;
 
 /// Build the set of light store indices whose shadow maps should be
-/// rendered this frame, respecting the per-frame update budget.
+/// rendered this frame.
 ///
-/// On each frame this:
-/// 1. Finds all shadow-casting lights marked `ShadowDirtyFlag`
-/// 2. Processes up to `budget - reserve` dirty lights (dirty priority),
-///    then round-robin through remaining clean shadows for proactive refresh,
-///    where `reserve = max(1, budget/2)` when clean casters exist (0 otherwise)
-/// 3. Clears `ShadowDirtyFlag` for processed lights
-/// 4. Returns the set of `light_store_index` values whose shadows need updating
+/// Only dirty casters are rendered; a static scene with no dirty lights or
+/// models queues no shadow work at all. Up to `max_updates_per_frame` dirty
+/// casters are refreshed per frame, and the pending ones stay dirty for the
+/// next frame.
 ///
-/// If `global_dirty` is true (indicating model/changes), all shadow-casting
-/// lights are included regardless of the budget.
-///
-/// `new_light_bootstrap`: when true (new lights were added this frame),
-/// marks all shadow-casting lights dirty for immediate initialization.
+/// If `global_dirty` is true (model or scene change), all shadow-casting
+/// lights are included regardless of the budget. `new_light_bootstrap` does
+/// the same when lights were added this frame.
 pub fn sys_stagger_shadow_updates(
     ecs: &mut World,
     global_dirty: bool,
     new_light_bootstrap: bool,
 ) -> HashSet<u32> {
-    if ecs.get_resource::<StaggerState>().is_none() {
-        ecs.insert_resource(StaggerState::default());
-    }
-
     let config = ecs
         .get_resource::<StaggeredLightConfig>()
         .map(|c| c.max_updates_per_frame)
@@ -121,26 +112,18 @@ pub fn sys_stagger_shadow_updates(
         return result;
     }
 
-    // --- Apply stagger budget ---
-    // Reserve a floor for round-robin so an always-dirty light can't
-    // permanently starve proactive shadow refresh. Dirty lights still get
-    // priority (up to budget - reserve), then round-robin uses the rest.
-    let mut processed: HashSet<usize> = HashSet::new();
-    let non_dirty_count = shadow_entities
-        .iter()
-        .filter(|(e, _)| !dirty_eids.contains(e))
-        .count();
-    let reserve = if non_dirty_count > 0 {
-        (config / 2).max(1)
-    } else {
-        0
-    };
-    let mut dirty_budget = config.saturating_sub(reserve);
-    let round_robin_budget = config - dirty_budget;
+    // A static scene has no shadow work to do. Previously this path
+    // round-robined clean casters and re-rendered their maps every frame.
+    if dirty_eids.is_empty() {
+        return result;
+    }
 
-    // Process dirty entities first (priority)
+    // Apply the dirty-only update budget. Casters left dirty are handled on
+    // following frames.
+    let mut budget = config;
+    let mut processed: HashSet<usize> = HashSet::new();
     for &eid in &dirty_eids {
-        if dirty_budget == 0 {
+        if budget == 0 {
             break;
         }
         let slot = if has_slot_store {
@@ -156,24 +139,7 @@ pub fn sys_stagger_shadow_updates(
         if let Some(slot) = slot {
             result.insert(slot);
             processed.insert(eid);
-            dirty_budget -= 1;
-        }
-    }
-
-    // Round-robin through remaining shadow casters
-    if round_robin_budget > 0 {
-        let remaining_slots: Vec<u32> = shadow_entities
-            .iter()
-            .filter(|(e, _)| !processed.contains(e))
-            .map(|(_, s)| *s)
-            .collect();
-        if !remaining_slots.is_empty() {
-            let mut state = ecs.get_resource_mut::<StaggerState>().unwrap();
-            for _ in 0..round_robin_budget.min(remaining_slots.len()) {
-                let slot = remaining_slots[state.round_robin_pos % remaining_slots.len()];
-                state.round_robin_pos = (state.round_robin_pos + 1) % remaining_slots.len();
-                result.insert(slot);
-            }
+            budget -= 1;
         }
     }
 
@@ -187,4 +153,50 @@ pub fn sys_stagger_shadow_updates(
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cgmath::Vector3;
+    use ignit_ecs_bridge::LightDescriptor;
+
+    fn caster_world(dirty: bool) -> World {
+        let mut world = World::new();
+        let entity = world.spawn_entity();
+        world
+            .attach_component(
+                &entity,
+                LightDescriptor::new_point(Vector3::new(1.0, 1.0, 1.0), 20.0),
+            )
+            .unwrap();
+        world
+            .attach_component(&entity, ShadowCaster::default())
+            .unwrap();
+        world.attach_component(&entity, LightSlotIndex(0)).unwrap();
+        world
+            .attach_component(&entity, ShadowDirtyFlag(dirty))
+            .unwrap();
+        world
+    }
+
+    #[test]
+    fn a_static_scene_queues_no_shadow_updates() {
+        let mut world = caster_world(false);
+
+        let updates = sys_stagger_shadow_updates(&mut world, false, false);
+
+        assert!(updates.is_empty());
+    }
+
+    #[test]
+    fn dirty_casters_are_updated_and_cleared() {
+        let mut world = caster_world(true);
+
+        let updates = sys_stagger_shadow_updates(&mut world, false, false);
+
+        assert!(updates.contains(&0));
+        let store = world.get_component_store::<ShadowDirtyFlag>().unwrap();
+        assert!(!store.components[0].is_dirty());
+    }
 }
