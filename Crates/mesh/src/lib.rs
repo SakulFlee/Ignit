@@ -14,6 +14,9 @@ pub use cache::*;
 mod bounds;
 pub use bounds::*;
 
+mod topology;
+pub use topology::has_boundary_edges;
+
 #[derive(Debug)]
 pub struct Mesh {
     vertex_buffer: Buffer,
@@ -21,6 +24,7 @@ pub struct Mesh {
     index_count: u32,
     bounding_sphere: Option<BoundingSphere>,
     bounding_box: Option<BoundingBox>,
+    is_open: bool,
 }
 
 impl Mesh {
@@ -29,6 +33,8 @@ impl Mesh {
     }
 
     pub fn from_data(vertices: &[Vertex], indices: &[u32], device: &Device) -> Self {
+        let is_open = has_boundary_edges(vertices, indices);
+
         let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Mesh Vertex Buffer"),
             contents: &vertices
@@ -57,7 +63,16 @@ impl Mesh {
             index_count: indices.len() as u32,
             bounding_sphere,
             bounding_box,
+            is_open,
         }
+    }
+
+    /// Whether the mesh has a boundary edge, meaning it is not a closed shell.
+    ///
+    /// Open surfaces need two-sided rasterization in the shadow pass so they
+    /// still block light from whichever side the light reaches them.
+    pub fn is_open(&self) -> bool {
+        self.is_open
     }
 
     pub fn bounding_sphere(&self) -> Option<&BoundingSphere> {
