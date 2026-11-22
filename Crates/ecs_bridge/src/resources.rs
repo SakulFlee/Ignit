@@ -1494,6 +1494,10 @@ impl SkinningMode {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ShadowLayerCount(pub u32);
 
+/// Number of point-light cube shadow faces, for debug UI selection.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ShadowCubeFaceCount(pub u32);
+
 /// Shadow comparison-tap quality.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ShadowPcf {

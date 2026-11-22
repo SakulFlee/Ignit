@@ -52,9 +52,9 @@ use ignit_ecs_bridge::{
     STAGE_REALIZE_LIGHTS, STAGE_REALIZE_MODELS, STAGE_RENDER_TOTAL, STAGE_SCENE_ENCODE,
     STAGE_SCENE_SUBMIT, STAGE_STAGGER, STAGE_SURFACE_ACQ, STAGE_SURFACE_ACQUIRE,
     STAGE_SURFACE_LOCK, STAGE_SURFACE_VIEW, STAGE_TIMESTAMP_READBACK, STAGE_UI_EVENTS,
-    STAGE_UPDATE, STAGE_VOLUMETRICS, ShadowDebugData, ShadowLayerCount, ShadowSettings,
-    SurfaceFormatResource, TIMING_STAGES, TimingsHistoryConfig, TotalTime, VolumetricSettings,
-    WindowSize,
+    STAGE_UPDATE, STAGE_VOLUMETRICS, ShadowCubeFaceCount, ShadowDebugData, ShadowLayerCount,
+    ShadowSettings, SurfaceFormatResource, TIMING_STAGES, TimingsHistoryConfig, TotalTime,
+    VolumetricSettings, WindowSize,
 };
 use ignit_renderer::GPU_TIMESTAMP_COUNT;
 
@@ -990,6 +990,8 @@ impl ModuleRuntime {
                 .insert_resource(ShadowDebugData(*shadow.gpu_data()));
             self.ecs_world
                 .insert_resource(ShadowLayerCount(shadow.layer_count()));
+            self.ecs_world
+                .insert_resource(ShadowCubeFaceCount(shadow.cube_face_views().len() as u32));
         }
 
         // Keep a borrow of the cull resource for the render call below.

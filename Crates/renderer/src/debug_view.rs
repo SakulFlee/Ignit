@@ -25,10 +25,11 @@ pub enum DebugView {
     GbufferNormal,
     GbufferMaterial,
     ShadowMap,
+    PointShadowMap,
 }
 
 impl DebugView {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Off,
         Self::SceneColor,
         Self::Depth,
@@ -36,6 +37,7 @@ impl DebugView {
         Self::GbufferNormal,
         Self::GbufferMaterial,
         Self::ShadowMap,
+        Self::PointShadowMap,
     ];
 
     pub fn label(self) -> &'static str {
@@ -47,11 +49,12 @@ impl DebugView {
             Self::GbufferNormal => "G-buffer normal",
             Self::GbufferMaterial => "G-buffer material",
             Self::ShadowMap => "Shadow map",
+            Self::PointShadowMap => "Point shadow map",
         }
     }
 
     pub fn is_depth(self) -> bool {
-        matches!(self, Self::Depth | Self::ShadowMap)
+        matches!(self, Self::Depth | Self::ShadowMap | Self::PointShadowMap)
     }
 }
 
@@ -399,10 +402,13 @@ mod tests {
     fn only_depth_views_select_the_depth_pipeline() {
         assert!(DebugView::Depth.is_depth());
         assert!(DebugView::ShadowMap.is_depth());
-        for view in DebugView::ALL
-            .into_iter()
-            .filter(|view| !matches!(*view, DebugView::Depth | DebugView::ShadowMap))
-        {
+        assert!(DebugView::PointShadowMap.is_depth());
+        for view in DebugView::ALL.into_iter().filter(|view| {
+            !matches!(
+                *view,
+                DebugView::Depth | DebugView::ShadowMap | DebugView::PointShadowMap
+            )
+        }) {
             assert!(!view.is_depth());
         }
     }

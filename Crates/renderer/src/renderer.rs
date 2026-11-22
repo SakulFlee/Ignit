@@ -1779,6 +1779,17 @@ impl Renderer {
                                 })
                                 .map(|view| (view, true))
                                 .or(Some((&depth.view, true))),
+                            DebugView::PointShadowMap => self
+                                .shadow_renderer
+                                .as_ref()
+                                .and_then(|shadow| {
+                                    shadow
+                                        .cube_face_views()
+                                        .get(self.debug_shadow_layer as usize)
+                                        .or_else(|| shadow.cube_face_views().first())
+                                })
+                                .map(|view| (view, true))
+                                .or(Some((&depth.view, true))),
                         };
 
                         if let Some((view, is_depth)) = source {
