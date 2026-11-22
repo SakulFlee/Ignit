@@ -1898,10 +1898,13 @@ pub struct NewLightBootstrap(pub bool);
 /// Target world-space spacing between froxel depth slices for the desktop
 /// quality tiers. Short light cones should not pop between slices as the
 /// camera moves.
-const TARGET_DEPTH_SLICE_SPACING: f32 = 0.15;
+const TARGET_DEPTH_SLICE_SPACING: f32 = 0.45;
 /// Upper bound for adaptive depth slices. The X/Y grid still follows the
 /// selected quality tier.
-const MAX_DEPTH_SLICES: u32 = 192;
+const MAX_DEPTH_SLICES: u32 = 96;
+/// Independent X/Y caps so the froxel count cannot scale with 4K resolution.
+const MAX_GRID_X: u32 = 192;
+const MAX_GRID_Y: u32 = 108;
 /// Upper bound for the pre-integrated composite depth resolution. The froxel
 /// grid is capped well below this; the extra headroom only applies to custom
 /// quality tiers that ask for finer integration than their grid.
@@ -1960,9 +1963,16 @@ impl VolumetricQuality {
             let target = (max_distance.max(0.1) / TARGET_DEPTH_SLICE_SPACING).ceil() as u32;
             grid[2] = grid[2].max(target);
         }
+        // Custom tiers keep their explicit dimensions; built-in tiers cap the
+        // X/Y resolution so 4K frames do not pay for a proportionally larger
+        // froxel volume.
+        let (max_x, max_y) = match self {
+            Self::Custom { .. } => (512, 512),
+            _ => (MAX_GRID_X, MAX_GRID_Y),
+        };
         [
-            grid[0].clamp(1, 512),
-            grid[1].clamp(1, 512),
+            grid[0].clamp(1, max_x),
+            grid[1].clamp(1, max_y),
             grid[2].clamp(1, MAX_DEPTH_SLICES),
         ]
     }
@@ -2076,12 +2086,12 @@ mod volumetric_tests {
 
     #[test]
     fn integration_steps_never_undersample_the_froxel_grid() {
-        // The resolved grid has 192 depth slices at this range, so the
+        // The resolved grid has 67 depth slices at this range, so the
         // composite integrates at that resolution instead of its 32-step
         // minimum.
         assert_eq!(
             VolumetricQuality::Low.integration_steps(1920, 1080, 30.0),
-            192
+            67
         );
         // A short range leaves the Low grid at 64 slices, which still beats
         // the tier's minimum.
@@ -2104,16 +2114,20 @@ mod volumetric_tests {
 
     #[test]
     fn resolved_grid_scales_depth_with_distance() {
-        // 30 world units at the target 0.15 slice spacing needs 200 slices,
-        // which is capped at the 192-slice maximum.
+        // 30 world units at the 0.45 slice spacing needs 67 slices.
         assert_eq!(
             VolumetricQuality::Low.resolved_grid(1920, 1080, 30.0),
-            [160, 90, 192]
+            [160, 90, 67]
         );
         // A short range keeps the tier's base depth resolution.
         assert_eq!(
             VolumetricQuality::Low.resolved_grid(1920, 1080, 8.0),
             [160, 90, 64]
+        );
+        // 4K is capped independently of the render resolution.
+        assert_eq!(
+            VolumetricQuality::High.resolved_grid(3840, 2160, 30.0),
+            [192, 108, 67]
         );
         // Mobile and custom tiers keep their explicit depth resolution.
         assert_eq!(
