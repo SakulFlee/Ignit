@@ -778,6 +778,11 @@ impl ShadowRenderer {
         &self.depth_texture
     }
 
+    /// Per-layer 2D depth views of the shadow map array.
+    pub fn layer_views(&self) -> &[TextureView] {
+        &self.layer_views
+    }
+
     pub fn slot_data_buffer(&self) -> &wgpu::Buffer {
         &self.slot_data_buffer
     }

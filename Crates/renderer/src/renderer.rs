@@ -1757,6 +1757,12 @@ impl Renderer {
                                 .as_ref()
                                 .map(|gbuffer| (&gbuffer[2].view, false))
                                 .or(Some((&scene_color.view, false))),
+                            DebugView::ShadowMap => self
+                                .shadow_renderer
+                                .as_ref()
+                                .and_then(|shadow| shadow.layer_views().first())
+                                .map(|view| (view, true))
+                                .or(Some((&depth.view, true))),
                         };
 
                         if let Some((view, is_depth)) = source {
