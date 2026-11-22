@@ -1628,9 +1628,9 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.17.1"
+version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+checksum = "735eaa21a6a5ffb2e84362faaeb90c05ba8e19797ca30428478cb6ea3a4921bc"
 dependencies = [
  "allocator-api2",
  "equivalent",
@@ -1699,7 +1699,7 @@ dependencies = [
  "cgmath",
  "gilrs",
  "gltf",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "ignit-winit",
  "ignit_2d",
  "ignit_animation",
@@ -2105,7 +2105,7 @@ dependencies = [
  "android_logger",
  "cgmath",
  "fern",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "humantime",
  "ignit_file_manager",
  "log",
@@ -2181,7 +2181,7 @@ name = "ignit_ecs_bridge"
 version = "1.6.3"
 dependencies = [
  "cgmath",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "ignit-winit",
  "ignit_animation",
  "ignit_camera",
@@ -2250,7 +2250,7 @@ dependencies = [
  "base64 0.23.1",
  "cgmath",
  "gltf",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "ignit_animation",
  "ignit_camera",
  "ignit_core",
@@ -2277,7 +2277,7 @@ version = "1.6.3"
 dependencies = [
  "cgmath",
  "gilrs",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "ignit-winit",
  "log",
 ]
@@ -2343,7 +2343,7 @@ name = "ignit_model"
 version = "1.6.3"
 dependencies = [
  "cgmath",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "ignit_animation",
  "ignit_core",
  "ignit_instance",
@@ -2648,7 +2648,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "serde",
  "serde_core",
 ]
@@ -3177,7 +3177,7 @@ dependencies = [
  "cfg_aliases",
  "codespan-reporting",
  "half",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "indexmap",
  "libm",
  "log",
@@ -3198,7 +3198,7 @@ version = "30.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "590afbf58a6f4f62873cd5cff4468061844bafa1cdf399cc954537c22d768d49"
 dependencies = [
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "indexmap",
  "rustc-hash 1.1.0",
  "serde",
@@ -5616,7 +5616,7 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "document-features",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "js-sys",
  "log",
  "naga",
@@ -5647,7 +5647,7 @@ dependencies = [
  "bytemuck",
  "cfg_aliases",
  "document-features",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "indexmap",
  "log",
  "macro_rules_attribute",
@@ -5725,7 +5725,7 @@ dependencies = [
  "glow",
  "glutin_wgl_sys",
  "gpu-allocator",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "js-sys",
  "khronos-egl",
  "libc",
