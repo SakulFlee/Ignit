@@ -61,7 +61,7 @@ pub fn cone(radius: f32, height: f32, segments: u32) -> MeshDescriptor {
     }
 
     for i in 0..segs {
-        indices.extend_from_slice(&[bot_center_idx, bot_ring_start + i, bot_ring_start + i + 1]);
+        indices.extend_from_slice(&[bot_center_idx, bot_ring_start + i + 1, bot_ring_start + i]);
     }
 
     MeshDescriptor::new(vertices, indices)
