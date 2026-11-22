@@ -898,6 +898,11 @@ impl ShadowRenderer {
         &self.layer_views
     }
 
+    /// Per-face depth views of the point-light cube shadow array.
+    pub fn cube_face_views(&self) -> &[TextureView] {
+        &self.cube_face_views
+    }
+
     pub fn slot_data_buffer(&self) -> &wgpu::Buffer {
         &self.slot_data_buffer
     }
