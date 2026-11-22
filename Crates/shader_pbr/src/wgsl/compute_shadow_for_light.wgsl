@@ -36,15 +36,16 @@ fn compute_shadow_for_light_with_taps(
     }
     let n_dot_l = dot(normal, to_light);
 
-    for (var i = 0u; i < shadow_data.cascade_count; i++) {
-        let slot = shadow_data.slots[i];
+    if (light_idx >= MAX_SHADOW_LIGHTS) {
+        return 1.0;
+    }
 
-        if (slot.light_index > light_idx) {
-            break;
-        }
-        if (slot.light_index != light_idx) {
-            continue;
-        }
+    let word = light_idx / 4u;
+    let lane = light_idx % 4u;
+    let first = shadow_data.first_slot[word][lane];
+    let count = shadow_data.slot_count[word][lane];
+    for (var offset = 0u; offset < count; offset++) {
+        let slot = shadow_data.slots[first + offset];
 
         let bias = slope_scaled_bias(slot.bias, n_dot_l);
 

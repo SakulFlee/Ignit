@@ -35,16 +35,22 @@ impl ShadowSlotData {
     }
 }
 
-/// Uniform buffer payload: slots array + header.
-/// WGSL struct ShadowData { slots: array<ShadowSlot, 16>, cascade_count: u32 }
-/// Total: 96*16 + 4 → padded to 16 → 1552 bytes.
+/// Number of light-store indices the shadow lookup covers.
+pub const MAX_SHADOW_LIGHTS: u32 = 256;
+
+/// Uniform buffer payload: slots array, header, and per-light slot lookup.
+/// WGSL struct ShadowData mirrors this layout exactly.
+/// Total: 96*16 + 16 + 2*64*16 = 3600 bytes.
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct ShadowGpuData {
     pub slots: [ShadowSlotData; MAX_SHADOW_SLOTS as usize], // offset 0, size 1536
-    pub cascade_count: u32,                                 // offset 1536, size 4
-    pub _padding: [u32; 3],                                 // offset 1540, size 12
-} // total: 1552 bytes
+    /// `header[0]` is the cascade count; the rest is 16-byte alignment padding.
+    pub header: [u32; 4], // offset 1536, size 16
+    /// Packed as vec4 so the uniform layout matches the shader.
+    pub first_slot: [[u32; 4]; 64], // offset 1552
+    pub slot_count: [[u32; 4]; 64],                         // offset 2576
+} // total: 3600 bytes
 
 impl Default for ShadowGpuData {
     fn default() -> Self {
@@ -65,8 +71,9 @@ impl ShadowGpuData {
                 near_plane: 0.1,
                 _padding: [0; 2],
             }; MAX_SHADOW_SLOTS as usize],
-            cascade_count: 0,
-            _padding: [0; 3],
+            header: [0; 4],
+            first_slot: [[0; 4]; 64],
+            slot_count: [[0; 4]; 64],
         }
     }
 
@@ -75,15 +82,42 @@ impl ShadowGpuData {
         unsafe { std::slice::from_raw_parts(self as *const Self as *const u8, size) }
     }
 
+    /// Rebuilds the per-light first-slot/count lookup for `slot_count` slots.
+    pub fn rebuild_light_lookup(&mut self, slot_count: u32) {
+        self.header[0] = slot_count;
+        self.first_slot = [[0; 4]; 64];
+        self.slot_count = [[0; 4]; 64];
+
+        for slot in 0..slot_count.min(MAX_SHADOW_SLOTS) as usize {
+            let light = self.slots[slot].light_index as usize;
+            if light < MAX_SHADOW_LIGHTS as usize {
+                let (word, lane) = (light / 4, light % 4);
+                if self.slot_count[word][lane] == 0 {
+                    self.first_slot[word][lane] = slot as u32;
+                }
+                self.slot_count[word][lane] += 1;
+            }
+        }
+    }
+
+    /// First slot and slot count for one light-store index.
+    pub fn light_slots(&self, light: usize) -> (u32, u32) {
+        if light >= MAX_SHADOW_LIGHTS as usize {
+            return (0, 0);
+        }
+        let (word, lane) = (light / 4, light % 4);
+        (self.first_slot[word][lane], self.slot_count[word][lane])
+    }
+
     /// Number of shadow slots currently in use.
     pub fn active_slot_count(&self) -> u32 {
-        self.cascade_count
+        self.header[0]
     }
 
     /// Compute total layer count needed across all slots.
     pub fn total_layers(&self) -> u32 {
         let mut max_layer = 0u32;
-        for slot in self.slots.iter().take(self.cascade_count as usize) {
+        for slot in self.slots.iter().take(self.active_slot_count() as usize) {
             max_layer = max_layer.max(slot.layer_index + 1);
         }
         max_layer
@@ -137,14 +171,29 @@ mod tests {
     }
 
     #[test]
+    fn light_lookup_groups_consecutive_slots() {
+        let mut data = ShadowGpuData::new();
+        data.slots[0].light_index = 2;
+        data.slots[1].light_index = 2;
+        data.slots[2].light_index = 5;
+
+        data.rebuild_light_lookup(3);
+
+        assert_eq!(data.light_slots(2), (0, 2));
+        assert_eq!(data.light_slots(5), (2, 1));
+        assert_eq!(data.light_slots(1), (0, 0));
+        assert_eq!(data.active_slot_count(), 3);
+    }
+
+    #[test]
     fn shadow_gpu_data_size() {
-        assert_eq!(std::mem::size_of::<ShadowGpuData>(), 1552);
+        assert_eq!(std::mem::size_of::<ShadowGpuData>(), 3600);
     }
 
     #[test]
     fn shadow_gpu_data_new_slots_zeroed() {
         let data = ShadowGpuData::new();
-        assert_eq!(data.cascade_count, 0);
+        assert_eq!(data.active_slot_count(), 0);
         assert_eq!(data.slots[0].shadow_type, 0);
         assert_eq!(data.slots[15].shadow_type, 0);
     }

@@ -620,7 +620,9 @@ impl ShadowRenderer {
             }
         }
 
-        self.gpu_data.cascade_count = slot_index;
+        // Build the per-light lookup once per frame instead of scanning all
+        // slots for every shaded fragment.
+        self.gpu_data.rebuild_light_lookup(slot_index);
 
         // Upload slot data
         queue.write_buffer(&self.slot_data_buffer, 0, self.gpu_data.as_bytes());
