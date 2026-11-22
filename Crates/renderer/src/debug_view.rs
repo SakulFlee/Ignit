@@ -46,7 +46,7 @@ impl DebugView {
             Self::GbufferAlbedo => "G-buffer albedo",
             Self::GbufferNormal => "G-buffer normal",
             Self::GbufferMaterial => "G-buffer material",
-            Self::ShadowMap => "Shadow map (layer 0)",
+            Self::ShadowMap => "Shadow map",
         }
     }
 
