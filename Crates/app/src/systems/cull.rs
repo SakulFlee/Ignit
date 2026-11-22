@@ -55,6 +55,17 @@ pub fn sys_frustum_cull(ecs: &mut World) {
         }
     };
 
+    // Instances are drawn front-to-back to reduce G-buffer and forward
+    // overdraw. The active camera's position is enough for that ordering; the
+    // frozen frustum only affects which instances are visible.
+    let camera_position = (|| -> Option<Point3<f32>> {
+        let active = ecs.get_resource::<ActiveCamera>()?;
+        let store = ecs.get_resource::<CameraStore>()?;
+        let camera = store.get(active.0.index)?;
+        let camera = camera.read().ok()?;
+        Some(camera.position())
+    })();
+
     // ── Snapshot realized models in renderer order ────────────────────
     let models: Vec<Arc<ignit_model::Model>> = {
         let Some(realizations) = ecs.get_component_store::<ModelRealization>() else {
@@ -109,14 +120,21 @@ pub fn sys_frustum_cull(ecs: &mut World) {
         let bounds = model.instance_bounds();
         let instance_data = model.instance_data();
         let instance_count = model.instance_count() as usize;
-        let mut visible = 0u32;
+        let mut visible_indices = Vec::new();
 
         for (index, bound) in bounds.iter().take(instance_count).enumerate() {
             let center = Point3::new(bound[0], bound[1], bound[2]);
-            if !frustum.intersects_sphere(&center, bound[3]) {
-                continue;
+            if frustum.intersects_sphere(&center, bound[3]) {
+                visible_indices.push(index);
             }
+        }
 
+        if let Some(camera) = camera_position {
+            sort_visible_by_distance(&mut visible_indices, bounds, camera);
+        }
+
+        let mut visible = 0u32;
+        for index in visible_indices {
             let start = index * 64;
             let end = start + 64;
             if end <= instance_data.len() {
@@ -130,4 +148,52 @@ pub fn sys_frustum_cull(ecs: &mut World) {
     }
 
     cull.upload(&queue);
+}
+
+/// Orders visible instance indices by distance to the camera, nearest first.
+fn sort_visible_by_distance(indices: &mut [usize], bounds: &[[f32; 4]], camera: Point3<f32>) {
+    let distance = |index: usize| {
+        let Some(bound) = bounds.get(index) else {
+            return f32::INFINITY;
+        };
+        let dx = bound[0] - camera.x;
+        let dy = bound[1] - camera.y;
+        let dz = bound[2] - camera.z;
+        dx * dx + dy * dy + dz * dz
+    };
+
+    indices.sort_by(|left, right| {
+        distance(*left)
+            .partial_cmp(&distance(*right))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn visible_instances_are_sorted_nearest_first() {
+        let bounds = [
+            [10.0, 0.0, 0.0, 1.0],
+            [2.0, 0.0, 0.0, 1.0],
+            [6.0, 0.0, 0.0, 1.0],
+        ];
+        let mut indices = vec![0, 1, 2];
+
+        sort_visible_by_distance(&mut indices, &bounds, Point3::new(0.0, 0.0, 0.0));
+
+        assert_eq!(indices, vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn missing_bounds_sort_last() {
+        let bounds = [[4.0, 0.0, 0.0, 1.0]];
+        let mut indices = vec![5, 0];
+
+        sort_visible_by_distance(&mut indices, &bounds, Point3::new(0.0, 0.0, 0.0));
+
+        assert_eq!(indices, vec![0, 5]);
+    }
 }

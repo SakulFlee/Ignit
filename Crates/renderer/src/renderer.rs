@@ -1526,6 +1526,7 @@ impl Renderer {
                                 context.encoder,
                                 cull,
                                 &depth.view,
+                                camera_position,
                             );
                         }
                         if timestamps_enabled && let Some(qs) = &self.timestamp_query_set {
@@ -1900,13 +1901,9 @@ impl Renderer {
         let mut draws: Vec<(usize, usize, f32)> = Vec::new();
 
         for (model_index, model) in models.iter().enumerate() {
-            let distance = if draw == ModelDraw::Transparent {
-                match (model.instance_center(), camera_position) {
-                    (Some(center), Some(camera)) => (center - camera).magnitude2(),
-                    _ => 0.0,
-                }
-            } else {
-                0.0
+            let distance = match (model.instance_center(), camera_position) {
+                (Some(center), Some(camera)) => (center - camera).magnitude2(),
+                _ => 0.0,
             };
 
             for (material_index, material) in model.materials().iter().enumerate() {
@@ -1931,6 +1928,9 @@ impl Renderer {
         if draw == ModelDraw::Transparent {
             // Back-to-front for alpha blending.
             draws.sort_by(|a, b| b.2.total_cmp(&a.2));
+        } else {
+            // Front-to-back for lower G-buffer and forward overdraw.
+            draws.sort_by(|a, b| a.2.total_cmp(&b.2));
         }
 
         let mut render_pass = command_encoder.begin_render_pass(&RenderPassDescriptor {
@@ -1978,6 +1978,7 @@ impl Renderer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_gbuffer_models(
         &self,
         models: &[Arc<Model>],
@@ -1986,6 +1987,7 @@ impl Renderer {
         command_encoder: &mut CommandEncoder,
         cull: Option<&CullResources>,
         depth_view: &TextureView,
+        camera_position: Option<Point3<f32>>,
     ) {
         let mut render_pass = command_encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("G-buffer RenderPass"),
@@ -2031,25 +2033,39 @@ impl Renderer {
             multiview_mask: None,
         });
 
+        let mut draws = Vec::new();
         for (model_index, model) in models.iter().enumerate() {
-            for material in model.materials() {
-                if material.render_queue() != RenderQueue::Opaque {
-                    continue;
+            let distance = match (model.instance_center(), camera_position) {
+                (Some(center), Some(camera)) => (center - camera).magnitude2(),
+                _ => 0.0,
+            };
+            for (material_index, material) in model.materials().iter().enumerate() {
+                if material.render_queue() == RenderQueue::Opaque
+                    && material.gbuffer_pipeline().is_some()
+                {
+                    draws.push((model_index, material_index, distance));
                 }
-                let Some(pipeline) = material.gbuffer_pipeline() else {
-                    continue;
-                };
-
-                render_pass.set_pipeline(pipeline);
-                bind_and_draw_model(
-                    &mut render_pass,
-                    model,
-                    material,
-                    world_bind_group,
-                    cull,
-                    model_index,
-                );
             }
+        }
+        // Front-to-back for lower G-buffer overdraw.
+        draws.sort_by(|a, b| a.2.total_cmp(&b.2));
+
+        for (model_index, material_index, _) in draws {
+            let model = &models[model_index];
+            let material = &model.materials()[material_index];
+            let Some(pipeline) = material.gbuffer_pipeline() else {
+                continue;
+            };
+
+            render_pass.set_pipeline(pipeline);
+            bind_and_draw_model(
+                &mut render_pass,
+                model,
+                material,
+                world_bind_group,
+                cull,
+                model_index,
+            );
         }
     }
 
