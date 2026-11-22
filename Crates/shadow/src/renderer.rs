@@ -784,6 +784,11 @@ impl ShadowRenderer {
         &self.depth_texture
     }
 
+    /// Number of layers currently allocated in the shadow map array.
+    pub fn layer_count(&self) -> u32 {
+        self.layer_count
+    }
+
     /// Per-layer 2D depth views of the shadow map array.
     pub fn layer_views(&self) -> &[TextureView] {
         &self.layer_views

@@ -10,8 +10,8 @@ use ignit_camera::ProjectionMode;
 use ignit_debug_render::{BoundsMode, DebugToggleState};
 use ignit_ecs::World;
 use ignit_ecs_bridge::{
-    ActiveCamera, CameraDescriptor, LightDescriptor, ModelDescriptor, ShadowPcf, ShadowSettings,
-    SkyClock, VolumetricQuality, VolumetricSettings, WindowSize,
+    ActiveCamera, CameraDescriptor, LightDescriptor, ModelDescriptor, ShadowLayerCount, ShadowPcf,
+    ShadowSettings, SkyClock, VolumetricQuality, VolumetricSettings, WindowSize,
 };
 use ignit_material_shader::RenderQueue;
 use ignit_renderer::{AntiAliasing, DebugView, SmaaQuality};
@@ -254,6 +254,34 @@ pub fn rendering_panel<'a>(ecs: &World) -> Element<'a, DebugMessage, Theme, Iced
             .color(MUTED)
             .into(),
     );
+
+    if render.debug_view == DebugView::ShadowMap {
+        let layers = ecs
+            .get_resource::<ShadowLayerCount>()
+            .map(|count| count.0)
+            .unwrap_or(1)
+            .max(1);
+        let layer = render.debug_shadow_layer.min(layers - 1);
+        rows.push(
+            column![
+                row![
+                    text("Shadow layer")
+                        .size(12)
+                        .width(Length::Fixed(LABEL_WIDTH)),
+                    text(layer.to_string())
+                        .size(11)
+                        .color(MUTED)
+                        .width(Length::Fixed(VALUE_WIDTH)),
+                ],
+                slider(0.0..=(layers - 1) as f32, layer as f32, |value| {
+                    DebugMessage::SetDebugShadowLayer(value.round() as u32)
+                })
+                .step(1.0),
+            ]
+            .spacing(1)
+            .into(),
+        );
+    }
 
     rows.push(crate::panels::divider());
     let shadow_pcf = ecs
