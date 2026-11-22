@@ -283,12 +283,14 @@ impl DebugViewRenderer {
         source_view: &TextureView,
         depth: bool,
         target_size: [u32; 2],
+        uv_scale: f32,
     ) {
         let width = target_size[0].max(1) as f32;
         let height = target_size[1].max(1) as f32;
         let mut params = [0u8; 16];
         params[0..4].copy_from_slice(&width.to_le_bytes());
         params[4..8].copy_from_slice(&height.to_le_bytes());
+        params[8..12].copy_from_slice(&uv_scale.to_le_bytes());
         queue.write_buffer(&self.params, 0, &params);
 
         let (layout, pipeline) = if depth {

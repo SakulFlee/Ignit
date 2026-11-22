@@ -5,6 +5,9 @@ pub const SHADOW_TYPE_DIRECTIONAL_CASCADE: u32 = 0;
 pub const SHADOW_TYPE_SPOT: u32 = 1;
 pub const SHADOW_TYPE_POINT: u32 = 2;
 pub const DEFAULT_SHADOW_RESOLUTION: u32 = 1024;
+/// Point-light cube faces stay at or below this size. Six faces per light make
+/// larger maps far more expensive than their visual benefit.
+pub const MAX_CUBE_SHADOW_RESOLUTION: u32 = 1024;
 pub const DEFAULT_CASCADE_COUNT: u32 = 4;
 pub const DEFAULT_CASCADE_SPLIT_LAMBDA: f32 = 0.75;
 /// Default shadow bias — matches Blender's scale (~0.001). Scenes can
@@ -25,7 +28,10 @@ pub struct ShadowSlotData {
     pub bias: f32,                      // offset 76,  size 4
     pub light_index: u32,               // offset 80,  size 4
     pub near_plane: f32,                // offset 84,  size 4
-    pub _padding: [u32; 2],             // offset 88,  size 8
+    /// Resolution this map was rasterized at inside its array layer.
+    pub resolution: u32, // offset 88,  size 4
+    /// UV scale from the full light frustum to the rendered viewport.
+    pub uv_scale: f32, // offset 92,  size 4
 } // total: 96 bytes
 
 impl ShadowSlotData {
@@ -69,7 +75,8 @@ impl ShadowGpuData {
                 bias: 0.0,
                 light_index: 0,
                 near_plane: 0.1,
-                _padding: [0; 2],
+                resolution: DEFAULT_SHADOW_RESOLUTION,
+                uv_scale: 1.0,
             }; MAX_SHADOW_SLOTS as usize],
             // [cascade_count, pcf_taps, ..]; 9 taps matches the default quality.
             header: [0, 9, 0, 0],

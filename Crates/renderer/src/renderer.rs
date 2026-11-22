@@ -1782,6 +1782,33 @@ impl Renderer {
                         };
 
                         if let Some((view, is_depth)) = source {
+                            // Lower-resolution shadow maps use only the
+                            // top-left corner of their layer. Crop the debug
+                            // view to the region that was actually rendered.
+                            let uv_scale = if self.debug_view == DebugView::ShadowMap {
+                                self.shadow_renderer
+                                    .as_ref()
+                                    .map(|shadow| {
+                                        let last_layer =
+                                            shadow.layer_views().len().saturating_sub(1) as u32;
+                                        let layer =
+                                            self.debug_shadow_layer.min(last_layer) as usize;
+                                        shadow
+                                            .gpu_data()
+                                            .slots
+                                            .iter()
+                                            .take(shadow.gpu_data().active_slot_count() as usize)
+                                            .find(|slot| {
+                                                slot.shadow_type != ignit_shadow::SHADOW_TYPE_POINT
+                                                    && slot.layer_index as usize == layer
+                                            })
+                                            .map(|slot| slot.uv_scale)
+                                            .unwrap_or(1.0)
+                                    })
+                                    .unwrap_or(1.0)
+                            } else {
+                                1.0
+                            };
                             self.debug_view_renderer.record(
                                 context.encoder,
                                 context.device,
@@ -1790,6 +1817,7 @@ impl Renderer {
                                 view,
                                 is_depth,
                                 [self.surface_resolution.x, self.surface_resolution.y],
+                                uv_scale,
                             );
                         }
                     }

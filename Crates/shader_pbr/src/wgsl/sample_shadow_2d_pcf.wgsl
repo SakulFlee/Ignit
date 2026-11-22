@@ -1,7 +1,15 @@
-fn sample_shadow_2d_pcf(layer: u32, shadow_coord: vec3<f32>, depth: f32) -> f32 {
-    let dims = vec2<f32>(textureDimensions(shadow_map_array));
-    let texel = 1.0 / dims;
-    let clamped_uv = clamp(shadow_coord.xy, texel, vec2<f32>(1.0) - texel);
+fn sample_shadow_2d_pcf(
+    layer: u32,
+    uv: vec2<f32>,
+    depth: f32,
+    uv_scale: f32,
+) -> f32 {
+    // The layer is allocated at the full array size; `uv_scale` maps the full
+    // light frustum into the smaller viewport it was rasterized at. Taps still
+    // step by one physical array texel.
+    let texel = 1.0 / vec2<f32>(textureDimensions(shadow_map_array));
+    let max_uv = max(vec2<f32>(uv_scale), 2.0 * texel);
+    let clamped_uv = clamp(uv, texel, max_uv - texel);
     let taps = shadow_data.header.y;
 
     if (taps <= 1u) {
