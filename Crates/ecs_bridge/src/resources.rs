@@ -1490,6 +1490,44 @@ impl SkinningMode {
     }
 }
 
+/// Shadow comparison-tap quality.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ShadowPcf {
+    /// One tap: fastest, intended for low-end or large kernels.
+    One,
+    /// Four taps in a 2x2 pattern.
+    Four,
+    /// Nine taps (3x3), the historical default.
+    #[default]
+    Nine,
+}
+
+impl ShadowPcf {
+    pub const ALL: [Self; 3] = [Self::One, Self::Four, Self::Nine];
+
+    pub const fn taps(self) -> u32 {
+        match self {
+            Self::One => 1,
+            Self::Four => 4,
+            Self::Nine => 9,
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::One => "1 tap",
+            Self::Four => "4 taps",
+            Self::Nine => "9 taps",
+        }
+    }
+}
+
+/// Shadow rendering quality settings.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ShadowSettings {
+    pub pcf: ShadowPcf,
+}
+
 /// Drives a dynamic generated sky.
 ///
 /// Insert this resource to opt a generated sky into time-of-day animation and
@@ -2156,6 +2194,14 @@ mod volumetric_tests {
         };
         assert_eq!(quality.grid(1920, 1080), [1, 12, 7]);
         assert_eq!(quality.composite_steps(), 1);
+    }
+
+    #[test]
+    fn shadow_pcf_defaults_to_nine_taps() {
+        assert_eq!(ShadowPcf::default(), ShadowPcf::Nine);
+        assert_eq!(ShadowPcf::One.taps(), 1);
+        assert_eq!(ShadowPcf::Four.taps(), 4);
+        assert_eq!(ShadowPcf::Nine.taps(), 9);
     }
 
     #[test]

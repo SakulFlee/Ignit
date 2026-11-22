@@ -1492,6 +1492,7 @@ impl Renderer {
                                 context.device,
                                 context.queue,
                                 dirty_set,
+                                scene.shadow_pcf_taps,
                             );
                         }
                         if timestamps_enabled && let Some(qs) = &self.timestamp_query_set {
