@@ -868,7 +868,8 @@ impl ModuleRuntime {
             .get_resource::<DeltaTime>()
             .map(|delta| delta.0 as f32)
             .unwrap_or(0.0);
-        crate::systems::animation::sys_animate(&self.ecs_world, animation_delta);
+        let animated_shadow_lights =
+            crate::systems::animation::sys_animate(&self.ecs_world, animation_delta);
         let t_stagger_start = Instant::now();
         let d_realize = t_stagger_start - t_realize_start;
         let d_realize_env = t_models_start - t_env_start;
@@ -890,6 +891,7 @@ impl ModuleRuntime {
             &mut self.ecs_world,
             global_model_dirty,
             new_light_bootstrap,
+            &animated_shadow_lights,
         );
 
         log::trace!(

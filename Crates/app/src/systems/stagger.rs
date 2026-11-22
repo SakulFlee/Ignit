@@ -14,11 +14,13 @@ use ignit_shadow::ShadowCaster;
 ///
 /// If `global_dirty` is true (model or scene change), all shadow-casting
 /// lights are included regardless of the budget. `new_light_bootstrap` does
-/// the same when lights were added this frame.
+/// the same when lights were added this frame. `animated_lights` are always
+/// included and do not consume the budget: their caster changes every frame.
 pub fn sys_stagger_shadow_updates(
     ecs: &mut World,
     global_dirty: bool,
     new_light_bootstrap: bool,
+    animated_lights: &[u32],
 ) -> HashSet<u32> {
     let config = ecs
         .get_resource::<StaggeredLightConfig>()
@@ -27,6 +29,7 @@ pub fn sys_stagger_shadow_updates(
         .max(1) as usize;
 
     let mut result = HashSet::new();
+    result.extend(animated_lights.iter().copied());
 
     // Collect all shadow-casting entities and their slot indices.
     // Falls back to sequential indexing if LightSlotIndex store is absent.
@@ -137,6 +140,12 @@ pub fn sys_stagger_shadow_updates(
                 .map(|(_, s)| *s)
         };
         if let Some(slot) = slot {
+            if result.contains(&slot) {
+                // Already scheduled because an animated model needs it; do not
+                // spend the static budget on it.
+                processed.insert(eid);
+                continue;
+            }
             result.insert(slot);
             processed.insert(eid);
             budget -= 1;
@@ -184,7 +193,7 @@ mod tests {
     fn a_static_scene_queues_no_shadow_updates() {
         let mut world = caster_world(false);
 
-        let updates = sys_stagger_shadow_updates(&mut world, false, false);
+        let updates = sys_stagger_shadow_updates(&mut world, false, false, &[]);
 
         assert!(updates.is_empty());
     }
@@ -193,10 +202,20 @@ mod tests {
     fn dirty_casters_are_updated_and_cleared() {
         let mut world = caster_world(true);
 
-        let updates = sys_stagger_shadow_updates(&mut world, false, false);
+        let updates = sys_stagger_shadow_updates(&mut world, false, false, &[]);
 
         assert!(updates.contains(&0));
         let store = world.get_component_store::<ShadowDirtyFlag>().unwrap();
         assert!(!store.components[0].is_dirty());
+    }
+
+    #[test]
+    fn animated_lights_bypass_the_update_budget() {
+        let mut world = caster_world(true);
+
+        let updates = sys_stagger_shadow_updates(&mut world, false, false, &[3]);
+
+        assert!(updates.contains(&0), "dirty caster still uses the budget");
+        assert!(updates.contains(&3), "animated light is always scheduled");
     }
 }

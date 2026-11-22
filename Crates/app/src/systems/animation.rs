@@ -5,12 +5,14 @@
 
 use std::sync::Arc;
 
-use cgmath::{Matrix4, SquareMatrix};
+use cgmath::{InnerSpace, Matrix4, Point3, SquareMatrix};
 use ignit_ecs::World;
 use ignit_ecs_bridge::{
-    AnimationPlayer, DeviceResource, ModelRealization, QueueResource, SkeletonComponent,
-    SkinningMode,
+    AnimationPlayer, DeviceResource, LightDescriptor, LightSlotIndex, ModelRealization, Position,
+    QueueResource, SkeletonComponent, SkinningMode,
 };
+use ignit_light::LightType;
+use ignit_shadow::ShadowCaster;
 
 /// Animation layers for the current clip and an optional fade-out layer.
 fn animation_layers(player: &AnimationPlayer) -> Vec<ignit_animation::AnimationLayer<'_>> {
@@ -36,13 +38,18 @@ fn animation_layers(player: &AnimationPlayer) -> Vec<ignit_animation::AnimationL
 }
 
 /// Advances animation players and deforms skinned vertices.
-pub fn sys_animate(ecs: &World, delta_time: f32) {
+///
+/// Returns the shadow slots of every light whose influence contains an
+/// animated model. Those maps must refresh even when the rest of the scene is
+/// static, otherwise the shadow keeps the pose it had when the light last
+/// changed.
+pub fn sys_animate(ecs: &World, delta_time: f32) -> Vec<u32> {
     let (device, queue) = {
         let Some(device) = ecs.get_resource::<DeviceResource>() else {
-            return;
+            return Vec::new();
         };
         let Some(queue) = ecs.get_resource::<QueueResource>() else {
-            return;
+            return Vec::new();
         };
         (device.0.clone(), queue.0.clone())
     };
@@ -52,13 +59,13 @@ pub fn sys_animate(ecs: &World, delta_time: f32) {
 
     let mut updates = {
         let Some(players) = ecs.get_component_store::<AnimationPlayer>() else {
-            return;
+            return Vec::new();
         };
         let Some(skeletons) = ecs.get_component_store::<SkeletonComponent>() else {
-            return;
+            return Vec::new();
         };
         let Some(models) = ecs.get_component_store::<ModelRealization>() else {
-            return;
+            return Vec::new();
         };
 
         let mut updates = Vec::new();
@@ -110,24 +117,26 @@ pub fn sys_animate(ecs: &World, delta_time: f32) {
     };
 
     if updates.is_empty() {
-        return;
+        return Vec::new();
     }
 
+    let mut animated_models = Vec::with_capacity(updates.len());
     let mut compute_models = Vec::new();
     {
         let Some(players) = ecs.get_component_store_mut::<AnimationPlayer>() else {
-            return;
+            return Vec::new();
         };
         let Some(skeletons) = ecs.get_component_store_mut::<SkeletonComponent>() else {
-            return;
+            return Vec::new();
         };
         let Some(models) = ecs.get_component_store_mut::<ModelRealization>() else {
-            return;
+            return Vec::new();
         };
 
         for (player_index, skeleton_index, model_index, player, skeleton, use_compute, vertices) in
             updates.drain(..)
         {
+            animated_models.push(model_index);
             let skin_matrices = use_compute.then(|| skeleton.skin_matrices().to_vec());
 
             players.get_mut_store().components[player_index] = player;
@@ -147,7 +156,7 @@ pub fn sys_animate(ecs: &World, delta_time: f32) {
         && !compute_models.is_empty()
     {
         let Some(models) = ecs.get_component_store::<ModelRealization>() else {
-            return;
+            return Vec::new();
         };
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -158,6 +167,64 @@ pub fn sys_animate(ecs: &World, delta_time: f32) {
         }
         queue.submit([encoder.finish()]);
     }
+
+    animated_shadow_lights(ecs, &animated_models)
+}
+
+/// Shadow slots of the lights that can see any of the animated models.
+fn animated_shadow_lights(ecs: &World, model_indices: &[usize]) -> Vec<u32> {
+    let (Some(models), Some(lights), Some(positions), Some(casters), Some(slots)) = (
+        ecs.get_component_store::<ModelRealization>(),
+        ecs.get_component_store::<LightDescriptor>(),
+        ecs.get_component_store::<Position>(),
+        ecs.get_component_store::<ShadowCaster>(),
+        ecs.get_component_store::<LightSlotIndex>(),
+    ) else {
+        return Vec::new();
+    };
+
+    let mut animated_bounds = Vec::new();
+    for &model_index in model_indices {
+        for bound in models.components[model_index].0.instance_bounds() {
+            animated_bounds.push((Point3::new(bound[0], bound[1], bound[2]), bound[3]));
+        }
+    }
+    if animated_bounds.is_empty() {
+        return Vec::new();
+    }
+
+    let mut affected = Vec::new();
+    for &entity in casters.dense.as_slice() {
+        let Some(caster_index) = casters.sparse.get(entity).copied().flatten() else {
+            continue;
+        };
+        if !casters.components[caster_index].enabled {
+            continue;
+        }
+        let Some(light_index) = lights.sparse.get(entity).copied().flatten() else {
+            continue;
+        };
+        let light = &lights.components[light_index];
+
+        let affects_animation = match light.light_type {
+            LightType::Directional { .. } => true,
+            _ => {
+                let Some(position_index) = positions.sparse.get(entity).copied().flatten() else {
+                    continue;
+                };
+                let center = positions.components[position_index].0;
+                animated_bounds.iter().any(|&(model_center, radius)| {
+                    (model_center - center).magnitude() <= light.range + radius
+                })
+            }
+        };
+
+        if affects_animation && let Some(slot_index) = slots.sparse.get(entity).copied().flatten() {
+            affected.push(slots.components[slot_index].0);
+        }
+    }
+
+    affected
 }
 
 #[cfg(test)]
@@ -171,8 +238,11 @@ mod tests {
         Interpolation, JointDescriptor, SkeletonDescriptor, SkinData,
     };
     use ignit_core::cache::Cache;
-    use ignit_ecs_bridge::{DeviceResource, ModelRealization, QueueResource, SkeletonComponent};
+    use ignit_ecs_bridge::{
+        DeviceResource, ModelInstances, ModelRealization, QueueResource, SkeletonComponent,
+    };
     use ignit_material_shader::{MaterialShaderDescriptor, PipelineCache};
+    use ignit_math::Transform;
     use ignit_mesh::{MeshDescriptor, Vertex};
     use ignit_model::{Model, ModelDescriptor};
 
@@ -213,11 +283,14 @@ mod tests {
                 ),
             }],
         ));
+        let mut instances = ModelInstances::new();
+        instances.add_instance(Transform::identity());
+
         let descriptor = ModelDescriptor {
             label: "Animated".into(),
             mesh,
             materials: vec![material],
-            transforms: Default::default(),
+            transforms: instances.0,
             skin: Some(Arc::new(SkinData::new(
                 vec![[0; 4]],
                 vec![[1.0, 0.0, 0.0, 0.0]],
@@ -289,6 +362,45 @@ mod tests {
                 .abs()
                 < 1e-6
         );
+    }
+
+    #[test]
+    fn sys_animate_reports_lights_that_see_the_model() {
+        let mut world = animated_world(false);
+
+        let near = world.spawn_entity();
+        world
+            .attach_component(
+                &near,
+                LightDescriptor::new_point(Vector3::new(1.0, 1.0, 1.0), 10.0),
+            )
+            .unwrap();
+        world
+            .attach_component(&near, Position(Point3::new(0.0, 1.0, 0.0)))
+            .unwrap();
+        world
+            .attach_component(&near, ShadowCaster::default())
+            .unwrap();
+        world.attach_component(&near, LightSlotIndex(7)).unwrap();
+
+        let far = world.spawn_entity();
+        world
+            .attach_component(
+                &far,
+                LightDescriptor::new_point(Vector3::new(1.0, 1.0, 1.0), 10.0),
+            )
+            .unwrap();
+        world
+            .attach_component(&far, Position(Point3::new(100.0, 0.0, 0.0)))
+            .unwrap();
+        world
+            .attach_component(&far, ShadowCaster::default())
+            .unwrap();
+        world.attach_component(&far, LightSlotIndex(8)).unwrap();
+
+        let slots = sys_animate(&world, 0.5);
+
+        assert_eq!(slots, vec![7]);
     }
 
     #[test]
