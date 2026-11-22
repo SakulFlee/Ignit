@@ -18,8 +18,8 @@ use ignit_texture::Texture;
 use ignit_vertex::Vertex;
 
 use super::{
-    SHADOW_TYPE_DIRECTIONAL_CASCADE, SHADOW_TYPE_POINT, SHADOW_TYPE_SPOT, ShadowGpuData,
-    ShadowLightInfo, ShadowSlotData,
+    MAX_CUBE_SHADOW_RESOLUTION, SHADOW_TYPE_DIRECTIONAL_CASCADE, SHADOW_TYPE_POINT,
+    SHADOW_TYPE_SPOT, ShadowGpuData, ShadowLightInfo, ShadowSlotData,
 };
 
 const SHADOW_DEPTH_SHADER: &str = include_str!("shadow_depth.wgsl");
@@ -79,6 +79,8 @@ pub struct ShadowRenderer {
     layer_views: Vec<TextureView>,
     max_slots: u32,
     resolution: u32,
+    /// Cube faces are smaller than the 2D array and capped per point light.
+    cube_resolution: u32,
     /// Cube depth texture array for point light shadows.
     cube_depth_texture: Texture,
     cube_count: u32,
@@ -108,6 +110,7 @@ pub struct ShadowRenderer {
 impl ShadowRenderer {
     pub fn new(device: &Device, queue: &Queue, max_slots: u32, resolution: u32) -> Self {
         let initial_layers = 1u32; // min 1 layer (wgpu req.), grows on demand
+        let cube_resolution = resolution.clamp(1, MAX_CUBE_SHADOW_RESOLUTION);
 
         let depth_texture = Self::create_depth_array_texture(device, resolution, initial_layers);
         let layer_views = Self::create_layer_views(&depth_texture, initial_layers);
@@ -139,7 +142,7 @@ impl ShadowRenderer {
         });
 
         // Point light cube shadow array (initially 1 cube = 6 layers)
-        let cube_depth_texture = Self::create_cube_depth_texture(device, resolution, 1);
+        let cube_depth_texture = Self::create_cube_depth_texture(device, cube_resolution, 1);
         let cube_face_views = Self::create_cube_face_views(&cube_depth_texture, 1);
         let cube_sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("Shadow Cube Sampler"),
@@ -188,6 +191,7 @@ impl ShadowRenderer {
             layer_views,
             max_slots,
             resolution,
+            cube_resolution,
             cube_depth_texture,
             cube_count: 1,
             cube_face_views,
@@ -437,24 +441,38 @@ impl ShadowRenderer {
         // depth data (e.g. a cube texture reallocation dropping cube 0).
         let mut needed_cubes = 0u32;
         let mut needed_layers = 0u32;
+        let mut needed_cube_resolution = 0u32;
         for light in shadow_lights {
             if !light.caster.enabled {
                 continue;
             }
             match light.light_type {
-                0 => needed_cubes += 1,
+                0 => {
+                    needed_cubes += 1;
+                    needed_cube_resolution = needed_cube_resolution
+                        .max(light.caster.resolution.clamp(1, MAX_CUBE_SHADOW_RESOLUTION));
+                }
                 1 => needed_layers += light.caster.cascade_count.max(1),
                 2 => needed_layers += 1,
                 _ => {}
             }
         }
+        let cube_resolution = if needed_cubes > 0 {
+            needed_cube_resolution.max(1)
+        } else {
+            self.cube_resolution
+        };
+        let cube_resolution_changed = cube_resolution != self.cube_resolution;
         let grew_cubes = needed_cubes > self.cube_count;
         let grew_layers = needed_layers > self.layer_count;
-        let force_all_dirty = grew_cubes || grew_layers;
+        let force_all_dirty = grew_cubes || grew_layers || cube_resolution_changed;
         if force_all_dirty {
             self.generation = self.generation.wrapping_add(1);
         }
 
+        if cube_resolution_changed {
+            self.ensure_cube_resolution(device, cube_resolution);
+        }
         if needed_cubes > 0 {
             self.ensure_cubes(device, needed_cubes);
         }
@@ -485,8 +503,6 @@ impl ShadowRenderer {
                 );
                 break;
             }
-
-            let _resolution = light.caster.resolution.max(1);
 
             let is_dirty = dirty_set.contains(&light.light_store_index) || force_all_dirty;
 
@@ -533,7 +549,8 @@ impl ShadowRenderer {
                         bias: light.caster.bias,
                         light_index: light.light_store_index,
                         near_plane,
-                        _padding: [0; 2],
+                        resolution: self.cube_resolution,
+                        uv_scale: 1.0,
                     };
                     slot_data.light_view_proj[3] =
                         [light.position.x, light.position.y, light.position.z, 1.0];
@@ -609,6 +626,9 @@ impl ShadowRenderer {
                         light.caster.cascade_split_lambda,
                     );
 
+                    let (resolution, uv_scale) =
+                        Self::slot_resolution(light.caster.resolution, self.resolution);
+
                     for cascade in &cascades {
                         if slot_index >= self.max_slots {
                             break;
@@ -621,7 +641,8 @@ impl ShadowRenderer {
                             bias: light.caster.bias,
                             light_index: light.light_store_index,
                             near_plane: 0.1,
-                            _padding: [0; 2],
+                            resolution,
+                            uv_scale,
                         };
 
                         slot_matrix_offsets.push(matrix_index);
@@ -661,6 +682,8 @@ impl ShadowRenderer {
                         SPOT_SHADOW_NEAR,
                         SPOT_SHADOW_FAR,
                     );
+                    let (resolution, uv_scale) =
+                        Self::slot_resolution(light.caster.resolution, self.resolution);
 
                     self.gpu_data.slots[slot_index as usize] = ShadowSlotData {
                         light_view_proj: vp.into(),
@@ -670,7 +693,8 @@ impl ShadowRenderer {
                         bias: light.caster.bias,
                         light_index: light.light_store_index,
                         near_plane: SPOT_SHADOW_NEAR,
-                        _padding: [0; 2],
+                        resolution,
+                        uv_scale,
                     };
                     slot_matrix_offsets.push(matrix_index);
                     let off = matrix_index as usize * self.slot_stride as usize;
@@ -737,6 +761,11 @@ impl ShadowRenderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+
+            // Lower-resolution lights rasterize into the top-left viewport of
+            // their layer; the shader scales UVs and the PCF kernel to match.
+            let resolution = slot.resolution.clamp(1, self.resolution);
+            pass.set_viewport(0.0, 0.0, resolution as f32, resolution as f32, 0.0, 1.0);
 
             let matrix_offset = (slot_matrix_offsets[i as usize] as u64 * self.slot_stride) as u32;
             self.draw_shadow_models(
@@ -914,6 +943,19 @@ impl ShadowRenderer {
         self.layer_count = new_layers;
     }
 
+    /// Ensure the cube depth array was allocated at `resolution`.
+    pub fn ensure_cube_resolution(&mut self, device: &Device, resolution: u32) {
+        let resolution = resolution.clamp(1, MAX_CUBE_SHADOW_RESOLUTION);
+        if resolution == self.cube_resolution {
+            return;
+        }
+        self.cube_resolution = resolution;
+        self.cube_depth_texture =
+            Self::create_cube_depth_texture(device, resolution, self.cube_count);
+        self.cube_face_views =
+            Self::create_cube_face_views(&self.cube_depth_texture, self.cube_count);
+    }
+
     /// Ensure the cube depth array has at least `needed` cubes.
     pub fn ensure_cubes(&mut self, device: &Device, needed: u32) {
         if needed <= self.cube_count {
@@ -921,9 +963,17 @@ impl ShadowRenderer {
         }
         let new_cubes = needed.max(self.cube_count * 2).min(self.max_slots);
         self.cube_depth_texture =
-            Self::create_cube_depth_texture(device, self.resolution, new_cubes);
+            Self::create_cube_depth_texture(device, self.cube_resolution, new_cubes);
         self.cube_face_views = Self::create_cube_face_views(&self.cube_depth_texture, new_cubes);
         self.cube_count = new_cubes;
+    }
+
+    /// Clamp a caster's requested 2D resolution to the layer array and return
+    /// the UV scale that maps its full frustum into the rendered viewport.
+    fn slot_resolution(requested: u32, array_resolution: u32) -> (u32, f32) {
+        let array_resolution = array_resolution.max(1);
+        let resolution = requested.clamp(1, array_resolution);
+        (resolution, resolution as f32 / array_resolution as f32)
     }
 
     /// Upload current GPU data to the uniform buffer.
@@ -1151,4 +1201,28 @@ fn matrix_to_bytes(matrix: &Matrix4<f32>) -> [u8; 64] {
         }
     }
     bytes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_slot(requested: u32, array: u32, expected: u32, expected_scale: f32) {
+        let (resolution, scale) = ShadowRenderer::slot_resolution(requested, array);
+        assert_eq!(resolution, expected);
+        assert!(
+            (scale - expected_scale).abs() < 1e-6,
+            "expected scale {expected_scale}, got {scale}"
+        );
+    }
+
+    #[test]
+    fn slot_resolution_clamps_and_scales() {
+        assert_slot(512, 2048, 512, 0.25);
+        assert_slot(1024, 2048, 1024, 0.5);
+        assert_slot(2048, 2048, 2048, 1.0);
+        assert_slot(4096, 2048, 2048, 1.0);
+        assert_slot(0, 2048, 1, 1.0 / 2048.0);
+        assert_slot(512, 0, 1, 1.0);
+    }
 }

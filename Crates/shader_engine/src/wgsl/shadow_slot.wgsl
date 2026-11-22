@@ -6,6 +6,8 @@ struct ShadowSlot {
     bias: f32,
     light_index: u32,
     near_plane: f32,
+    resolution: u32,
+    uv_scale: f32,
 }
 
 // Keep in sync with `ignit_shadow::ShadowGpuData`.

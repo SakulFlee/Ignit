@@ -147,3 +147,62 @@ pub fn pbr_library() -> NodeLibrary {
 
     lib
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use ignit_shader_preprocessor::{NodeRegistry, ShaderBuilder};
+
+    use super::pbr_library;
+
+    #[test]
+    fn shadow_nodes_assemble_to_valid_wgsl() {
+        let mut registry = NodeRegistry::new();
+        registry
+            .register_library(&ignit_shader_engine::engine_library())
+            .expect("register engine nodes");
+        registry
+            .register_library(&ignit_shader_math::math_library())
+            .expect("register math nodes");
+        registry
+            .register_library(&pbr_library())
+            .expect("register PBR nodes");
+
+        let mut builder = ShaderBuilder::new(Arc::new(registry));
+        builder
+            .add_node("compute_shadow_for_light")
+            .expect("resolve shadow nodes");
+        builder.add_source(
+            r#"
+@group(0) @binding(1) var<storage> light_store: array<Light>;
+@group(0) @binding(8) var<uniform> shadow_data: ShadowData;
+@group(0) @binding(9) var shadow_map_array: texture_depth_2d_array;
+@group(0) @binding(10) var shadow_sampler: sampler_comparison;
+@group(0) @binding(11) var point_shadow_maps: texture_depth_cube_array;
+@group(0) @binding(12) var point_shadow_sampler: sampler_comparison;
+
+@compute @workgroup_size(1)
+fn test_shadow_call() {
+    _ = compute_shadow_for_light(
+        vec3<f32>(0.0),
+        0.0,
+        0u,
+        vec3<f32>(0.0, 1.0, 0.0),
+    );
+}
+"#,
+        );
+
+        let source = builder.build();
+        let module = wgpu::naga::front::wgsl::parse_str(&source)
+            .unwrap_or_else(|error| panic!("shadow WGSL failed to parse: {error:?}\n{source}"));
+        let mut validator = wgpu::naga::valid::Validator::new(
+            wgpu::naga::valid::ValidationFlags::all(),
+            wgpu::naga::valid::Capabilities::all(),
+        );
+        validator
+            .validate(&module)
+            .unwrap_or_else(|error| panic!("shadow WGSL failed validation: {error:?}"));
+    }
+}
