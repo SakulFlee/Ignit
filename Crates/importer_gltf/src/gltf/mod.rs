@@ -19,6 +19,10 @@ use ignit_material_shader::{AlphaMode, MaterialShaderDescriptor};
 use ignit_math::Transform;
 use ignit_mesh::{MeshDescriptor, Vertex};
 use ignit_model::ModelDescriptor;
+use ignit_shader_pbr::{
+    MATERIAL_TEXTURE_ALBEDO, MATERIAL_TEXTURE_EMISSIVE, MATERIAL_TEXTURE_METALLIC,
+    MATERIAL_TEXTURE_NORMAL, MATERIAL_TEXTURE_OCCLUSION, MATERIAL_TEXTURE_ROUGHNESS,
+};
 use ignit_texture::{FilterMode, TextureDescriptor, TextureSize};
 use image::GenericImageView;
 use log::{debug, trace, warn};
@@ -1057,15 +1061,11 @@ impl GltfImporter {
                 (texture, Vector3::new(factor[0], factor[1], factor[2]))
             } else {
                 let factor = material.pbr_metallic_roughness().base_color_factor();
-                let texture = TextureDescriptor::uniform_rgba_value(
-                    factor[0] as f64,
-                    factor[1] as f64,
-                    factor[2] as f64,
-                    factor[3] as f64,
-                    true,
-                );
+                // The texture is not sampled when the albedo flag is clear;
+                // keep the factor in linear space for the shader.
+                let texture = TextureDescriptor::uniform_rgba_white(true);
 
-                (texture, Vector3::new(1.0, 1.0, 1.0))
+                (texture, Vector3::new(factor[0], factor[1], factor[2]))
             };
 
         let (metallic, roughness, metallic_factor, roughness_factor) =
@@ -1091,31 +1091,17 @@ impl GltfImporter {
                     factor_roughness,
                 )
             } else {
-                // If no metallic/roughness texture is set, the factors will act as a global texture and the factors inside the shader should be set to 1.0!
-
+                // No metallic/roughness texture: use the material factors
+                // directly and skip the two fetches.
                 let factor_metallic = material.pbr_metallic_roughness().metallic_factor();
-                let texture_descriptor_metallic = TextureDescriptor::uniform_rgba_value(
-                    factor_metallic as f64,
-                    0.0,
-                    0.0,
-                    1.0,
-                    true,
-                );
-
                 let factor_roughness = material.pbr_metallic_roughness().roughness_factor();
-                let texture_descriptor_roughness = TextureDescriptor::uniform_rgba_value(
-                    factor_roughness as f64,
-                    0.0,
-                    0.0,
-                    1.0,
-                    true,
-                );
+                let texture_descriptor = TextureDescriptor::uniform_rgba_white(false);
 
                 (
-                    texture_descriptor_metallic,
-                    texture_descriptor_roughness,
-                    1.0,
-                    1.0,
+                    texture_descriptor.clone(),
+                    texture_descriptor,
+                    factor_metallic,
+                    factor_roughness,
                 )
             };
 
@@ -1134,6 +1120,7 @@ impl GltfImporter {
             ))
         } else {
             let emissive_color = material.emissive_factor();
+            // glTF emissive factors are linear, unlike emissive textures.
             TextureDescriptor::uniform_rgba_color(
                 Color {
                     r: emissive_color[0] as f64,
@@ -1141,7 +1128,7 @@ impl GltfImporter {
                     b: emissive_color[2] as f64,
                     a: 1.0,
                 },
-                true,
+                false,
             )
         };
 
@@ -1153,6 +1140,33 @@ impl GltfImporter {
             gltf::material::AlphaMode::Blend => AlphaMode::Blend,
         };
         let alpha_factor = material.pbr_metallic_roughness().base_color_factor()[3];
+
+        let mut texture_flags = 0;
+        if material
+            .pbr_metallic_roughness()
+            .base_color_texture()
+            .is_some()
+        {
+            texture_flags |= MATERIAL_TEXTURE_ALBEDO;
+        }
+        if material.normal_texture().is_some() {
+            texture_flags |= MATERIAL_TEXTURE_NORMAL;
+        }
+        if material
+            .pbr_metallic_roughness()
+            .metallic_roughness_texture()
+            .is_some()
+        {
+            texture_flags |= MATERIAL_TEXTURE_METALLIC | MATERIAL_TEXTURE_ROUGHNESS;
+        }
+        if material.occlusion_texture().is_some() {
+            texture_flags |= MATERIAL_TEXTURE_OCCLUSION;
+        }
+        let emissive_factor = material.emissive_factor();
+        if material.emissive_texture().is_some() || emissive_factor.iter().any(|value| *value > 0.0)
+        {
+            texture_flags |= MATERIAL_TEXTURE_EMISSIVE;
+        }
 
         let pbr_material = PBRMaterialDescriptor {
             name: material.name().map(|x| x.to_string()),
@@ -1167,6 +1181,7 @@ impl GltfImporter {
             emissive,
             alpha_mode,
             alpha_factor,
+            texture_flags,
             custom_material_shader: None,
         };
 

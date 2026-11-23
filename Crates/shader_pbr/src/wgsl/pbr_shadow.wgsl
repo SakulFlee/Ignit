@@ -25,7 +25,11 @@ struct PBRFactors {
     roughness_factor: f32,
     alpha_factor: f32,
     alpha_cutoff: f32,
+    flags: u32,
 }
+
+// Keep in sync with ignit_shader_pbr::MATERIAL_TEXTURE_ALBEDO.
+const HAS_ALBEDO_TEXTURE: u32 = 1u;
 
 struct ShadowVertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -60,12 +64,15 @@ fn entrypoint_vertex_shadow(
 fn entrypoint_fragment_shadow(in: ShadowVertexOutput) {
     // Opaque materials have a zero cutoff and skip the texture fetch.
     if (pbr_factors.alpha_cutoff > 0.0) {
-        let alpha = textureSampleLevel(
-            albedo_texture,
-            albedo_sampler,
-            in.uv,
-            0.0,
-        ).a * pbr_factors.alpha_factor;
+        var alpha = pbr_factors.alpha_factor;
+        if ((pbr_factors.flags & HAS_ALBEDO_TEXTURE) != 0u) {
+            alpha *= textureSampleLevel(
+                albedo_texture,
+                albedo_sampler,
+                in.uv,
+                0.0,
+            ).a;
+        }
         if (alpha < pbr_factors.alpha_cutoff) {
             discard;
         }

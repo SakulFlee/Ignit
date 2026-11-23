@@ -5,7 +5,7 @@ use std::sync::Arc;
 use cgmath::Vector3;
 use ignit_material_shader::{AlphaMode, MaterialShaderDescriptor, RenderQueue, VertexStageLayout};
 use ignit_shader_core::VariableType;
-use ignit_shader_pbr::PBRMaterialShaderDescriptor;
+use ignit_shader_pbr::{MATERIAL_TEXTURE_ALBEDO, PBRMaterialShaderDescriptor};
 use ignit_texture::{BufferDescriptor, FilterMode, TextureDescriptor, TextureSize};
 use wgpu::{
     BlendState, CompareFunction, SamplerBindingType, TextureDimension, TextureFormat,
@@ -80,6 +80,9 @@ pub(crate) fn lit_material(
         emissive: black_r8_texture(),
         alpha_mode,
         alpha_factor: color[3],
+        // The remaining textures are neutral placeholders; only albedo is a
+        // real texture the shader needs to sample.
+        texture_flags: MATERIAL_TEXTURE_ALBEDO,
         ..PBRMaterialShaderDescriptor::default()
     };
 

@@ -2364,6 +2364,7 @@ dependencies = [
  "ignit_material_shader",
  "ignit_math",
  "ignit_mesh",
+ "ignit_shader_core",
  "ignit_shader_debug",
  "ignit_shader_pbr",
  "ignit_texture",
