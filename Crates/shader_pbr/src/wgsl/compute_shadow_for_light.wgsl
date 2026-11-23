@@ -52,9 +52,17 @@ fn compute_shadow_for_light_with_taps(
     for (var offset = 0u; offset < count; offset++) {
         let slot = shadow_data.slots[first + offset];
 
-        let bias = slope_scaled_bias(slot.bias, n_dot_l);
+        // A smaller shadow map covers more world space per texel, so the same
+        // bias produces more self-shadowing. Scale it against the physical
+        // array resolution to preserve the 2048 behaviour at lower sizes.
+        let resolution_scale = max(
+            1.0,
+            f32(textureDimensions(shadow_map_array).x) / max(f32(slot.resolution), 1.0),
+        );
+        let bias = slope_scaled_bias(slot.bias, n_dot_l) * resolution_scale;
 
-        let world_bias = slot.bias * max(1.0 - clamp(n_dot_l, 0.0, 1.0), 0.01) * 2.0;
+        let world_bias =
+            slot.bias * max(1.0 - clamp(n_dot_l, 0.0, 1.0), 0.01) * 2.0 * resolution_scale;
         let biased_world_pos = world_pos + to_light * world_bias;
 
         if (slot.shadow_type == SHADOW_TYPE_DIRECTIONAL_CASCADE) {
