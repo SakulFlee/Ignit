@@ -1,6 +1,6 @@
 //! Fullscreen HDR → LDR tonemap pass.
 
-use cgmath::{Matrix4, Point3, Vector2};
+use cgmath::{InnerSpace, Matrix4, Point3, Vector2, Vector3, Vector4};
 use wgpu::{
     BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType,
     BlendState, BufferBindingType, ColorTargetState, ColorWrites, Device, Extent3d, FragmentState,
@@ -53,6 +53,10 @@ impl Default for TonemapSettings {
 const GLARE_PARAMS_FLOATS: usize = 16 + 4 + 4 + 4 + 4 + MAX_GLARE_LIGHTS * 16;
 const GLARE_PARAMS_BYTES: usize = GLARE_PARAMS_FLOATS * 4;
 const GLARE_RADIUS: f32 = 0.028;
+/// Maximum lights evaluated by the per-pixel glare loop. The shader keeps its
+/// 32-slot buffer, but only the brightest nearby on-screen lights are written
+/// to it.
+const GLARE_LIGHT_BUDGET: usize = 8;
 const TONEMAP_PARAMS_BYTES: usize = 64;
 
 struct TonemapParams {
@@ -102,6 +106,44 @@ fn tonemap_params_data(settings: &TonemapSettings, gamma: f32) -> [u8; TONEMAP_P
 
 fn write_f32(data: &mut [u8], offset: usize, value: f32) {
     data[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+/// Score used to choose which lights deserve a glare pass. Mirrors the
+/// shader's inverse-quadratic attenuation.
+fn glare_score(light: &GlareLight, camera_position: &Point3<f32>) -> f32 {
+    let offset = Vector3::new(
+        light.position.x - camera_position.x,
+        light.position.y - camera_position.y,
+        light.position.z - camera_position.z,
+    );
+    light.intensity / (1.0 + offset.dot(offset) * 0.015)
+}
+
+/// Keeps the brightest nearby lights whose glare could reach the screen.
+fn rank_glare_lights<'a>(
+    lights: &'a [GlareLight],
+    view_projection: &Matrix4<f32>,
+    camera_position: &Point3<f32>,
+) -> Vec<&'a GlareLight> {
+    let mut visible: Vec<&GlareLight> = lights
+        .iter()
+        .filter(|light| {
+            let clip = view_projection
+                * Vector4::new(light.position.x, light.position.y, light.position.z, 1.0);
+            if clip.w <= 0.0 {
+                return false;
+            }
+            let x = clip.x / clip.w;
+            let y = clip.y / clip.w;
+            x.abs() <= 1.2 && y.abs() <= 1.2
+        })
+        .collect();
+
+    visible.sort_by(|a, b| {
+        glare_score(b, camera_position).total_cmp(&glare_score(a, camera_position))
+    });
+    visible.truncate(GLARE_LIGHT_BUDGET);
+    visible
 }
 
 /// Owns the fullscreen tonemap pipeline and its static resources.
@@ -323,16 +365,18 @@ impl Tonemap {
         write_f32(&mut data, 68, camera_position.y);
         write_f32(&mut data, 72, camera_position.z);
 
+        let selected = rank_glare_lights(lights, &view_projection, &camera_position);
+
         write_f32(&mut data, 80, output_resolution.x as f32);
         write_f32(&mut data, 84, output_resolution.y as f32);
-        write_f32(&mut data, 88, lights.len().min(MAX_GLARE_LIGHTS) as f32);
+        write_f32(&mut data, 88, selected.len() as f32);
         write_f32(&mut data, 92, GLARE_RADIUS);
         write_f32(&mut data, 96, near);
         write_f32(&mut data, 100, far);
         write_f32(&mut data, 112, depth_resolution.x.max(1) as f32);
         write_f32(&mut data, 116, depth_resolution.y.max(1) as f32);
 
-        for (index, light) in lights.iter().take(MAX_GLARE_LIGHTS).enumerate() {
+        for (index, light) in selected.iter().enumerate() {
             let offset = 128 + index * 64;
             write_f32(&mut data, offset, light.position.x);
             write_f32(&mut data, offset + 4, light.position.y);
@@ -492,5 +536,34 @@ mod tests {
         assert_eq!(u32::from_le_bytes(data[40..44].try_into().unwrap()), 0);
         assert_eq!(f32::from_le_bytes(data[44..48].try_into().unwrap()), 24.0);
         assert!(data[48..].iter().all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn glare_ranking_prefers_bright_near_lights_and_caps() {
+        let make = |x: f32, intensity: f32| GlareLight {
+            position: Vector3::new(x, 0.0, 0.0),
+            color: Vector3::new(1.0, 1.0, 1.0),
+            intensity,
+            direction: Vector3::new(0.0, 0.0, 0.0),
+            is_spot: false,
+            outer_cone_angle: 0.0,
+            seed: 0.0,
+        };
+        let mut lights: Vec<_> = (0..12)
+            .map(|index| make(index as f32 / 12.0, (index + 1) as f32))
+            .collect();
+        lights.push(make(3.0, 1000.0));
+
+        let camera = Point3::new(0.0, 0.0, 0.0);
+        let ranked = rank_glare_lights(&lights, &Matrix4::from_scale(1.0), &camera);
+
+        assert_eq!(ranked.len(), GLARE_LIGHT_BUDGET);
+        assert!(ranked.iter().all(|light| light.position.x.abs() <= 1.2));
+        assert!(ranked.iter().all(|light| light.intensity < 1000.0));
+        let scores: Vec<_> = ranked
+            .iter()
+            .map(|light| glare_score(light, &camera))
+            .collect();
+        assert!(scores.windows(2).all(|pair| pair[0] >= pair[1]));
     }
 }
