@@ -3,11 +3,21 @@ use std::sync::Arc;
 use cgmath::Vector3;
 use ignit_material_shader::{AlphaMode, MaterialShaderDescriptor, VertexStageLayout};
 use ignit_shader_debug::wireframe_descriptor;
-use ignit_shader_pbr::PBRMaterialShaderDescriptor;
+use ignit_shader_pbr::{MATERIAL_TEXTURE_OCCLUSION, PBRMaterialShaderDescriptor};
 use ignit_texture::{FilterMode, TextureDescriptor, TextureSize};
 use wgpu::{TextureUsages, VertexAttribute, VertexBufferLayout, VertexFormat, VertexStepMode};
 
 const DEFAULT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+
+/// Matches the hardware sRGB decode used by uploaded colour textures.
+fn srgb_to_linear(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    if value <= 0.04045 {
+        value / 12.92
+    } else {
+        ((value + 0.055) / 1.055).powf(2.4)
+    }
+}
 
 fn mat_texture_usages() -> TextureUsages {
     TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST
@@ -125,13 +135,19 @@ impl SceneMaterial {
                     name: Some("SceneMaterial::Color".into()),
                     normal: normal_tex,
                     albedo: tex_1x1_rgba,
-                    // Values are baked into 1x1 textures; factors act as
-                    // neutral multipliers (matching glTF importer pattern).
-                    albedo_factor: Vector3::new(1.0, 1.0, 1.0),
+                    // Albedo, metallic and roughness live in the factors, so
+                    // the shader can skip those three texture fetches. The
+                    // factor is linear, matching the hardware sRGB decode the
+                    // 1x1 texture used to receive.
+                    albedo_factor: Vector3::new(
+                        srgb_to_linear(a[0]),
+                        srgb_to_linear(a[1]),
+                        srgb_to_linear(a[2]),
+                    ),
                     metallic: tex_1x1_r,
-                    metallic_factor: 1.0,
+                    metallic_factor: metallic,
                     roughness: tex_1x1_r2,
-                    roughness_factor: 1.0,
+                    roughness_factor: roughness,
                     occlusion: occlusion_tex,
                     emissive: emissive_tex,
                     // An alpha below one in a scene colour means the author
@@ -142,7 +158,10 @@ impl SceneMaterial {
                     } else {
                         AlphaMode::Opaque
                     },
-                    alpha_factor: 1.0,
+                    alpha_factor: a[3],
+                    // Occlusion keeps its baked 0.5 value to preserve the
+                    // authored ambient level; everything else is neutral.
+                    texture_flags: MATERIAL_TEXTURE_OCCLUSION,
                     custom_material_shader: None,
                 };
 
@@ -169,5 +188,35 @@ impl SceneMaterial {
                 Arc::new(base)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ignit_shader_core::VariableType;
+
+    #[test]
+    fn colour_materials_use_factors_and_skip_neutral_textures() {
+        let material = SceneMaterial::Color {
+            albedo: [1.0, 0.0, 0.0, 0.5],
+            metallic: 0.75,
+            roughness: 0.25,
+        }
+        .into_material_shader();
+
+        let bytes = match material.variables.last().unwrap() {
+            VariableType::Buffer(buffer) => &buffer.data,
+            other => panic!("expected a PBR factor buffer, got {other:?}"),
+        };
+
+        assert_eq!(f32::from_le_bytes(bytes[0..4].try_into().unwrap()), 1.0);
+        assert_eq!(f32::from_le_bytes(bytes[12..16].try_into().unwrap()), 0.75);
+        assert_eq!(f32::from_le_bytes(bytes[16..20].try_into().unwrap()), 0.25);
+        assert_eq!(f32::from_le_bytes(bytes[20..24].try_into().unwrap()), 0.5);
+        assert_eq!(
+            u32::from_le_bytes(bytes[28..32].try_into().unwrap()),
+            MATERIAL_TEXTURE_OCCLUSION,
+        );
     }
 }

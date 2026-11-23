@@ -10,6 +10,27 @@ use wgpu::{
 pub type PBRMaterial = PBRMaterialDescriptor;
 pub type PBRMaterialDescriptor = PBRMaterialShaderDescriptor;
 
+/// A real albedo texture is bound; otherwise use `albedo_factor`.
+pub const MATERIAL_TEXTURE_ALBEDO: u32 = 1 << 0;
+/// A normal map is bound; otherwise use the interpolated vertex normal.
+pub const MATERIAL_TEXTURE_NORMAL: u32 = 1 << 1;
+/// A metallic texture is bound; otherwise use 1.0 × `metallic_factor`.
+pub const MATERIAL_TEXTURE_METALLIC: u32 = 1 << 2;
+/// A roughness texture is bound; otherwise use 1.0 × `roughness_factor`.
+pub const MATERIAL_TEXTURE_ROUGHNESS: u32 = 1 << 3;
+/// An occlusion texture is bound; otherwise use 1.0.
+pub const MATERIAL_TEXTURE_OCCLUSION: u32 = 1 << 4;
+/// An emissive texture is bound; otherwise use black.
+pub const MATERIAL_TEXTURE_EMISSIVE: u32 = 1 << 5;
+
+/// Every optional texture is present. This preserves the pre-flag behaviour.
+pub const MATERIAL_TEXTURE_ALL: u32 = MATERIAL_TEXTURE_ALBEDO
+    | MATERIAL_TEXTURE_NORMAL
+    | MATERIAL_TEXTURE_METALLIC
+    | MATERIAL_TEXTURE_ROUGHNESS
+    | MATERIAL_TEXTURE_OCCLUSION
+    | MATERIAL_TEXTURE_EMISSIVE;
+
 /// Deferred lighting fullscreen source, assembled with
 /// [`DEFERRED_LIGHTING_NODES`].
 pub const DEFERRED_LIGHTING_WGSL: &str = include_str!("wgsl/deferred_lighting.wgsl");
@@ -95,6 +116,9 @@ pub struct PBRMaterialShaderDescriptor {
     pub emissive: TextureDescriptor,
     pub alpha_mode: AlphaMode,
     pub alpha_factor: f32,
+    /// Bitmask of the textures that are actually present. See
+    /// [`MATERIAL_TEXTURE_ALL`] and the individual `MATERIAL_TEXTURE_*` bits.
+    pub texture_flags: u32,
     // --- Material specific ---
     /// Configuration base for creating a `MaterialShaderDescriptor`.
     /// If `Some(...)`, its contents are used as the base configuration.
@@ -193,6 +217,7 @@ impl Default for PBRMaterialShaderDescriptor {
             },
             alpha_mode: AlphaMode::Opaque,
             alpha_factor: 1.0,
+            texture_flags: MATERIAL_TEXTURE_ALL,
             custom_material_shader: Default::default(),
         }
     }
@@ -291,7 +316,7 @@ impl From<PBRMaterialShaderDescriptor> for MaterialShaderDescriptor {
                     val.roughness_factor.to_le_bytes(),
                     val.alpha_factor.to_le_bytes(),
                     alpha_cutoff.to_le_bytes(),
-                    [0; 4],
+                    val.texture_flags.to_le_bytes(),
                 ]
                 .as_flattened()
                 .to_vec(),
@@ -326,6 +351,24 @@ mod tests {
         assert_eq!(bytes.len(), 32);
         assert_eq!(f32::from_le_bytes(bytes[20..24].try_into().unwrap()), 1.0);
         assert_eq!(f32::from_le_bytes(bytes[24..28].try_into().unwrap()), 0.0);
+        assert_eq!(
+            u32::from_le_bytes(bytes[28..32].try_into().unwrap()),
+            MATERIAL_TEXTURE_ALL
+        );
+    }
+
+    #[test]
+    fn texture_flags_reach_the_factor_buffer() {
+        let descriptor = factors(PBRMaterialShaderDescriptor {
+            texture_flags: MATERIAL_TEXTURE_ALBEDO | MATERIAL_TEXTURE_NORMAL,
+            ..PBRMaterialShaderDescriptor::default()
+        });
+        let bytes = factor_bytes(&descriptor);
+
+        assert_eq!(
+            u32::from_le_bytes(bytes[28..32].try_into().unwrap()),
+            MATERIAL_TEXTURE_ALBEDO | MATERIAL_TEXTURE_NORMAL
+        );
     }
 
     #[test]
