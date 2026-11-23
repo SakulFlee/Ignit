@@ -383,7 +383,10 @@ pub fn entrypoint(
         // Showcase the higher-quality LUT-based SMAA path in the flagship example.
         anti_aliasing: AntiAliasing::Smaa,
         bloom_enabled: true,
-        bloom_threshold: 8.0,
+        // The lit surfaces here reach a few units of radiance, not the dozens
+        // an HDR light sprite would, so keep the threshold low enough to catch
+        // the highlights around the lamps.
+        bloom_threshold: 1.0,
         bloom_intensity: 1.0,
         light_glare: true,
         exposure: 1.0,
