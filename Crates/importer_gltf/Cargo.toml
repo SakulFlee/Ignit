@@ -33,3 +33,5 @@ urlencoding = "2.1"
 
 [dev-dependencies]
 serde_json = "1"
+ignit_shader_core = { path = "../shader_core", version = "1.6.3" }
+ignit_shader_pbr = { path = "../shader_pbr", version = "1.6.3" }
