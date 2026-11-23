@@ -113,6 +113,7 @@ struct TonemapBindGroupCache {
     depth: TextureView,
     volumetric: Option<TextureView>,
     bloom: Option<TextureView>,
+    glare: Option<TextureView>,
     bind_group: wgpu::BindGroup,
 }
 
@@ -168,6 +169,10 @@ pub struct Tonemap {
     bloom_bright_pipeline: RenderPipeline,
     bloom_blur_pipeline: RenderPipeline,
     bloom_layout: BindGroupLayout,
+    _glare_fallback: wgpu::Texture,
+    glare_fallback_view: TextureView,
+    glare_pipeline: RenderPipeline,
+    glare_layout: BindGroupLayout,
     bind_group_cache: Option<TonemapBindGroupCache>,
 }
 
@@ -245,6 +250,16 @@ impl Tonemap {
                 },
                 BindGroupLayoutEntry {
                     binding: 7,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 8,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Texture {
                         sample_type: TextureSampleType::Float { filterable: true },
@@ -361,6 +376,77 @@ impl Tonemap {
         let bloom_bright_pipeline = create_bloom("Ignit::BloomBrightPipeline", "fs_bright");
         let bloom_blur_pipeline = create_bloom("Ignit::BloomBlurPipeline", "fs_blur");
 
+        let glare_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("Ignit::GlareShader"),
+            source: ShaderSource::Wgsl(include_str!("glare.wgsl").into()),
+        });
+        let glare_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("Ignit::GlareBindGroupLayout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Depth,
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let glare_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("Ignit::GlarePipelineLayout"),
+            bind_group_layouts: &[Some(&glare_layout)],
+            immediate_size: 0,
+        });
+        let glare_targets = [Some(ColorTargetState {
+            format: wgpu::TextureFormat::Rgba16Float,
+            blend: Some(BlendState::REPLACE),
+            write_mask: ColorWrites::ALL,
+        })];
+        let glare_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("Ignit::GlarePipeline"),
+            layout: Some(&glare_pipeline_layout),
+            vertex: VertexState {
+                module: &glare_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(FragmentState {
+                module: &glare_shader,
+                entry_point: Some("fs_main"),
+                targets: &glare_targets,
+                compilation_options: Default::default(),
+            }),
+            depth_stencil: None,
+            primitive: PrimitiveState::default(),
+            cache: None,
+            multisample: Default::default(),
+            multiview_mask: None,
+        });
+
         let sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("Ignit::TonemapSampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -414,6 +500,23 @@ impl Tonemap {
         let bloom_fallback_view =
             bloom_fallback.create_view(&wgpu::TextureViewDescriptor::default());
 
+        let glare_fallback = device.create_texture(&WgpuTextureDescriptor {
+            label: Some("Ignit::TonemapGlareFallback"),
+            size: Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let glare_fallback_view =
+            glare_fallback.create_view(&wgpu::TextureViewDescriptor::default());
+
         Self {
             pipeline,
             bind_group_layout,
@@ -427,6 +530,10 @@ impl Tonemap {
             bloom_bright_pipeline,
             bloom_blur_pipeline,
             bloom_layout,
+            _glare_fallback: glare_fallback,
+            glare_fallback_view,
+            glare_pipeline,
+            glare_layout,
             bind_group_cache: None,
         }
     }
@@ -603,6 +710,58 @@ impl Tonemap {
         pass.draw(0..3, 0..1);
     }
 
+    /// Render the screen-space light glare into a half-resolution target that
+    /// the tonemap samples once per pixel.
+    pub fn record_glare(
+        &self,
+        device: &Device,
+        encoder: &mut wgpu::CommandEncoder,
+        depth: &TextureView,
+        target: &TextureView,
+    ) {
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Ignit::GlareBindGroup"),
+            layout: &self.glare_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(
+                        self.params.buffer.as_entire_buffer_binding(),
+                    ),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer(
+                        self.params.glare_buffer.as_entire_buffer_binding(),
+                    ),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(depth),
+                },
+            ],
+        });
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("RenderPass::Glare"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: target,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.glare_pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn record(
         &mut self,
@@ -614,6 +773,7 @@ impl Tonemap {
         target_view: &TextureView,
         volumetric_view: Option<&TextureView>,
         bloom_view: Option<&TextureView>,
+        glare_view: Option<&TextureView>,
     ) {
         // Toggle the fog path from the view that is actually bound. This keeps
         // the fallback texture from being sampled when integration did not run.
@@ -627,10 +787,12 @@ impl Tonemap {
                 && cache.depth == *depth_view
                 && cache.volumetric.as_ref() == volumetric_view
                 && cache.bloom.as_ref() == bloom_view
+                && cache.glare.as_ref() == glare_view
         });
         if !cache_hit {
             let volume_view = volumetric_view.unwrap_or(&self.volumetric_fallback_view);
             let bloom_texture = bloom_view.unwrap_or(&self.bloom_fallback_view);
+            let glare_texture = glare_view.unwrap_or(&self.glare_fallback_view);
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Ignit::TonemapBindGroup"),
                 layout: &self.bind_group_layout,
@@ -671,6 +833,10 @@ impl Tonemap {
                         binding: 7,
                         resource: wgpu::BindingResource::TextureView(bloom_texture),
                     },
+                    BindGroupEntry {
+                        binding: 8,
+                        resource: wgpu::BindingResource::TextureView(glare_texture),
+                    },
                 ],
             });
             self.bind_group_cache = Some(TonemapBindGroupCache {
@@ -678,6 +844,7 @@ impl Tonemap {
                 depth: depth_view.clone(),
                 volumetric: volumetric_view.cloned(),
                 bloom: bloom_view.cloned(),
+                glare: glare_view.cloned(),
                 bind_group,
             });
         }

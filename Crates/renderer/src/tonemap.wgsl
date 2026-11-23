@@ -21,15 +21,11 @@ struct TonemapParams {
 @group(0) @binding(5) var integrated: texture_3d<f32>;
 @group(0) @binding(6) var integrated_sampler: sampler;
 @group(0) @binding(7) var bloom_texture: texture_2d<f32>;
+// Light glare is rendered into a half-resolution target by glare.wgsl.
+@group(0) @binding(8) var glare_texture: texture_2d<f32>;
 
-struct GlareLight {
-    position: vec4<f32>,
-    color: vec4<f32>,
-    direction: vec4<f32>,
-    // x = outer cone half-angle; yzw reserved.
-    params: vec4<f32>,
-};
-
+// Only the header is read here, for mapping pixels into the scene depth
+// texture. The light list is read by glare.wgsl.
 struct GlareParams {
     view_projection: mat4x4<f32>,
     camera_position: vec4<f32>,
@@ -40,7 +36,6 @@ struct GlareParams {
     // xy = scene depth texture size. May be smaller than the target when
     // render scaling is active.
     depth_resolution: vec4<f32>,
-    lights: array<GlareLight, 32>,
 };
 
 @group(0) @binding(4) var<uniform> glare: GlareParams;
@@ -63,32 +58,6 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
     return out;
 }
 
-/// A soft, tapered diffraction spike. The spike is widest near the core and
-/// narrows to nothing at the tip, so it reads as a blurred lens flare rather
-/// than a hard geometric ray.
-fn star_spike(
-    delta: vec2<f32>,
-    axis: vec2<f32>,
-    radius: f32,
-    length_scale: f32,
-    inner_intensity: f32,
-    outer_intensity: f32,
-) -> f32 {
-    let along = dot(delta, axis);
-    let across = dot(delta, vec2<f32>(-axis.y, axis.x));
-    let length = max(radius * params.glare_star_length * length_scale, 1.0e-6);
-    let t = clamp(abs(along) / length, 0.0, 1.0);
-    let width = radius * mix(0.32, 0.03, t);
-    let body = exp(-(across * across) / (2.0 * max(width * width, 1.0e-10)));
-    let fade = pow(1.0 - t, 2.0);
-    let intensity = mix(inner_intensity, outer_intensity, t);
-    return body * fade * intensity;
-}
-
-fn hash11(value: f32) -> f32 {
-    return fract(sin(value * 12.9898) * 43758.5453);
-}
-
 /// Maps an output pixel into the scene depth texture. Render scaling and AA
 /// can make the tonemap target larger than the depth target.
 fn depth_coordinate(pixel: vec2<i32>) -> vec2<i32> {
@@ -104,119 +73,6 @@ fn depth_coordinate(pixel: vec2<i32>) -> vec2<i32> {
 
 fn scene_depth_at(pixel: vec2<i32>) -> f32 {
     return textureLoad(scene_depth, depth_coordinate(pixel), 0);
-}
-
-/// Screen-space glare around positional lights. Each pixel compares its own
-/// linear view depth against the light depth, so a foreground wall masks the
-/// halo instead of letting it bleed through.
-fn sample_light_glare(uv: vec2<f32>, pixel: vec2<i32>) -> vec3<f32> {
-    let count = u32(glare.viewport.z);
-    if (params.bloom_intensity <= 0.0 || count == 0u) {
-        return vec3<f32>(0.0);
-    }
-
-    let viewport = glare.viewport.xy;
-    let aspect = viewport.x / max(viewport.y, 1.0);
-    let radius2 = glare.viewport.w * glare.viewport.w;
-    let near = glare.camera_params.x;
-    let far = glare.camera_params.y;
-    let scene_depth_value = scene_depth_at(pixel);
-    let scene_linear_depth =
-        (near * far) / max(far - scene_depth_value * (far - near), 1.0e-6);
-    var light_glare = vec3<f32>(0.0);
-
-    for (var i = 0u; i < count; i = i + 1u) {
-        let light = glare.lights[i];
-        let clip = glare.view_projection * vec4<f32>(light.position.xyz, 1.0);
-        if (clip.w <= 0.0) {
-            continue;
-        }
-
-        let ndc = clip.xy / clip.w;
-        if (abs(ndc.x) > 1.1 || abs(ndc.y) > 1.1) {
-            continue;
-        }
-
-        let to_light = light.position.xyz - glare.camera_position.xyz;
-        let distance2 = dot(to_light, to_light);
-        if (distance2 < 1.0e-6) {
-            continue;
-        }
-
-        let light_depth = clip.w;
-        let occlusion_bias = max(0.05, light_depth * 0.002);
-        if (scene_linear_depth + occlusion_bias < light_depth) {
-            continue;
-        }
-
-        var cone_fade = 1.0;
-        if (light.direction.w > 0.5) {
-            let spot_dir = light.direction.xyz;
-            let spot_len2 = dot(spot_dir, spot_dir);
-            if (spot_len2 < 1.0e-6) {
-                continue;
-            }
-
-            let to_camera = normalize(-to_light);
-            let cos_angle = dot(normalize(spot_dir), to_camera);
-            let cone_cos = cos(light.params.x);
-            cone_fade = smoothstep(cone_cos - 0.05, cone_cos + 0.05, cos_angle);
-            if (cone_fade <= 0.0) {
-                continue;
-            }
-        }
-
-        let light_uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
-
-        // Fade out light glare as the source moves away from the screen
-        // center. Looking directly at a light keeps the full flare; a light
-        // in the corner of vision should not contribute a visible orb.
-        let center_offset = (light_uv - vec2<f32>(0.5)) * vec2<f32>(aspect, 1.0);
-        // Keep a small amount of glare at the edges instead of popping to
-        // zero; looking directly at the light still gets the full flare.
-        let gaze = mix(
-            0.08,
-            1.0,
-            1.0 - smoothstep(0.2, 0.55, length(center_offset)),
-        );
-        if (gaze <= 0.0) {
-            continue;
-        }
-
-        let delta = (uv - light_uv) * vec2<f32>(aspect, 1.0);
-        let distance2_screen = dot(delta, delta);
-        let radius = glare.viewport.w;
-        let core = exp(-distance2_screen / (radius2 * 0.33));
-        let halo = exp(-distance2_screen / (radius2 * 3.0)) * 0.35;
-
-        var star = 0.0;
-        if (params.glare_stars != 0u) {
-            let arms = clamp(params.glare_star_arms, 2u, 8u);
-            let axis_count = arms / 2u;
-            let base_angle = (hash11(light.params.y) - 0.5) * 0.5;
-            let step = 3.14159265 / f32(axis_count);
-            for (var a = 0u; a < axis_count; a = a + 1u) {
-                let angle = base_angle + f32(a) * step;
-                let axis = vec2<f32>(cos(angle), sin(angle));
-                let length_scale = 1.0 - f32(a % 3u) * 0.18;
-                star += star_spike(
-                    delta,
-                    axis,
-                    radius,
-                    length_scale,
-                    params.glare_star_inner,
-                    params.glare_star_outer,
-                );
-            }
-        }
-
-        let attenuation = 1.0 / (1.0 + distance2 * 0.015);
-        let energy =
-            light.color.w * 0.04 * attenuation * cone_fade * gaze * (core + halo + star);
-        light_glare += light.color.rgb * energy;
-    }
-
-    return light_glare * params.bloom_intensity;
 }
 
 @fragment
@@ -258,7 +114,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         textureSample(bloom_texture, hdr_sampler, in.uv).rgb
         * params.bloom_intensity
         * transmittance;
-    let light_glare = sample_light_glare(in.uv, pixel);
+    let light_glare = textureSample(glare_texture, hdr_sampler, in.uv).rgb;
     let color = (base + bloom + light_glare) * params.exposure;
 
     // ACES filmic curve.

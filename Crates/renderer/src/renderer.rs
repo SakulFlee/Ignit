@@ -66,6 +66,7 @@ enum ScenePass {
     Models,
     Transparent,
     Bloom,
+    Glare,
     VolumetricInject,
     Tonemap,
     Fxaa,
@@ -121,6 +122,7 @@ const RES_GBUFFER: ResourceId = ResourceId::new(8);
 const RES_LIGHT_GRID: ResourceId = ResourceId::new(9);
 const RES_VOLUMETRIC: ResourceId = ResourceId::new(10);
 const RES_BLOOM: ResourceId = ResourceId::new(11);
+const RES_GLARE: ResourceId = ResourceId::new(12);
 
 fn gbuffer_texture_descriptor(
     resolution: Vector2<u32>,
@@ -143,6 +145,7 @@ fn gbuffer_texture_descriptor(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_scene_passes(
     graph: &mut RenderGraph<ScenePass>,
     anti_aliasing: AntiAliasing,
@@ -151,6 +154,7 @@ fn add_scene_passes(
     has_transparent: bool,
     has_volumetrics: bool,
     has_bloom: bool,
+    has_glare: bool,
 ) {
     graph.add_pass(ScenePass::Shadow, "shadow", &[], &[RES_SHADOW_MAPS]);
     graph.add_pass(
@@ -223,6 +227,10 @@ fn add_scene_passes(
         graph.add_pass(ScenePass::Bloom, "bloom", &[RES_SCENE_COLOR], &[RES_BLOOM]);
     }
 
+    if has_glare {
+        graph.add_pass(ScenePass::Glare, "glare", &[RES_DEPTH], &[RES_GLARE]);
+    }
+
     if has_volumetrics {
         graph.add_pass(
             ScenePass::VolumetricInject,
@@ -242,6 +250,9 @@ fn add_scene_passes(
     }
     if has_bloom {
         tonemap_inputs.push(RES_BLOOM);
+    }
+    if has_glare {
+        tonemap_inputs.push(RES_GLARE);
     }
     graph.add_pass(
         ScenePass::Tonemap,
@@ -1238,6 +1249,7 @@ impl Renderer {
             AntiAliasing::Fxaa | AntiAliasing::Smaa => self.resolution,
         };
         let has_bloom = self.bloom_enabled && self.bloom_intensity > 0.0;
+        let has_glare = has_bloom && self.light_glare && !scene.glare_lights.is_empty();
         self.tonemap.set_glare(
             queue,
             glare_view_projection,
@@ -1442,6 +1454,18 @@ impl Renderer {
             None
         };
 
+        let glare_target = if has_glare {
+            let resolution = cgmath::Vector2::new(
+                (tonemap_resolution.x / 2).max(1),
+                (tonemap_resolution.y / 2).max(1),
+            );
+            let descriptor =
+                gbuffer_texture_descriptor(resolution, SCENE_COLOR_FORMAT, "Ignit::Glare");
+            Some(self.texture_pool.acquire(device, &descriptor))
+        } else {
+            None
+        };
+
         let mut volumetric_accumulated: Option<TextureView> = None;
         let mut volumetric_integrated: Option<TextureView> = None;
         let mut graph = std::mem::take(&mut self.render_graph);
@@ -1457,6 +1481,7 @@ impl Renderer {
             has_transparent,
             has_volumetrics,
             has_bloom,
+            has_glare,
         );
         if self.debug_view != DebugView::Off {
             graph.add_pass(ScenePass::DebugView, "debug-view", &[], &[]);
@@ -1651,6 +1676,16 @@ impl Renderer {
                             );
                         }
                     }
+                    ScenePass::Glare => {
+                        if let Some(glare) = glare_target.as_ref() {
+                            self.tonemap.record_glare(
+                                context.device,
+                                context.encoder,
+                                &depth.view,
+                                &glare.view,
+                            );
+                        }
+                    }
                     ScenePass::VolumetricInject => {
                         if timestamps_enabled && let Some(qs) = &self.timestamp_query_set {
                             context.encoder.write_timestamp(qs, 7);
@@ -1725,6 +1760,7 @@ impl Renderer {
                             tonemap_target,
                             volumetric_integrated.as_ref(),
                             bloom_targets.as_ref().map(|(_, blurred)| &blurred.view),
+                            glare_target.as_ref().map(|glare| &glare.view),
                         );
                         if timestamps_enabled && let Some(qs) = &self.timestamp_query_set {
                             context.encoder.write_timestamp(qs, 12);
@@ -1863,6 +1899,7 @@ impl Renderer {
                     volumetrics_ms += ms(timing.cpu);
                 }
                 ScenePass::Bloom => models_ms += ms(timing.cpu),
+                ScenePass::Glare => models_ms += ms(timing.cpu),
                 ScenePass::Transparent => models_ms += ms(timing.cpu),
                 ScenePass::PrepareWorld => skybox_ms += ms(timing.cpu),
                 ScenePass::Compute
@@ -2339,6 +2376,7 @@ mod tests {
             has_transparent,
             has_volumetrics,
             false,
+            false,
         )
     }
 
@@ -2349,6 +2387,7 @@ mod tests {
         has_transparent: bool,
         has_volumetrics: bool,
         has_bloom: bool,
+        has_glare: bool,
     ) -> Vec<&'static str> {
         let mut graph = RenderGraph::new();
         add_scene_passes(
@@ -2359,6 +2398,7 @@ mod tests {
             has_transparent,
             has_volumetrics,
             has_bloom,
+            has_glare,
         );
         graph.compile().unwrap();
         graph
@@ -2454,7 +2494,7 @@ mod tests {
     #[test]
     fn scene_graph_runs_bloom_before_tonemap() {
         assert_eq!(
-            graph_order_with_bloom(AntiAliasing::Off, true, false, true, false, true),
+            graph_order_with_bloom(AntiAliasing::Off, true, false, true, false, true, false),
             [
                 "shadow",
                 "prepare-world",
@@ -2464,6 +2504,25 @@ mod tests {
                 "deferred-lighting",
                 "transparent",
                 "bloom",
+                "tonemap"
+            ]
+        );
+    }
+
+    #[test]
+    fn scene_graph_runs_glare_after_bloom_before_tonemap() {
+        assert_eq!(
+            graph_order_with_bloom(AntiAliasing::Off, true, false, true, false, true, true),
+            [
+                "shadow",
+                "prepare-world",
+                "sky",
+                "gbuffer",
+                "light-culling",
+                "deferred-lighting",
+                "transparent",
+                "bloom",
+                "glare",
                 "tonemap"
             ]
         );
