@@ -25,12 +25,8 @@ fn surface(fragment_data: FragmentData) -> Surface {
     var out: Surface;
     let flags = pbr_factors.flags;
 
-    if ((flags & HAS_NORMAL_TEXTURE) != 0u) {
-        out.normal = sample_normal_from_map(fragment_data);
-    } else {
-        out.normal = normalize(fragment_data.normal);
-    }
-
+    // Sample albedo and test the mask first. Masked-out fragments can stop
+    // before the remaining material textures are fetched.
     if ((flags & HAS_ALBEDO_TEXTURE) != 0u) {
         let albedo_sample = textureSample(
             albedo_texture,
@@ -56,6 +52,16 @@ fn surface(fragment_data: FragmentData) -> Surface {
             vec3(1.0),
         );
         out.alpha = clamp(pbr_factors.alpha_factor, 0.0, 1.0);
+    }
+
+    if (pbr_factors.alpha_cutoff > 0.0 && out.alpha < pbr_factors.alpha_cutoff) {
+        discard;
+    }
+
+    if ((flags & HAS_NORMAL_TEXTURE) != 0u) {
+        out.normal = sample_normal_from_map(fragment_data);
+    } else {
+        out.normal = normalize(fragment_data.normal);
     }
 
     var metallic_sample = 1.0;
