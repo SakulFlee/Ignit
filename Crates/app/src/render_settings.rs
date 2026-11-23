@@ -36,6 +36,12 @@ pub struct RenderSettings {
     /// is ignored while VSync is enabled, just like
     /// [`AppSettings::fps_limit`](crate::AppSettings::fps_limit).
     pub fps_limit: Option<u32>,
+    /// Present with VSync.
+    ///
+    /// The runtime reconfigures the surface when this changes. An explicit
+    /// [`AppSettings::present_mode`](crate::AppSettings::present_mode) still
+    /// takes precedence over this preference.
+    pub vsync_enabled: bool,
     /// Lower bound for adaptive render scaling.
     pub min_render_scale: f32,
     /// Upper bound for adaptive render scaling.
@@ -81,6 +87,7 @@ impl Default for RenderSettings {
             adaptive_render_scale: cfg!(any(target_os = "android", target_os = "ios")),
             target_fps: 60,
             fps_limit: None,
+            vsync_enabled: true,
             min_render_scale: 0.25,
             max_render_scale: MAX_RENDER_SCALE,
             anti_aliasing: AntiAliasing::Fxaa,

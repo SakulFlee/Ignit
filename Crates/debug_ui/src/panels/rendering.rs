@@ -147,6 +147,13 @@ pub fn rendering_panel<'a>(ecs: &World) -> Element<'a, DebugMessage, Theme, Iced
             .on_toggle(DebugMessage::SetFrameCapEnabled)
             .into(),
     );
+    rows.push(
+        checkbox(render.vsync_enabled)
+            .label("VSync")
+            .text_size(12)
+            .on_toggle(DebugMessage::SetVsync)
+            .into(),
+    );
     if let Some(limit) = render.fps_limit {
         rows.push(
             column![
