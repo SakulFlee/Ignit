@@ -1,0 +1,18 @@
+[package]
+name = "ignit_ui_render"
+description = "wgpu UI batching, clipping, and overlay rendering for Ignit UI"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bytemuck = { workspace = true }
+ignit_app = { path = "../app", version = "1.6.3" }
+ignit_ecs = { path = "../ecs", version = "1.6.3" }
+ignit_ui = { path = "../ui", version = "1.6.3" }
+ignit_ui_text = { path = "../ui_text", version = "1.6.3" }
+log = { workspace = true }
+wgpu = { workspace = true }
