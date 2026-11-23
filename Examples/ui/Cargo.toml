@@ -1,0 +1,21 @@
+[package]
+publish = false
+name = "template_ui"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "template_ui"
+path = "src/main.rs"
+
+[lib]
+name = "template_ui"
+path = "src/lib.rs"
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+ignit = { path = "../../Crates/ignit" }

@@ -5038,6 +5038,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "template_ui"
+version = "1.6.3"
+dependencies = [
+ "ignit",
+]
+
+[[package]]
 name = "termcolor"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

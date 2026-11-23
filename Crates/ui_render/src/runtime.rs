@@ -103,7 +103,7 @@ fn apply_window_events(world: &mut World, touch: &mut Option<u64>) {
         .get_resource_mut::<WindowEventQueue>()
         .map(|mut queue| queue.drain())
         .unwrap_or_default();
-    let scale = world
+    let mut scale = world
         .get_resource::<WindowScaleFactor>()
         .map(|scale| scale.0 as f32)
         .unwrap_or(1.0)
@@ -162,9 +162,10 @@ fn apply_window_events(world: &mut World, touch: &mut Option<u64>) {
             WindowEvent::Resized(size) => {
                 resize = Some(size);
             }
-            WindowEvent::ScaleFactorChanged(scale) => {
+            WindowEvent::ScaleFactorChanged(new_scale) => {
+                scale = new_scale as f32;
                 if let Some(mut factor) = world.get_resource_mut::<WindowScaleFactor>() {
-                    factor.0 = scale;
+                    factor.0 = new_scale;
                 }
             }
             WindowEvent::Focused(focused) => {
@@ -211,6 +212,7 @@ fn apply_window_events(world: &mut World, touch: &mut Option<u64>) {
             for root in roots {
                 if let Some(view) = store.get_component_mut(root.index) {
                     view.size = ignit_ui::UiSize::new(logical.0, logical.1);
+                    view.scale = scale;
                 }
             }
         }

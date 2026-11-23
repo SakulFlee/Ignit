@@ -176,6 +176,11 @@ impl UiStyle {
         self
     }
 
+    pub fn visible(mut self, visible: bool) -> Self {
+        self.visible = Some(visible);
+        self
+    }
+
     pub fn class(mut self, class: impl Into<String>) -> Self {
         self.classes.push(class.into());
         self
@@ -531,7 +536,7 @@ impl UiTheme {
         inherited_classes: &[String],
         state: UiState,
     ) -> UiResolvedStyle {
-        let mut merged = style.clone();
+        let mut merged = UiStyle::default();
         let mut relevant: Vec<&UiStyleClass> = Vec::new();
         for name in inherited_classes.iter().chain(style.classes.iter()) {
             if let Some(class) = self.classes.get(name) {
@@ -539,6 +544,20 @@ impl UiTheme {
                 class.style.apply(&mut merged);
             }
         }
+        // Inline node style wins over class base values; state overrides win
+        // over both so hover/pressed feedback is always visible.
+        UiStylePatch {
+            background: style.background.clone(),
+            border: style.border.clone(),
+            radius: Some(style.radius),
+            shadow: style.shadow.clone(),
+            text: style.text.clone(),
+            image: style.image.clone(),
+            opacity: style.opacity,
+            visible: style.visible,
+            cursor: style.cursor,
+        }
+        .apply(&mut merged);
         for class in &relevant {
             if let Some(patch) = class.states.patch(state) {
                 patch.apply(&mut merged);

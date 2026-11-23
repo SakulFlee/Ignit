@@ -41,6 +41,7 @@ pub struct UiDocumentNode {
     pub style: UiStyle,
     pub text: Option<UiText>,
     pub image: Option<UiImage>,
+    pub widget: Option<crate::widgets::UiWidgetSpec>,
     pub children: Vec<UiDocumentNode>,
     pub focusable: Option<UiFocusable>,
     pub action: Option<UiAction>,
@@ -90,6 +91,11 @@ impl UiDocumentNode {
 
     pub fn scroll(mut self) -> Self {
         self.scroll = true;
+        self
+    }
+
+    pub fn widget(mut self, widget: crate::widgets::UiWidgetSpec) -> Self {
+        self.widget = Some(widget);
         self
     }
 }
@@ -249,6 +255,23 @@ fn spawn_node(world: &mut World, spec: &UiDocumentNode, parent: Option<Entity>) 
         world
             .attach_component(&entity, image.clone())
             .expect("valid spawned ui entity");
+    }
+    if let Some(widget) = &spec.widget {
+        world
+            .attach_component(&entity, crate::widgets::UiWidget::new(widget.clone()))
+            .expect("valid spawned ui entity");
+        if let crate::widgets::UiWidgetSpec::TextBox { value, .. } = widget
+            && spec.text.is_none()
+        {
+            world
+                .attach_component(
+                    &entity,
+                    UiText {
+                        value: value.clone(),
+                    },
+                )
+                .expect("valid spawned ui entity");
+        }
     }
     if let Some(focusable) = spec.focusable {
         world
