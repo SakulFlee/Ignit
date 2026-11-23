@@ -3,10 +3,10 @@
 use cgmath::{InnerSpace, Matrix4, Point3, Vector2, Vector3, Vector4};
 use wgpu::{
     BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType,
-    BlendState, BufferBindingType, ColorTargetState, ColorWrites, Device, Extent3d, FragmentState,
-    PipelineLayoutDescriptor, PrimitiveState, RenderPassColorAttachment, RenderPassDescriptor,
-    RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StoreOp,
+    BlendComponent, BlendState, BufferBindingType, ColorTargetState, ColorWrites, Device, Extent3d,
+    FragmentState, PipelineLayoutDescriptor, PrimitiveState, RenderPassColorAttachment,
+    RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType,
+    SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, StoreOp,
     TextureDescriptor as WgpuTextureDescriptor, TextureDimension, TextureSampleType, TextureUsages,
     TextureView, TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
@@ -167,7 +167,8 @@ pub struct Tonemap {
     _bloom_fallback: wgpu::Texture,
     bloom_fallback_view: TextureView,
     bloom_bright_pipeline: RenderPipeline,
-    bloom_blur_pipeline: RenderPipeline,
+    bloom_downsample_pipeline: RenderPipeline,
+    bloom_upsample_pipeline: RenderPipeline,
     bloom_layout: BindGroupLayout,
     _glare_fallback: wgpu::Texture,
     glare_fallback_view: TextureView,
@@ -345,36 +346,64 @@ impl Tonemap {
             bind_group_layouts: &[Some(&bloom_layout)],
             immediate_size: 0,
         });
-        let bloom_targets = [Some(ColorTargetState {
+        let bloom_replace_targets = [Some(ColorTargetState {
             format: wgpu::TextureFormat::Rgba16Float,
             blend: Some(BlendState::REPLACE),
             write_mask: ColorWrites::ALL,
         })];
-        let create_bloom = |label: &'static str, fragment: &'static str| {
-            device.create_render_pipeline(&RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&bloom_pipeline_layout),
-                vertex: VertexState {
-                    module: &bloom_shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[],
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(FragmentState {
-                    module: &bloom_shader,
-                    entry_point: Some(fragment),
-                    targets: &bloom_targets,
-                    compilation_options: Default::default(),
-                }),
-                depth_stencil: None,
-                primitive: PrimitiveState::default(),
-                cache: None,
-                multisample: Default::default(),
-                multiview_mask: None,
-            })
+        // The upsample pass accumulates into the larger level in place.
+        let bloom_additive = BlendComponent {
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::One,
+            operation: wgpu::BlendOperation::Add,
         };
-        let bloom_bright_pipeline = create_bloom("Ignit::BloomBrightPipeline", "fs_bright");
-        let bloom_blur_pipeline = create_bloom("Ignit::BloomBlurPipeline", "fs_blur");
+        let bloom_add_targets = [Some(ColorTargetState {
+            format: wgpu::TextureFormat::Rgba16Float,
+            blend: Some(BlendState {
+                color: bloom_additive,
+                alpha: bloom_additive,
+            }),
+            write_mask: ColorWrites::ALL,
+        })];
+        let create_bloom =
+            |label: &'static str, fragment: &'static str, targets: &[Option<ColorTargetState>]| {
+                device.create_render_pipeline(&RenderPipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(&bloom_pipeline_layout),
+                    vertex: VertexState {
+                        module: &bloom_shader,
+                        entry_point: Some("vs_main"),
+                        buffers: &[],
+                        compilation_options: Default::default(),
+                    },
+                    fragment: Some(FragmentState {
+                        module: &bloom_shader,
+                        entry_point: Some(fragment),
+                        targets,
+                        compilation_options: Default::default(),
+                    }),
+                    depth_stencil: None,
+                    primitive: PrimitiveState::default(),
+                    cache: None,
+                    multisample: Default::default(),
+                    multiview_mask: None,
+                })
+            };
+        let bloom_bright_pipeline = create_bloom(
+            "Ignit::BloomBrightPipeline",
+            "fs_bright",
+            &bloom_replace_targets,
+        );
+        let bloom_downsample_pipeline = create_bloom(
+            "Ignit::BloomDownsamplePipeline",
+            "fs_downsample",
+            &bloom_replace_targets,
+        );
+        let bloom_upsample_pipeline = create_bloom(
+            "Ignit::BloomUpsamplePipeline",
+            "fs_upsample",
+            &bloom_add_targets,
+        );
 
         let glare_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Ignit::GlareShader"),
@@ -528,7 +557,8 @@ impl Tonemap {
             _bloom_fallback: bloom_fallback,
             bloom_fallback_view,
             bloom_bright_pipeline,
-            bloom_blur_pipeline,
+            bloom_downsample_pipeline,
+            bloom_upsample_pipeline,
             bloom_layout,
             _glare_fallback: glare_fallback,
             glare_fallback_view,
@@ -618,18 +648,71 @@ impl Tonemap {
         queue.write_buffer(&self.params.glare_buffer, 0, &data);
     }
 
-    /// Threshold the scene into `bright`, then blur it into `blurred`, both at
-    /// half resolution.
+    /// Build the bloom chain from `source` into `targets`.
+    ///
+    /// `targets[0]` receives the thresholded scene at half resolution; each
+    /// following target is half the size of the previous one. The chain is
+    /// box-filtered on the way down and tent-filtered back up with additive
+    /// blending, so `targets[0]` ends up holding the accumulated glow that the
+    /// tonemap samples.
     pub fn record_bloom(
         &self,
         device: &Device,
         encoder: &mut wgpu::CommandEncoder,
         source: &TextureView,
-        bright: &TextureView,
-        blurred: &TextureView,
+        targets: &[&TextureView],
     ) {
-        let bright_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Ignit::BloomBrightBindGroup"),
+        let Some((bright, levels)) = targets.split_first() else {
+            return;
+        };
+        self.record_bloom_pass(
+            device,
+            encoder,
+            "RenderPass::BloomBright",
+            &self.bloom_bright_pipeline,
+            source,
+            bright,
+            wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+        );
+
+        for (index, target) in levels.iter().copied().enumerate() {
+            self.record_bloom_pass(
+                device,
+                encoder,
+                "RenderPass::BloomDownsample",
+                &self.bloom_downsample_pipeline,
+                targets[index],
+                target,
+                wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+            );
+        }
+
+        for index in (0..targets.len() - 1).rev() {
+            self.record_bloom_pass(
+                device,
+                encoder,
+                "RenderPass::BloomUpsample",
+                &self.bloom_upsample_pipeline,
+                targets[index + 1],
+                targets[index],
+                wgpu::LoadOp::Load,
+            );
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_bloom_pass(
+        &self,
+        device: &Device,
+        encoder: &mut wgpu::CommandEncoder,
+        label: &'static str,
+        pipeline: &RenderPipeline,
+        source: &TextureView,
+        target: &TextureView,
+        load: wgpu::LoadOp<wgpu::Color>,
+    ) {
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Ignit::BloomBindGroup"),
             layout: &self.bloom_layout,
             entries: &[
                 BindGroupEntry {
@@ -649,12 +732,12 @@ impl Tonemap {
             ],
         });
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("RenderPass::BloomBright"),
+            label: Some(label),
             color_attachments: &[Some(RenderPassColorAttachment {
-                view: bright,
+                view: target,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    load,
                     store: StoreOp::Store,
                 },
                 depth_slice: None,
@@ -664,49 +747,8 @@ impl Tonemap {
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        pass.set_pipeline(&self.bloom_bright_pipeline);
-        pass.set_bind_group(0, &bright_bind_group, &[]);
-        pass.draw(0..3, 0..1);
-        drop(pass);
-
-        let blur_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Ignit::BloomBlurBindGroup"),
-            layout: &self.bloom_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(
-                        self.params.buffer.as_entire_buffer_binding(),
-                    ),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(bright),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
-        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("RenderPass::BloomBlur"),
-            color_attachments: &[Some(RenderPassColorAttachment {
-                view: blurred,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(&self.bloom_blur_pipeline);
-        pass.set_bind_group(0, &blur_bind_group, &[]);
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
         pass.draw(0..3, 0..1);
     }
 
