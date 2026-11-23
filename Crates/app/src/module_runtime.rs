@@ -329,6 +329,8 @@ pub struct ModuleRuntime {
     surface_size: cgmath::Vector2<u32>,
     /// Present mode actually selected for the surface.
     present_mode: wgpu::PresentMode,
+    /// VSync preference currently applied to the surface.
+    last_vsync: bool,
     /// Configured swapchain frame latency.
     frame_latency: u32,
     /// Window scale factor (Android density / 160).
@@ -397,6 +399,7 @@ impl ModuleRuntime {
             info!("PERF detail: per-system and per-overlay timings enabled");
         }
         let system_profiler = perf_detail.then(|| Arc::new(SystemProfiler::default()));
+        let last_vsync = settings.vsync_enabled;
 
         let mut runtime = Self {
             module: Box::new(module),
@@ -431,6 +434,7 @@ impl ModuleRuntime {
             window_size: cgmath::Vector2::new(0, 0),
             surface_size: cgmath::Vector2::new(0, 0),
             present_mode: wgpu::PresentMode::AutoVsync,
+            last_vsync,
             frame_latency: 2,
             scale_factor: 1.0,
             refresh_rate_mhz: None,
@@ -486,6 +490,14 @@ impl ModuleRuntime {
         runtime.ecs_world.insert_resource(CameraStore::new());
 
         event_loop.run_app(&mut runtime)
+    }
+
+    /// Current VSync preference, including runtime changes from the debug UI.
+    fn vsync_enabled(&self) -> bool {
+        self.ecs_world
+            .get_resource::<crate::RenderSettings>()
+            .map(|settings| settings.vsync_enabled)
+            .unwrap_or(self.settings.vsync_enabled)
     }
 
     /// Recomputes the internal render resolution from the current settings and
@@ -635,7 +647,7 @@ impl ModuleRuntime {
         let target = effective_target_fps(
             settings.target_fps,
             self.refresh_rate_mhz,
-            settings.fps_limit.filter(|_| !self.settings.vsync_enabled),
+            settings.fps_limit.filter(|_| !settings.vsync_enabled),
         );
         let Some(next) = self.adaptive_render_scale.update(
             settings.render_scale,
@@ -673,6 +685,22 @@ impl ModuleRuntime {
 
         let lock = ctx_lock!(ctx);
         let d_surface_lock = t_start.elapsed();
+
+        // Apply a runtime VSync toggle before acquiring the next frame. This
+        // must happen between frames, not while a surface texture is held.
+        let vsync = self.vsync_enabled();
+        if vsync != self.last_vsync {
+            let configuration = lock.make_surface_configuration(vsync, self.settings.present_mode);
+            lock.reconfigure_surface(&configuration);
+            self.last_vsync = vsync;
+            self.present_mode = configuration.present_mode;
+            self.frame_latency = configuration.desired_maximum_frame_latency;
+            info!(
+                "Runtime VSync {} (present mode {:?})",
+                if vsync { "enabled" } else { "disabled" },
+                configuration.present_mode,
+            );
+        }
 
         let t_surface_acquire_start = std::time::Instant::now();
         let frame = match lock.current_surface_texture() {
@@ -1295,7 +1323,7 @@ impl ModuleRuntime {
             .map(|settings| settings.fps_limit)
             .unwrap_or(self.settings.fps_limit);
         self.frame_limiter
-            .wait(t_start, frame_limit, self.settings.vsync_enabled);
+            .wait(t_start, frame_limit, self.vsync_enabled());
         let d_frame_limiter = t_frame_limiter_start.elapsed();
         self.frame_timings.set(STAGE_FRAME_LIMITER, d_frame_limiter);
 
@@ -1880,15 +1908,14 @@ impl ApplicationHandler for ModuleRuntime {
                 // this only happens here and not on first start.
                 let config = {
                     let mut ctx_guard = ctx_lock!(ctx);
-                    ctx_guard
-                        .recreate_surface(self.settings.vsync_enabled, self.settings.present_mode)
+                    ctx_guard.recreate_surface(self.vsync_enabled(), self.settings.present_mode)
                 };
                 (ctx, config)
             }
             _ => match AppContext::new(event_loop, &self.settings) {
                 Ok(ctx) => {
                     let config = ctx.make_surface_configuration(
-                        self.settings.vsync_enabled,
+                        self.vsync_enabled(),
                         self.settings.present_mode,
                     );
                     (Arc::new(Mutex::new(ctx)), config)
@@ -1973,6 +2000,7 @@ impl ApplicationHandler for ModuleRuntime {
                     adaptive_render_scale: self.settings.adaptive_render_scale,
                     target_fps: self.settings.target_fps,
                     fps_limit: self.settings.fps_limit,
+                    vsync_enabled: self.settings.vsync_enabled,
                     min_render_scale: self.settings.min_render_scale,
                     max_render_scale: self.settings.max_render_scale,
                     anti_aliasing: self.settings.anti_aliasing,
@@ -2465,10 +2493,8 @@ impl ApplicationHandler for ModuleRuntime {
                 }
 
                 let ctx_lock = ctx_lock!(ctx);
-                let configuration = ctx_lock.make_surface_configuration(
-                    self.settings.vsync_enabled,
-                    self.settings.present_mode,
-                );
+                let configuration = ctx_lock
+                    .make_surface_configuration(self.vsync_enabled(), self.settings.present_mode);
                 ctx_lock.reconfigure_surface(&configuration);
                 self.update_display_info(ctx_lock.window(), &configuration);
 

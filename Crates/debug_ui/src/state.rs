@@ -101,6 +101,8 @@ pub enum DebugMessage {
     SetFrameCapEnabled(bool),
     /// Set the frame rate for the runtime frame cap.
     SetFrameCapFps(u32),
+    /// Enable or disable VSync presentation.
+    SetVsync(bool),
     /// Set the exposure used by the tonemap.
     SetExposure(f32),
     /// Enable or disable HDR bloom/glare.
@@ -590,6 +592,7 @@ impl DebugUiState {
             | DebugMessage::SetPerformanceTargetFps(_)
             | DebugMessage::SetFrameCapEnabled(_)
             | DebugMessage::SetFrameCapFps(_)
+            | DebugMessage::SetVsync(_)
             | DebugMessage::SetExposure(_)
             | DebugMessage::SetBloomEnabled(_)
             | DebugMessage::SetDeferredEnabled(_)
