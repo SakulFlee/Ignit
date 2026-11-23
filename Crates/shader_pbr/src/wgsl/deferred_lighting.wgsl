@@ -18,8 +18,8 @@
 @group(0) @binding(13) var<uniform> light_count: u32;
 
 @group(1) @binding(0) var gbuffer_albedo: texture_2d<f32>;
-@group(1) @binding(1) var gbuffer_normal: texture_2d<f32>;
-@group(1) @binding(2) var gbuffer_metallic: texture_2d<f32>;
+@group(1) @binding(1) var gbuffer_normal_material: texture_2d<f32>;
+@group(1) @binding(2) var gbuffer_emissive: texture_2d<f32>;
 @group(1) @binding(3) var depth_texture: texture_depth_2d;
 @group(1) @binding(4) var<storage, read> tile_light_counts: array<u32>;
 @group(1) @binding(5) var<storage, read> tile_light_indices: array<u32>;
@@ -61,8 +61,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     let albedo_ao = textureLoad(gbuffer_albedo, pixel, 0);
-    let normal_roughness = textureLoad(gbuffer_normal, pixel, 0);
-    let metallic_emissive = textureLoad(gbuffer_metallic, pixel, 0);
+    let normal_material = textureLoad(gbuffer_normal_material, pixel, 0);
+    let emissive = textureLoad(gbuffer_emissive, pixel, 0);
 
     let ndc = vec4<f32>(in.uv * 2.0 - 1.0, depth, 1.0);
     let view_position_h = camera.perspective_projection_invert * ndc;
@@ -73,10 +73,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var pbr: PBRData;
     pbr.albedo = albedo_ao.rgb;
     pbr.alpha = 1.0;
-    pbr.N = normalize(normal_roughness.xyz);
-    pbr.roughness = normal_roughness.w;
-    pbr.metallic = metallic_emissive.x;
-    pbr.emissive = metallic_emissive.yzw;
+    pbr.N = octahedral_decode(normal_material.xy);
+    pbr.roughness = normal_material.z;
+    pbr.metallic = normal_material.w;
+    pbr.emissive = emissive.rgb;
     pbr.occlusion = albedo_ao.a;
     pbr.V = normalize(camera.position.xyz - world_position);
     pbr.NdotV = clamp(dot(pbr.N, pbr.V), 0.0, 1.0);
