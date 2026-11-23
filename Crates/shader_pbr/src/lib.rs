@@ -34,6 +34,10 @@ pub fn pbr_library() -> NodeLibrary {
         "spot_bias_scale",
         include_str!("wgsl/spot_bias_scale.wgsl"),
     ));
+    lib.add(ShaderNode::new(
+        "octahedral_normal",
+        include_str!("wgsl/octahedral_normal.wgsl"),
+    ));
 
     // Functions
     lib.add(

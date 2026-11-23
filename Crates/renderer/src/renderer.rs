@@ -50,10 +50,11 @@ pub const SCENE_COLOR_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
 /// levels, so keep the two in sync.
 const BLOOM_MIP_LEVELS: usize = 4;
 
-/// G-buffer target formats: albedo+AO, normal+roughness, metallic+emissive.
+/// G-buffer target formats: albedo+AO, octahedral normal+roughness+metallic,
+/// emissive.
 pub const GBUFFER_COLOR_FORMATS: [TextureFormat; 3] = [
     TextureFormat::Rgba8Unorm,
-    TextureFormat::Rgba16Float,
+    TextureFormat::Rgba8Unorm,
     TextureFormat::Rgba16Float,
 ];
 

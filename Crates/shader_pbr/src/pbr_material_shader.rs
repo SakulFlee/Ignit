@@ -64,6 +64,7 @@ pub const DEFERRED_LIGHTING_NODES: &[&str] = &[
     "calculate_light_brdf",
     "calculate_ambient_ibl",
     "calculate_light_contribution",
+    "octahedral_normal",
 ];
 
 /// The root node names (from the math/engine/PBR libraries) that assemble the
@@ -105,6 +106,7 @@ pub const PBR_NODES: &[&str] = &[
     "sample_shadow_2d_pcf",
     "compute_shadow_for_light",
     "calculate_light_contribution",
+    "octahedral_normal",
 ];
 
 pub struct PBRMaterialShaderDescriptor {

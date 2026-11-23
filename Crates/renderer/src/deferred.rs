@@ -21,8 +21,8 @@ pub struct DeferredLighting {
 
 struct GbufferBindGroupCache {
     albedo: TextureView,
-    normal: TextureView,
-    metallic: TextureView,
+    normal_material: TextureView,
+    emissive: TextureView,
     depth: TextureView,
     counts: wgpu::Buffer,
     indices: wgpu::Buffer,
@@ -189,8 +189,8 @@ impl DeferredLighting {
         encoder: &mut wgpu::CommandEncoder,
         world_bind_group: &BindGroup,
         gbuffer_albedo: &TextureView,
-        gbuffer_normal: &TextureView,
-        gbuffer_metallic: &TextureView,
+        gbuffer_normal_material: &TextureView,
+        gbuffer_emissive: &TextureView,
         depth_view: &TextureView,
         tile_counts: &wgpu::Buffer,
         tile_indices: &wgpu::Buffer,
@@ -199,8 +199,8 @@ impl DeferredLighting {
     ) {
         let cache_hit = self.bind_group_cache.as_ref().is_some_and(|cache| {
             cache.albedo == *gbuffer_albedo
-                && cache.normal == *gbuffer_normal
-                && cache.metallic == *gbuffer_metallic
+                && cache.normal_material == *gbuffer_normal_material
+                && cache.emissive == *gbuffer_emissive
                 && cache.depth == *depth_view
                 && cache.counts == *tile_counts
                 && cache.indices == *tile_indices
@@ -218,11 +218,11 @@ impl DeferredLighting {
                     },
                     BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::TextureView(gbuffer_normal),
+                        resource: wgpu::BindingResource::TextureView(gbuffer_normal_material),
                     },
                     BindGroupEntry {
                         binding: 2,
-                        resource: wgpu::BindingResource::TextureView(gbuffer_metallic),
+                        resource: wgpu::BindingResource::TextureView(gbuffer_emissive),
                     },
                     BindGroupEntry {
                         binding: 3,
@@ -244,8 +244,8 @@ impl DeferredLighting {
             });
             self.bind_group_cache = Some(GbufferBindGroupCache {
                 albedo: gbuffer_albedo.clone(),
-                normal: gbuffer_normal.clone(),
-                metallic: gbuffer_metallic.clone(),
+                normal_material: gbuffer_normal_material.clone(),
+                emissive: gbuffer_emissive.clone(),
                 depth: depth_view.clone(),
                 counts: tile_counts.clone(),
                 indices: tile_indices.clone(),
