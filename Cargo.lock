@@ -1784,6 +1784,7 @@ dependencies = [
  "ignit_text",
  "ignit_touch_ui",
  "ignit_ui",
+ "ignit_ui_render",
  "ignit_ui_text",
  "image",
  "log",
@@ -2638,6 +2639,20 @@ dependencies = [
  "ron",
  "serde",
  "taffy",
+]
+
+[[package]]
+name = "ignit_ui_render"
+version = "1.6.3"
+dependencies = [
+ "bytemuck",
+ "ignit_app",
+ "ignit_ecs",
+ "ignit_ecs_bridge",
+ "ignit_ui",
+ "ignit_ui_text",
+ "log",
+ "wgpu",
 ]
 
 [[package]]

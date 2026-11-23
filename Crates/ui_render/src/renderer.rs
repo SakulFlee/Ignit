@@ -13,14 +13,15 @@ use ignit_ui_text::{GlyphAtlas, TextEngine};
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, Buffer, BufferBindingType,
-    BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, CommandEncoder, Device, Extent3d,
-    FragmentState, LoadOp, MultisampleState, Operations, Origin3d, PipelineLayoutDescriptor,
-    PrimitiveState, PrimitiveTopology, Queue, RenderPassColorAttachment, RenderPassDescriptor,
-    RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StoreOp, TexelCopyBufferLayout,
-    TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureSampleType, TextureView, TextureViewDescriptor, TextureViewDimension,
-    VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
+    BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, CommandEncoder, Device,
+    Extent3d, FragmentState, LoadOp, MultisampleState, Operations, Origin3d,
+    PipelineLayoutDescriptor, PrimitiveState, PrimitiveTopology, Queue, RenderPassColorAttachment,
+    RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType,
+    SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, StoreOp,
+    TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView,
+    TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat,
+    VertexState, VertexStepMode,
 };
 
 #[repr(C)]
@@ -161,6 +162,15 @@ pub struct UiRenderer {
 
 impl UiRenderer {
     pub fn new(device: &Device, queue: &Queue, format: TextureFormat) -> Self {
+        Self::new_with_atlas_size(device, queue, format, 1024)
+    }
+
+    pub fn new_with_atlas_size(
+        device: &Device,
+        queue: &Queue,
+        format: TextureFormat,
+        atlas_page_size: u32,
+    ) -> Self {
         let screen_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("ignit ui screen layout"),
             entries: &[BindGroupLayoutEntry {
@@ -221,7 +231,7 @@ impl UiRenderer {
         let atlas_texture = make_texture(
             device,
             "ignit ui atlas page",
-            1024,
+            atlas_page_size,
             TextureFormat::R8Unorm,
             TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
         );
@@ -454,6 +464,7 @@ impl UiRenderer {
         self.stats.atlas_pages = atlas.page_count();
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         device: &Device,
@@ -523,8 +534,14 @@ impl UiRenderer {
             };
             let bind_group = match batch.texture {
                 UiTextureRef::White => &self.white_bind_group,
-                UiTextureRef::Atlas(page) => self.page_bind_groups.get(page).unwrap_or(&self.white_bind_group),
-                UiTextureRef::Image(id) => self.image_bind_groups.get(&id).unwrap_or(&self.white_bind_group),
+                UiTextureRef::Atlas(page) => self
+                    .page_bind_groups
+                    .get(page)
+                    .unwrap_or(&self.white_bind_group),
+                UiTextureRef::Image(id) => self
+                    .image_bind_groups
+                    .get(&id)
+                    .unwrap_or(&self.white_bind_group),
             };
             pass.set_bind_group(1, bind_group, &[]);
             pass.set_scissor_rect(
@@ -745,8 +762,13 @@ impl UiLayerRenderer {
         format: TextureFormat,
         text: Arc<Mutex<TextEngine>>,
     ) -> Self {
+        let atlas_page_size = text
+            .lock()
+            .expect("ui text mutex poisoned")
+            .atlas
+            .page_size();
         Self {
-            renderer: UiRenderer::new(device, queue, format),
+            renderer: UiRenderer::new_with_atlas_size(device, queue, format, atlas_page_size),
             text,
         }
     }
@@ -774,7 +796,8 @@ impl LayerRenderer for UiLayerRenderer {
         };
         let mut text = self.text.lock().expect("ui text mutex poisoned");
         text.begin_frame();
-        self.renderer.upload_atlas(ctx.device, ctx.queue, &mut text.atlas);
+        self.renderer
+            .upload_atlas(ctx.device, ctx.queue, &mut text.atlas);
         self.renderer.render(
             ctx.device,
             ctx.queue,
@@ -908,4 +931,68 @@ fn make_texture_bind_group(
     })
 }
 
-fn _unused(_: &World) {}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rect(x: f32, y: f32, w: f32, h: f32) -> UiRect {
+        UiRect::new(x, y, w, h)
+    }
+
+    #[test]
+    fn quads_merge_into_one_batch_when_state_matches() {
+        let mut vertices = Vec::new();
+        let mut batches = Vec::new();
+        push_quad(
+            &mut vertices,
+            &mut batches,
+            rect(0.0, 0.0, 10.0, 10.0),
+            [1.0; 4],
+            [0.0, 0.0, 1.0, 1.0],
+            [0.0, 0.0, 10.0, 10.0],
+            [0.0; 2],
+            Some(rect(0.0, 0.0, 100.0, 100.0)),
+            UiTextureRef::White,
+        );
+        push_quad(
+            &mut vertices,
+            &mut batches,
+            rect(20.0, 0.0, 10.0, 10.0),
+            [1.0; 4],
+            [0.0, 0.0, 1.0, 1.0],
+            [0.0, 0.0, 10.0, 10.0],
+            [0.0; 2],
+            Some(rect(0.0, 0.0, 100.0, 100.0)),
+            UiTextureRef::White,
+        );
+        assert_eq!(vertices.len(), 12);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].count, 12);
+    }
+
+    #[test]
+    fn clipping_splits_batches() {
+        let mut vertices = Vec::new();
+        let mut batches = Vec::new();
+        for clip in [rect(0.0, 0.0, 10.0, 10.0), rect(0.0, 0.0, 20.0, 20.0)] {
+            push_quad(
+                &mut vertices,
+                &mut batches,
+                rect(0.0, 0.0, 10.0, 10.0),
+                [1.0; 4],
+                [0.0, 0.0, 1.0, 1.0],
+                [0.0, 0.0, 10.0, 10.0],
+                [0.0; 2],
+                Some(clip),
+                UiTextureRef::White,
+            );
+        }
+        assert_eq!(batches.len(), 2);
+    }
+
+    #[test]
+    fn root_transform_scales_and_offsets() {
+        let transformed = transform_rect(rect(10.0, 20.0, 30.0, 40.0), 2.0, UiPoint::new(5.0, 7.0));
+        assert_eq!(transformed, rect(25.0, 47.0, 60.0, 80.0));
+    }
+}

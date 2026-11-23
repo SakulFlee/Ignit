@@ -23,6 +23,7 @@ pub use ignit_shader_preprocessor as shader_preprocessor;
 pub use ignit_text as text;
 pub use ignit_touch_ui as touch_ui;
 pub use ignit_ui as ui;
+pub use ignit_ui_render as ui_render;
 pub use ignit_ui_text as ui_text;
 
 #[cfg(test)]
