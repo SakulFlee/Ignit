@@ -197,7 +197,7 @@ pub fn collect(
             "present_mode": format!("{:?}", config.present_mode),
             "supported_present_modes": supported_present_modes,
             "desired_maximum_frame_latency": config.desired_maximum_frame_latency,
-            "vsync": settings.vsync_enabled,
+            "vsync": render_settings.vsync_enabled,
             "fps_limit": settings.fps_limit,
         },
         "render": {

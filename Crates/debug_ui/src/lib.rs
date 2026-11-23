@@ -590,6 +590,10 @@ fn handle_debug_message(
             });
             return;
         }
+        DebugMessage::SetVsync(enabled) => {
+            update_render_settings(world, |settings| settings.vsync_enabled = enabled);
+            return;
+        }
         DebugMessage::SetExposure(exposure) => {
             update_render_settings(world, |settings| settings.exposure = exposure.max(0.0));
             return;
