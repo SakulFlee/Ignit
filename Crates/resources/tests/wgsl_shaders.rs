@@ -122,6 +122,11 @@ fn bloom_shader_is_valid_wgsl() {
 }
 
 #[test]
+fn glare_shader_is_valid_wgsl() {
+    validate_single("Crates/renderer/src/glare.wgsl");
+}
+
+#[test]
 fn fxaa_shader_is_valid_wgsl() {
     validate_single("Crates/renderer/src/fxaa.wgsl");
 }
