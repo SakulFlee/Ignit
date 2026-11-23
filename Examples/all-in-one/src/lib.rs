@@ -173,18 +173,14 @@ const HALLWAY_MIRROR_Z: f32 = 10.0;
 /// Shared style for the floating room labels. Every label uses the same font
 /// size and colours, so one atlas and one material serve the whole group.
 ///
-/// Room labels are read from the hallway, roughly 6-20 m away. Halving the
-/// SDF font from 128 px to 64 px and doubling `world_scale` keeps the
-/// on-screen size while cutting per-glyph SDF work about fourfold. The shared
-/// atlas drops from 1024x1024 (4 MiB) to 512x512 (1 MiB).
-///
-/// Release-build shared-atlas construction for the label set: 1.14 s at
-/// 128 px, 0.47 s at 96 px and 0.12 s at 64 px. 96 px was only marginally
-/// crisper on the nearest sign, so 64 px is the better trade at room
-/// distance.
-const LABEL_FONT_SIZE: f32 = 64.0;
-const LABEL_ATLAS_SIZE: u32 = 512;
-const LABEL_WORLD_SCALE: f32 = 0.0045;
+/// Room labels are read from the hallway, roughly 6-20 m away, but the camera
+/// can walk right up to them. 128 px glyphs in a 1024x1024 atlas (4 MiB) keep
+/// the SDF crisp at close range. The distance field uses a tight spread, so
+/// the atlas still builds quickly on the worker thread. The previous
+/// 64 px/512 setup was cheaper but visibly pixelated up close.
+const LABEL_FONT_SIZE: f32 = 128.0;
+const LABEL_ATLAS_SIZE: u32 = 1024;
+const LABEL_WORLD_SCALE: f32 = 0.00225;
 const LABEL_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const LABEL_BACKGROUND: [f32; 4] = [0.025, 0.035, 0.07, 0.55];
 
