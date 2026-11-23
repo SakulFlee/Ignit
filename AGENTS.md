@@ -111,8 +111,10 @@ Workspace members are `Examples/*` and `Crates/*` (see `Cargo.toml`).
 | `Crates/render_graph` | Render graph construction and pass scheduling. |
 | `Crates/2d` | 2D camera, vertices, shape descriptors, batching. |
 | `Crates/text` | Fontdue-based font data, SDF atlas packing, 2D/billboard text mesh generation. |
-| `Crates/ui` | ECS UI components/widgets, layout, hit testing, UI events. |
-| `Crates/iced` | Integration crate for iced panels (`IcedBridgeModule`, `IcedLayerRenderer`, `IcedState`). |
+| `Crates/ui` | ECS-native retained UI core: nodes, Taffy layout, themes, RON documents, focus, input routing, events, widgets. |
+| `Crates/ui_text` | cosmic-text shaping, R8 alpha atlas, shaped-run cache, text editing. |
+| `Crates/ui_render` | Batched wgpu UI overlay, scissor clipping, textures, glyphs, and the UI update module. |
+| `Crates/iced` | Legacy iced panel integration (`IcedBridgeModule`, `IcedLayerRenderer`, `IcedState`); debug UI only until #1222/#1223. |
 | `Crates/touch_ui`, `Crates/debug_render` | Touch controls and debug overlays. |
 | `Crates/importer_gltf` | glTF 2.0 importer with `KHR_lights_punctual`, async rayon tasks. |
 | `Crates/cli` | `ignit-cli` package with the `ignit` binary. Project scaffolding (`init`, `init-android`), templates, desktop/Android/iOS build and run, and `Ignit.toml` handling. |
@@ -134,9 +136,9 @@ Workspace members are `Examples/*` and `Crates/*` (see `Cargo.toml`).
 
 ### Frame order
 
-Per update: tick timers → process iced events → process deferred touch input → poll gamepads → snapshot input → run core schedule → poll importer → run game schedule with `TotalTime` → process engine events.
+Per update: tick timers → process iced events → poll gamepads → run core schedule → run the `UiSchedule` UI phase → process deferred touch/wheel input with iced + generic capture → mask focused-text keyboard input → snapshot input → poll importer → run game schedule with `TotalTime` → process engine events.
 
-Per redraw: realize cameras → lights → environment → models → shadow stagger and CPU frustum cull → build bind groups and extract scene data → shadow pass → skybox → models → main-encoder layer renderers → main-submit layer renderers (iced) → submit → owned-submission layer renderers → present.
+Per redraw: realize cameras → lights → environment → models → shadow stagger and CPU frustum cull → build bind groups and extract scene data → shadow pass → skybox → models → main-encoder layer renderers (new UI at `RenderLayer::UI`) → main-submit layer renderers (iced debug UI) → submit → owned-submission layer renderers → present.
 
 ### ECS
 
@@ -173,10 +175,12 @@ glTF skins and animations are imported into `ignit_animation` clip and skeleton 
 ### UI and 2D
 
 - `ignit_2d` provides shapes, batching, and `Camera2D`.
-- `ignit_text` provides SDF glyph atlases and text meshes.
-- `ignit_renderer` exposes `Renderer2D`, `TextRenderer`, and `UiRenderer`.
-- `ignit_ui` provides ECS widgets, layout, hit testing, and events; it is not automatically driven by `ModuleRuntime`.
-- `ignit_iced` is the production iced panel integration: events are processed before game systems and panels draw at `RenderLayer::UI`.
+- `ignit_text` provides SDF glyph atlases and text meshes for 2D/billboards.
+- `ignit_renderer` exposes `Renderer2D`, `TextRenderer`, and the legacy `UiRenderer` shim.
+- `ignit_ui` is the ECS-native retained UI core. `UiSchedule` systems run after the core schedule and before the game schedule with `&mut World`; widgets are components driven by `UiInputState`/`UiEvent`.
+- `ignit_ui_text` implements `UiTextMeasure` for Taffy and provides the R8 glyph atlas/quads.
+- `ignit_ui_render` provides `UiLayerRenderer` (main-encoder overlay at `RenderLayer::UI`) and `UiRenderModule`, which installs the UI phase and renderer.
+- `ignit_iced` still drives the debug overlay only. Generic `WindowEventQueue`/`InputCapture` coexist with the iced capture resources and are unioned by the runtime.
 - `ignit_debug_ui` provides the Performance, ECS, Console, Rendering, and Animation panels. Rendering exposes AA mode, SMAA quality, active-camera projection, live volumetrics controls, raw render-stage debug views, and the debug-overlay toggles including skeleton bones. Animation selects and crossfades clips, scrubs playback, and picks a joint for skin-weight visualization.
 - `ignit_touch_ui` renders a virtual joystick overlay.
 
@@ -202,10 +206,12 @@ Run from the example directory or from the repository root:
 cd Examples/minimal-3d && cargo run
 cd Examples/all-in-one && cargo run
 cd Examples/minimal-2d && cargo run
+cd Examples/ui && cargo run
 
 cargo run -p template_minimal_3d
 cargo run -p template_all_in_one
 cargo run -p template_minimal_2d
+cargo run -p template_ui
 ```
 
 | Directory | Package | Notes |
@@ -213,6 +219,7 @@ cargo run -p template_minimal_2d
 | `Examples/minimal-3d` | `template_minimal_3d` | Procedural 3D scene; no asset files. |
 | `Examples/all-in-one` | `template_all_in_one` | Scene, glTF, lighting, shadows, billboards, volumetric fog, SMAA, UI, and overlays. Ships its own minimal `Assets/`. |
 | `Examples/minimal-2d` | `template_minimal_2d` | 2D shape rendering; no asset files. |
+| `Examples/ui` | `template_ui` | ECS-native UI showcase: code/RON screens, themes, and widgets. |
 
 The template app sources are canonical in `Examples/`. The publishable
 `ignit-cli` crate carries copies under `Crates/cli/src/template/app/`, and
@@ -334,6 +341,8 @@ Treat the current WASM status as unverified: `Crates/ecs/src/system/runner.rs` u
 ## 8. Gotchas
 
 - **Two similarly named projects.** `Crates/iced` is the in-repo Ignit integration crate; `ignit-iced` is the external forked iced repo consumed as a Cargo `git` dependency.
+- **Two UI stacks during the transition.** `ignit_ui`/`ignit_ui_text`/`ignit_ui_render` are the v1.7 stack. `ignit_iced` and `ignit_debug_ui` still power the debug overlay until #1222; the runtime unions iced and generic input capture. Do not add new iced UI.
+- **Taffy is thread-affine.** Taffy 0.15 stores numeric lengths in a tagged `*const ()`; `UiLayoutEngine` asserts only `Send` and lives in a `Mutex`. Keep it on the UI thread.
 - **`ignit_resources` is a shim.** It only re-exports types from the fine-grained resource crates.
 - **There is no `ignit_shaders` crate.** Use the `ignit_shader_*` family.
 - **`ignit_ecs` lives in `Crates/ecs`.**
@@ -357,8 +366,16 @@ Treat the current WASM status as unverified: `Crates/ecs/src/system/runner.rs` u
 | `Crates/cli/src/init/mod.rs` | Project scaffolding flow. |
 | `Crates/cli/src/init/template.rs` | Generated project files (Cargo, config, sources). |
 | `Ignit.toml` | Engine, Android, and iOS project configuration for the CLI. |
-| `Crates/app/src/module.rs` | `Module` lifecycle. |
+| `Crates/app/src/module.rs` | `Module` lifecycle, including the `ui_systems` hook. |
 | `Crates/app/src/module_runtime.rs` | Frame loop, schedules, realization, overlays. |
+| `Crates/app/src/ui_schedule.rs` | Pre-game `UiSchedule`/`UiSystem` phase. |
+| `Crates/ui/src/lib.rs` | UI core entry, resources, update order. |
+| `Crates/ui/src/layout_engine.rs` | Taffy bridge and dirty reconciliation. |
+| `Crates/ui/src/document.rs` | RON documents, spawning, hot reload, state restoration. |
+| `Crates/ui/src/widgets.rs` | v1 widget state machines and paint commands. |
+| `Crates/ui_text/src/shape.rs` | cosmic-text shaping/cache and glyph quads. |
+| `Crates/ui_render/src/runtime.rs` | Generic window-event conversion and UI update system. |
+| `Crates/ui_render/src/renderer.rs` | Batched UI overlay, clipping, textures, glyphs. |
 | `Crates/app/src/systems/realize.rs` | GPU realization for cameras, models, lights, environments. |
 | `Crates/app/src/systems/import.rs` | Import queue polling and entity spawning. |
 | `Crates/ecs/src/world.rs` | ECS world, entities, components, resources. |

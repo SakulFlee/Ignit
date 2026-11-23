@@ -70,6 +70,7 @@ workspace members and mirror the templates used by `ignit init`:
 - **minimal-3d**: A small procedural 3D scene with a camera and a spotlight
 - **all-in-one**: Procedural scene, glTF import, lighting, shadows, UI, and overlays
 - **minimal-2d**: A minimal 2D shape rendering example
+- **ui**: ECS-native UI showcase with code- and RON-authored screens, themes, and widgets
 
 The examples are self-contained and can be run from their own directories:
 
@@ -77,6 +78,7 @@ The examples are self-contained and can be run from their own directories:
 (cd Examples/minimal-3d && cargo run)
 (cd Examples/all-in-one && cargo run)
 (cd Examples/minimal-2d && cargo run)
+(cd Examples/ui && cargo run)
 ```
 
 They can also be run from the repository root:
@@ -85,10 +87,14 @@ They can also be run from the repository root:
 cargo run -p template_minimal_3d
 cargo run -p template_all_in_one
 cargo run -p template_minimal_2d
+cargo run -p template_ui
 ```
 
 `minimal-3d` and `minimal-2d` need no asset files. `all-in-one` ships the scene, the PBR
 helmet, and the animated Fox gallery it uses in `Examples/all-in-one/Assets/`.
+`ui` documents the new ECS-native stack: see
+[`docs/ui/README.md`](docs/ui/README.md) for authoring, themes, RON documents,
+hot reload, and the iced migration note.
 
 Install the CLI from crates.io and create a standalone project:
 
@@ -103,9 +109,12 @@ To use the engine in your own project, add the published facade crate:
 ignit = "1.6"
 ```
 
-The engine crates are published under `ignit` and `ignit_*`; the editor and
-windowing forks are published as `ignit-iced-*`, `ignit-winit`,
-`ignit-cosmic-text`, and `ignit-cryoglyph`. To track the repository instead:
+The engine crates are published under `ignit` and `ignit_*`; the windowing
+forks are published as `ignit-winit` and `ignit-cryoglyph`. The v1.7 UI stack
+uses `ignit_ui`, `ignit_ui_text`, and `ignit_ui_render`. The iced fork
+(`ignit-iced-*`) remains only for the legacy debug overlay until #1222/#1223,
+and the `ignit-cosmic-text` fork is being removed with it. To track the
+repository instead:
 
 ```toml
 ignit = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit.git", branch = "main" }
