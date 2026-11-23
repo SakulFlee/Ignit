@@ -4,6 +4,7 @@ use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::CargoFeatures;
 use crate::config;
 
 /// Returns true if stdin is a terminal (interactive mode).
@@ -11,7 +12,7 @@ fn is_terminal() -> bool {
     std::io::stdin().is_terminal()
 }
 
-pub fn build(package_name: Option<&str>, release: bool) -> Result<()> {
+pub fn build(package_name: Option<&str>, release: bool, features: &CargoFeatures) -> Result<()> {
     let project_root = config::find_project_root()?;
     let android_dir = project_root.join("Android");
 
@@ -34,6 +35,9 @@ pub fn build(package_name: Option<&str>, release: bool) -> Result<()> {
     println!("  Package: {}", package);
     println!("  Library: {}", lib_name);
     println!("  Mode: {}", if release { "release" } else { "debug" });
+    if !features.is_empty() {
+        println!("  Cargo: {}", features.summary());
+    }
 
     // Ensure Android SDK is configured
     super::sdk::ensure_android_sdk()?;
@@ -89,17 +93,25 @@ pub fn build(package_name: Option<&str>, release: bool) -> Result<()> {
 
     // Use to_string_lossy to handle non-UTF-8 paths on Unix
     let jni_libs_str = jni_libs_dir.to_string_lossy().to_string();
-    let mut cargo_ndk_args = vec!["-o", &jni_libs_str, "build", "--lib", "--package", &package];
+    let mut cargo_ndk_args = vec![
+        "-o".to_string(),
+        jni_libs_str.clone(),
+        "build".to_string(),
+        "--lib".to_string(),
+        "--package".to_string(),
+        package.clone(),
+    ];
 
     // Add targets from config
     for target in &targets {
-        cargo_ndk_args.push("-t");
-        cargo_ndk_args.push(target);
+        cargo_ndk_args.push("-t".to_string());
+        cargo_ndk_args.push(target.clone());
     }
 
     if release {
-        cargo_ndk_args.push("--release");
+        cargo_ndk_args.push("--release".to_string());
     }
+    features.apply(&mut cargo_ndk_args);
 
     let status = Command::new("cargo")
         .arg("ndk")

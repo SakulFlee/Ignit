@@ -13,10 +13,11 @@ pub fn run(
     skip_build: bool,
     no_logcat: bool,
     release: bool,
+    features: &crate::CargoFeatures,
 ) -> Result<()> {
     // First build (unless skipped)
     if !skip_build {
-        super::build::build(package_name, release)?;
+        super::build::build(package_name, release, features)?;
     }
 
     let project_root = config::find_project_root()?;
