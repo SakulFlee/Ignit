@@ -17,3 +17,4 @@ ignit_ui = { path = "../ui", version = "1.6.3" }
 ignit_ui_text = { path = "../ui_text", version = "1.6.3" }
 log = { workspace = true }
 wgpu = { workspace = true }
+winit = { workspace = true }

@@ -6,6 +6,8 @@
 
 use ignit_ecs::System;
 use ignit_ecs::World;
+
+use crate::ui_schedule::UiSystem;
 use wgpu::{Device, Queue};
 
 /// Plugin-like module for the ECS-based engine.
@@ -31,6 +33,15 @@ pub trait Module: Send + Sync {
         _ecs: &mut World,
         _layer_renderers: &mut Vec<Box<dyn crate::render_overlay::LayerRenderer>>,
     ) {
+    }
+
+    /// UI systems run after the core schedule and before the game schedule.
+    ///
+    /// Unlike [`Module::setup`], these receive `&mut World` every frame and are
+    /// not part of the conflict-batched game schedule. Use this for reconcile,
+    /// layout, input routing, focus, and draw-list construction.
+    fn ui_systems(&self, _ecs: &mut World) -> Vec<Box<dyn UiSystem>> {
+        Vec::new()
     }
 
     /// Called when the app is paused/backgrounded.

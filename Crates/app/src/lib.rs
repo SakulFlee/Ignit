@@ -50,6 +50,9 @@ pub use module_runtime::ModuleRuntime;
 pub mod render_layer;
 pub use render_layer::{LayerConfig, RenderLayer};
 
+pub mod ui_schedule;
+pub use ui_schedule::{FunctionUiSystem, UiSchedule, UiSystem};
+
 pub mod render_overlay;
 pub use render_overlay::{
     LayerRenderer, OverlayRenderTimings, OverlaySubmission, RenderOverlayContext,
