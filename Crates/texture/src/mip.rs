@@ -6,6 +6,8 @@
 
 use std::sync::OnceLock;
 
+use wgpu::{Extent3d, TextureDimension};
+
 /// Hard upper bound on chain length.
 ///
 /// WGPU's default limits allow 16 mip levels; the largest 2D texture most
@@ -16,14 +18,17 @@ const MAX_MIP_LEVELS: u32 = 16;
 ///
 /// A 1x1 texture has one level, a 4x4 texture has three (4, 2, 1), and a 3x3
 /// texture has two (3, 1) because every level halves the extents, rounding
-/// down and clamping at one.
+/// down and clamping at one. WGPU's [`Extent3d::max_mips`] defines the same
+/// rule.
 pub fn mip_level_count(width: u32, height: u32) -> u32 {
-    let largest = width.max(height);
-    if largest == 0 {
-        return 1;
-    }
-
-    (32 - largest.leading_zeros()).min(MAX_MIP_LEVELS)
+    let extent = Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
+    extent
+        .max_mips(TextureDimension::D2)
+        .clamp(1, MAX_MIP_LEVELS)
 }
 
 /// Builds a compact 8-bit mip chain, base level first.
