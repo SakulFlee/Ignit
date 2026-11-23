@@ -223,8 +223,6 @@ pub fn collect(
                 * u64::from(volumetric_grid[1])
                 * u64::from(volumetric_grid[2]),
             "volumetric_integration_steps": volumetric_integration_steps,
-            "volumetric_composite_width": if volumetric.enabled { render_width } else { 0 },
-            "volumetric_composite_height": if volumetric.enabled { render_height } else { 0 },
             "volumetric_max_distance": if volumetric.enabled {
                 volumetric.max_distance
             } else {

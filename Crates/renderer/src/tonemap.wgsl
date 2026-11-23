@@ -9,13 +9,17 @@ struct TonemapParams {
     glare_star_inner: f32,
     glare_star_outer: f32,
     glare_star_length: f32,
-    _padding: vec3<f32>,
+    volumetric_enabled: u32,
+    volumetric_range: f32,
+    _padding: vec2<f32>,
 };
 
 @group(0) @binding(0) var hdr_texture: texture_2d<f32>;
 @group(0) @binding(1) var hdr_sampler: sampler;
 @group(0) @binding(2) var<uniform> params: TonemapParams;
 @group(0) @binding(3) var scene_depth: texture_depth_2d;
+@group(0) @binding(5) var integrated: texture_3d<f32>;
+@group(0) @binding(6) var integrated_sampler: sampler;
 
 struct GlareLight {
     position: vec4<f32>,
@@ -117,6 +121,23 @@ fn hash11(value: f32) -> f32 {
     return fract(sin(value * 12.9898) * 43758.5453);
 }
 
+/// Maps an output pixel into the scene depth texture. Render scaling and AA
+/// can make the tonemap target larger than the depth target.
+fn depth_coordinate(pixel: vec2<i32>) -> vec2<i32> {
+    let depth_size = max(glare.depth_resolution.xy, vec2<f32>(1.0));
+    let output_size = max(glare.viewport.xy, vec2<f32>(1.0));
+    let coordinate = clamp(
+        (vec2<f32>(pixel) + vec2<f32>(0.5)) * depth_size / output_size,
+        vec2<f32>(0.0),
+        depth_size - vec2<f32>(1.0),
+    );
+    return vec2<i32>(coordinate);
+}
+
+fn scene_depth_at(pixel: vec2<i32>) -> f32 {
+    return textureLoad(scene_depth, depth_coordinate(pixel), 0);
+}
+
 /// Screen-space glare around positional lights. Each pixel compares its own
 /// linear view depth against the light depth, so a foreground wall masks the
 /// halo instead of letting it bleed through.
@@ -131,17 +152,7 @@ fn sample_light_glare(uv: vec2<f32>, pixel: vec2<i32>) -> vec3<f32> {
     let radius2 = glare.viewport.w * glare.viewport.w;
     let near = glare.camera_params.x;
     let far = glare.camera_params.y;
-    // The scene depth target follows the internal render scale, which can be
-    // smaller than this pass's target when anti-aliasing is disabled. Map the
-    // output pixel into depth texture space instead of loading out of bounds.
-    let depth_size = max(glare.depth_resolution.xy, vec2<f32>(1.0));
-    let output_size = max(viewport, vec2<f32>(1.0));
-    let depth_coord = clamp(
-        (vec2<f32>(pixel) + vec2<f32>(0.5)) * depth_size / output_size,
-        vec2<f32>(0.0),
-        depth_size - vec2<f32>(1.0),
-    );
-    let scene_depth_value = textureLoad(scene_depth, vec2<i32>(depth_coord), 0);
+    let scene_depth_value = scene_depth_at(pixel);
     let scene_linear_depth =
         (near * far) / max(far - scene_depth_value * (far - near), 1.0e-6);
     var light_glare = vec3<f32>(0.0);
@@ -243,9 +254,41 @@ fn sample_light_glare(uv: vec2<f32>, pixel: vec2<i32>) -> vec3<f32> {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let texel = 1.0 / vec2<f32>(textureDimensions(hdr_texture));
-    let base = textureSample(hdr_texture, hdr_sampler, in.uv).rgb;
-    let scene_glare = sample_glare(in.uv, texel);
-    let light_glare = sample_light_glare(in.uv, vec2<i32>(in.position.xy));
+    let pixel = vec2<i32>(in.position.xy);
+    var base = textureSample(hdr_texture, hdr_sampler, in.uv).rgb;
+    var transmittance = 1.0;
+
+    // Fold the old volumetric composite into this pass: sample the
+    // pre-integrated froxel column at the scene depth, then attenuate the
+    // scene and add the in-scattering before tonemapping.
+    if (params.volumetric_enabled != 0u) {
+        let near = glare.camera_params.x;
+        let far = glare.camera_params.y;
+        let depth = scene_depth_at(pixel);
+        let scene_view_depth =
+            (near * far) / max(far - depth * (far - near), 1.0e-6);
+        let t_max = clamp(
+            scene_view_depth / max(params.volumetric_range, 0.1),
+            0.0,
+            1.0,
+        );
+        // The froxel volume uses the pre-flip UV convention of the old
+        // fullscreen composite pass.
+        let volume_uv = vec2<f32>(in.uv.x, 1.0 - in.uv.y);
+        let prefix = textureSampleLevel(
+            integrated,
+            integrated_sampler,
+            vec3<f32>(volume_uv, t_max),
+            0.0,
+        );
+        base = base * prefix.a + prefix.rgb;
+        transmittance = prefix.a;
+    }
+
+    // Glare is sampled from the pre-fog scene. Dim it by the fog
+    // transmittance at this pixel so it stays behind the fog.
+    let scene_glare = sample_glare(in.uv, texel) * transmittance;
+    let light_glare = sample_light_glare(in.uv, pixel);
     let color = (base + scene_glare + light_glare) * params.exposure;
 
     // ACES filmic curve.

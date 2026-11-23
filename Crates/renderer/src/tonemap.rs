@@ -3,11 +3,12 @@
 use cgmath::{Matrix4, Point3, Vector2};
 use wgpu::{
     BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType,
-    BlendState, BufferBindingType, ColorTargetState, ColorWrites, Device, FragmentState,
+    BlendState, BufferBindingType, ColorTargetState, ColorWrites, Device, Extent3d, FragmentState,
     PipelineLayoutDescriptor, PrimitiveState, RenderPassColorAttachment, RenderPassDescriptor,
     RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StoreOp, TextureSampleType, TextureView,
-    TextureViewDimension, VertexState,
+    ShaderModuleDescriptor, ShaderSource, ShaderStages, StoreOp,
+    TextureDescriptor as WgpuTextureDescriptor, TextureDimension, TextureSampleType, TextureUsages,
+    TextureView, TextureViewDimension, VertexState,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -27,6 +28,7 @@ pub struct TonemapSettings {
     pub glare_star_inner: f32,
     pub glare_star_outer: f32,
     pub glare_star_length: f32,
+    pub volumetric_range: f32,
 }
 
 impl Default for TonemapSettings {
@@ -41,6 +43,7 @@ impl Default for TonemapSettings {
             glare_star_inner: 0.05,
             glare_star_outer: 0.0,
             glare_star_length: 10.0,
+            volumetric_range: 1.0,
         }
     }
 }
@@ -92,6 +95,8 @@ fn tonemap_params_data(settings: &TonemapSettings, gamma: f32) -> [u8; TONEMAP_P
     data[28..32].copy_from_slice(&settings.glare_star_inner.to_le_bytes());
     data[32..36].copy_from_slice(&settings.glare_star_outer.to_le_bytes());
     data[36..40].copy_from_slice(&settings.glare_star_length.to_le_bytes());
+    // The volumetric flag is written by `record` from the actual bind view.
+    data[44..48].copy_from_slice(&settings.volumetric_range.to_le_bytes());
     data
 }
 
@@ -106,7 +111,14 @@ pub struct Tonemap {
     sampler: wgpu::Sampler,
     params: TonemapParams,
     gamma: f32,
-    bind_group_cache: Option<(TextureView, TextureView, wgpu::BindGroup)>,
+    _volumetric_fallback: wgpu::Texture,
+    volumetric_fallback_view: TextureView,
+    bind_group_cache: Option<(
+        TextureView,
+        TextureView,
+        Option<TextureView>,
+        wgpu::BindGroup,
+    )>,
 }
 
 impl Tonemap {
@@ -165,6 +177,22 @@ impl Tonemap {
                     },
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D3,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         });
 
@@ -219,12 +247,33 @@ impl Tonemap {
         };
         let params = TonemapParams::new(device, target_format.is_srgb());
 
+        // Tonemap always binds a 3D volume so the layout is fixed. The shader
+        // ignores it while `volumetric_enabled` is clear.
+        let volumetric_fallback = device.create_texture(&WgpuTextureDescriptor {
+            label: Some("Ignit::TonemapVolumetricFallback"),
+            size: Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D3,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let volumetric_fallback_view =
+            volumetric_fallback.create_view(&wgpu::TextureViewDescriptor::default());
+
         Self {
             pipeline,
             bind_group_layout,
             sampler,
             params,
             gamma,
+            _volumetric_fallback: volumetric_fallback,
+            volumetric_fallback_view,
             bind_group_cache: None,
         }
     }
@@ -307,19 +356,34 @@ impl Tonemap {
         queue.write_buffer(&self.params.glare_buffer, 0, &data);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn record(
         &mut self,
         device: &Device,
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         hdr_view: &TextureView,
         depth_view: &TextureView,
         target_view: &TextureView,
+        volumetric_view: Option<&TextureView>,
     ) {
-        let cache_hit = self
-            .bind_group_cache
-            .as_ref()
-            .is_some_and(|(view, depth, _)| view == hdr_view && depth == depth_view);
+        // Toggle the fog path from the view that is actually bound. This keeps
+        // the fallback texture from being sampled when integration did not run.
+        queue.write_buffer(
+            &self.params.buffer,
+            40,
+            &u32::from(volumetric_view.is_some()).to_le_bytes(),
+        );
+        let cache_hit =
+            self.bind_group_cache
+                .as_ref()
+                .is_some_and(|(view, depth, volumetric, _)| {
+                    view == hdr_view
+                        && depth == depth_view
+                        && volumetric.as_ref() == volumetric_view
+                });
         if !cache_hit {
+            let volume_view = volumetric_view.unwrap_or(&self.volumetric_fallback_view);
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Ignit::TonemapBindGroup"),
                 layout: &self.bind_group_layout,
@@ -348,15 +412,28 @@ impl Tonemap {
                             self.params.glare_buffer.as_entire_buffer_binding(),
                         ),
                     },
+                    BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::TextureView(volume_view),
+                    },
+                    BindGroupEntry {
+                        binding: 6,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
                 ],
             });
-            self.bind_group_cache = Some((hdr_view.clone(), depth_view.clone(), bind_group));
+            self.bind_group_cache = Some((
+                hdr_view.clone(),
+                depth_view.clone(),
+                volumetric_view.cloned(),
+                bind_group,
+            ));
         }
         let bind_group = &self
             .bind_group_cache
             .as_ref()
             .expect("tonemap bind group cache")
-            .2;
+            .3;
 
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("RenderPass::Tonemap"),
@@ -397,6 +474,7 @@ mod tests {
             glare_star_inner: 0.08,
             glare_star_outer: 0.03,
             glare_star_length: 7.5,
+            volumetric_range: 24.0,
         };
         let data = tonemap_params_data(&settings, 0.5);
 
@@ -411,6 +489,8 @@ mod tests {
         assert_eq!(f32::from_le_bytes(data[28..32].try_into().unwrap()), 0.08);
         assert_eq!(f32::from_le_bytes(data[32..36].try_into().unwrap()), 0.03);
         assert_eq!(f32::from_le_bytes(data[36..40].try_into().unwrap()), 7.5);
-        assert!(data[40..].iter().all(|byte| *byte == 0));
+        assert_eq!(u32::from_le_bytes(data[40..44].try_into().unwrap()), 0);
+        assert_eq!(f32::from_le_bytes(data[44..48].try_into().unwrap()), 24.0);
+        assert!(data[48..].iter().all(|byte| *byte == 0));
     }
 }

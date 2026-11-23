@@ -457,12 +457,3 @@ fn node_assembled_volumetric_inject_is_valid_wgsl() {
         include_str!("../../../Crates/renderer/src/volumetric_inject.wgsl"),
     );
 }
-
-#[test]
-fn volumetric_composite_shader_is_valid_wgsl() {
-    validate_assembled_pbr_shader_with_nodes(
-        "assembled volumetric composite shader",
-        &["camera_uniform"],
-        include_str!("../../../Crates/renderer/src/volumetric_composite.wgsl"),
-    );
-}

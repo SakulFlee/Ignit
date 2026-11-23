@@ -66,7 +66,6 @@ enum ScenePass {
     Models,
     Transparent,
     VolumetricInject,
-    VolumetricComposite,
     Tonemap,
     Fxaa,
     Smaa,
@@ -120,7 +119,6 @@ const RES_POST_LDR: ResourceId = ResourceId::new(7);
 const RES_GBUFFER: ResourceId = ResourceId::new(8);
 const RES_LIGHT_GRID: ResourceId = ResourceId::new(9);
 const RES_VOLUMETRIC: ResourceId = ResourceId::new(10);
-const RES_SCENE_COLOR_FINAL: ResourceId = ResourceId::new(11);
 
 fn gbuffer_texture_descriptor(
     resolution: Vector2<u32>,
@@ -225,27 +223,20 @@ fn add_scene_passes(
             &[RES_WORLD],
             &[RES_VOLUMETRIC],
         );
-        graph.add_pass(
-            ScenePass::VolumetricComposite,
-            "volumetric-composite",
-            &[RES_SCENE_COLOR, RES_DEPTH, RES_VOLUMETRIC],
-            &[RES_SCENE_COLOR_FINAL],
-        );
     }
 
-    let tonemap_source = if has_volumetrics {
-        RES_SCENE_COLOR_FINAL
-    } else {
-        RES_SCENE_COLOR
-    };
     let tonemap_target = match anti_aliasing {
         AntiAliasing::Off => RES_SURFACE,
         AntiAliasing::Fxaa | AntiAliasing::Smaa => RES_POST_LDR,
     };
+    let mut tonemap_inputs = vec![RES_SCENE_COLOR, RES_DEPTH];
+    if has_volumetrics {
+        tonemap_inputs.push(RES_VOLUMETRIC);
+    }
     graph.add_pass(
         ScenePass::Tonemap,
         "tonemap",
-        &[tonemap_source],
+        &tonemap_inputs,
         &[tonemap_target],
     );
     match anti_aliasing {
@@ -795,12 +786,7 @@ impl Renderer {
             resolution,
             &fallbacks.world_bind_group_layout,
         );
-        let volumetric = VolumetricRenderer::new(
-            device,
-            queue,
-            SCENE_COLOR_FORMAT,
-            &fallbacks.world_bind_group_layout,
-        );
+        let volumetric = VolumetricRenderer::new(device, queue, &fallbacks.world_bind_group_layout);
 
         Self {
             surface_texture_format,
@@ -1195,6 +1181,9 @@ impl Renderer {
 
         self.frame_index = self.frame_index.wrapping_add(1);
         self.texture_pool.begin_frame(self.frame_index);
+        let volumetric_range = scene
+            .volumetrics
+            .map_or(1.0, |settings| settings.max_distance.max(0.1));
         self.tonemap.set_params(
             queue,
             &TonemapSettings {
@@ -1211,6 +1200,7 @@ impl Renderer {
                 glare_star_inner: self.glare_star_inner,
                 glare_star_outer: self.glare_star_outer,
                 glare_star_length: self.glare_star_length,
+                volumetric_range,
             },
         );
         let (glare_view_projection, glare_camera_position, glare_near, glare_far) = scene
@@ -1421,15 +1411,7 @@ impl Renderer {
                     view_formats: &[],
                 },
             );
-            let final_color = self.texture_pool.acquire(
-                device,
-                &gbuffer_texture_descriptor(
-                    self.resolution,
-                    SCENE_COLOR_FORMAT,
-                    "Ignit::VolumetricSceneColor",
-                ),
-            );
-            Some((froxel, final_color))
+            Some(froxel)
         } else {
             None
         };
@@ -1642,7 +1624,7 @@ impl Renderer {
                                 context.device,
                                 context.encoder,
                                 bind_group,
-                                &targets.0.view,
+                                &targets.view,
                             );
                             if timestamps_enabled && let Some(qs) = &self.timestamp_query_set {
                                 context.encoder.write_timestamp(qs, 8);
@@ -1652,12 +1634,12 @@ impl Renderer {
                                 context.queue,
                                 context.encoder,
                                 bind_group,
-                                &targets.0.view,
+                                &targets.view,
                             );
                             if timestamps_enabled && let Some(qs) = &self.timestamp_query_set {
                                 context.encoder.write_timestamp(qs, 9);
                             }
-                            let source = volumetric_accumulated.as_ref().unwrap_or(&targets.0.view);
+                            let source = volumetric_accumulated.as_ref().unwrap_or(&targets.view);
                             volumetric_integrated = Some(self.volumetric.record_integrate(
                                 context.device,
                                 context.queue,
@@ -1666,30 +1648,14 @@ impl Renderer {
                             ));
                             if timestamps_enabled && let Some(qs) = &self.timestamp_query_set {
                                 context.encoder.write_timestamp(qs, 10);
+                                // The composite moved into tonemap; keep the
+                                // query slot so stage history stays aligned.
+                                context.encoder.write_timestamp(qs, 11);
                             }
                         } else if timestamps_enabled && let Some(qs) = &self.timestamp_query_set {
                             context.encoder.write_timestamp(qs, 8);
                             context.encoder.write_timestamp(qs, 9);
                             context.encoder.write_timestamp(qs, 10);
-                        }
-                    }
-                    ScenePass::VolumetricComposite => {
-                        if let (Some(bind_group), Some(targets), Some(prefix)) = (
-                            world_bind_group.as_ref(),
-                            volumetric_targets.as_ref(),
-                            volumetric_integrated.as_ref(),
-                        ) {
-                            self.volumetric.record_composite(
-                                context.device,
-                                context.encoder,
-                                bind_group,
-                                &scene_color.view,
-                                &depth.view,
-                                prefix,
-                                &targets.1.view,
-                            );
-                        }
-                        if timestamps_enabled && let Some(qs) = &self.timestamp_query_set {
                             context.encoder.write_timestamp(qs, 11);
                         }
                     }
@@ -1712,16 +1678,14 @@ impl Renderer {
                                 .unwrap_or(target_view),
                             AntiAliasing::Smaa => smaa_view.as_ref().expect("SMAA target view"),
                         };
-                        let tonemap_source = volumetric_targets
-                            .as_ref()
-                            .map(|targets| &targets.1.view)
-                            .unwrap_or(&scene_color.view);
                         self.tonemap.record(
                             context.device,
+                            context.queue,
                             context.encoder,
-                            tonemap_source,
+                            &scene_color.view,
                             &depth.view,
                             tonemap_target,
+                            volumetric_integrated.as_ref(),
                         );
                         if timestamps_enabled && let Some(qs) = &self.timestamp_query_set {
                             context.encoder.write_timestamp(qs, 12);
@@ -1856,7 +1820,7 @@ impl Renderer {
                 | ScenePass::Models => {
                     models_ms += ms(timing.cpu);
                 }
-                ScenePass::VolumetricInject | ScenePass::VolumetricComposite => {
+                ScenePass::VolumetricInject => {
                     volumetrics_ms += ms(timing.cpu);
                 }
                 ScenePass::Transparent => models_ms += ms(timing.cpu),
@@ -2422,7 +2386,6 @@ mod tests {
                 "deferred-lighting",
                 "transparent",
                 "volumetric-inject",
-                "volumetric-composite",
                 "tonemap",
                 "smaa"
             ]
@@ -2475,7 +2438,6 @@ mod tests {
                 "deferred-lighting",
                 "transparent",
                 "volumetric-inject",
-                "volumetric-composite",
                 "tonemap"
             ]
         );
