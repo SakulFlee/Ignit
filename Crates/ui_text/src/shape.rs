@@ -49,6 +49,7 @@ pub struct TextQuad {
     pub rect: [f32; 4],
     pub uv: [f32; 4],
     pub color: [f32; 4],
+    pub page: usize,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -258,6 +259,7 @@ impl TextEngine {
                 rect: glyph.rect,
                 uv: atlas_glyph.uv,
                 color: glyph.color,
+                page: atlas_glyph.page,
             });
         }
         quads
