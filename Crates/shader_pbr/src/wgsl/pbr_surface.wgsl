@@ -10,6 +10,8 @@ const HAS_METALLIC_TEXTURE: u32 = 4u;
 const HAS_ROUGHNESS_TEXTURE: u32 = 8u;
 const HAS_OCCLUSION_TEXTURE: u32 = 16u;
 const HAS_EMISSIVE_TEXTURE: u32 = 32u;
+const HAS_METALLIC_ROUGHNESS_TEXTURE: u32 = 64u;
+const HAS_ORM_OCCLUSION: u32 = 128u;
 
 struct Surface {
     albedo: vec3<f32>,
@@ -65,40 +67,61 @@ fn surface(fragment_data: FragmentData) -> Surface {
     }
 
     var metallic_sample = 1.0;
-    if ((flags & HAS_METALLIC_TEXTURE) != 0u) {
-        metallic_sample = textureSample(
+    var roughness_sample = 1.0;
+    var occlusion_sample = 1.0;
+
+    if ((flags & HAS_METALLIC_ROUGHNESS_TEXTURE) != 0u) {
+        // glTF packs roughness in G and metallic in B. The same image often
+        // carries occlusion in R, so a single fetch covers all three.
+        let mr = textureSample(
             metallic_texture,
             metallic_sampler,
             fragment_data.uv
-        ).r;
+        );
+        metallic_sample = mr.b;
+        roughness_sample = mr.g;
+        if ((flags & HAS_ORM_OCCLUSION) != 0u) {
+            occlusion_sample = mr.r;
+        }
+    } else {
+        if ((flags & HAS_METALLIC_TEXTURE) != 0u) {
+            metallic_sample = textureSample(
+                metallic_texture,
+                metallic_sampler,
+                fragment_data.uv
+            ).r;
+        }
+        if ((flags & HAS_ROUGHNESS_TEXTURE) != 0u) {
+            roughness_sample = textureSample(
+                roughness_texture,
+                roughness_sampler,
+                fragment_data.uv
+            ).r;
+        }
     }
+
     out.metallic = clamp(
         metallic_sample * pbr_factors.metallic_factor,
         0.0,
         1.0,
     );
-
-    var roughness_sample = 1.0;
-    if ((flags & HAS_ROUGHNESS_TEXTURE) != 0u) {
-        roughness_sample = textureSample(
-            roughness_texture,
-            roughness_sampler,
-            fragment_data.uv
-        ).r;
-    }
     out.roughness = clamp(
         roughness_sample * pbr_factors.roughness_factor,
         0.045,
         0.9999,
     );
 
-    var occlusion_sample = 1.0;
-    if ((flags & HAS_OCCLUSION_TEXTURE) != 0u) {
-        occlusion_sample = textureSample(
-            occlusion_texture,
-            occlusion_sampler,
-            fragment_data.uv
-        ).r;
+    // A separate occlusion texture only participates when the ORM image did
+    // not already provide the R channel.
+    if ((flags & HAS_METALLIC_ROUGHNESS_TEXTURE) == 0u
+        || (flags & HAS_ORM_OCCLUSION) == 0u) {
+        if ((flags & HAS_OCCLUSION_TEXTURE) != 0u) {
+            occlusion_sample = textureSample(
+                occlusion_texture,
+                occlusion_sampler,
+                fragment_data.uv
+            ).r;
+        }
     }
     out.occlusion = clamp(occlusion_sample, 0.0, 1.0);
 

@@ -20,8 +20,8 @@ use ignit_math::Transform;
 use ignit_mesh::{MeshDescriptor, Vertex};
 use ignit_model::ModelDescriptor;
 use ignit_shader_pbr::{
-    MATERIAL_TEXTURE_ALBEDO, MATERIAL_TEXTURE_EMISSIVE, MATERIAL_TEXTURE_METALLIC,
-    MATERIAL_TEXTURE_NORMAL, MATERIAL_TEXTURE_OCCLUSION, MATERIAL_TEXTURE_ROUGHNESS,
+    MATERIAL_TEXTURE_ALBEDO, MATERIAL_TEXTURE_EMISSIVE, MATERIAL_TEXTURE_METALLIC_ROUGHNESS,
+    MATERIAL_TEXTURE_NORMAL, MATERIAL_TEXTURE_OCCLUSION, MATERIAL_TEXTURE_ORM_OCCLUSION,
 };
 use ignit_texture::{FilterMode, TextureDescriptor, TextureSize};
 use image::GenericImageView;
@@ -35,7 +35,6 @@ use std::error::Error;
 use std::path::Path;
 use std::sync::Arc;
 use ulid::Ulid;
-use wgpu::TextureFormat::R32Float;
 use wgpu::{Color, TextureDimension, TextureFormat, TextureUsages, TextureViewDimension};
 
 mod import;
@@ -558,7 +557,10 @@ impl GltfImporter {
     /// Handles parsing of glTF textures ([`gltf::image::Data`]) and turns it into a [`TextureDescriptor`].
     fn parse_texture(data: &gltf::image::Data, srgb: bool) -> TextureDescriptor {
         let (format, need_alpha_channel) = Self::gltf_texture_format_to_ignit(data.format);
-        // If srgb is requested, convert to sRGB format if it's an RGBA format
+        // If srgb is requested, convert to sRGB format if it's an RGBA format.
+        // The reverse direction matters for linear data: RGBA8 glTF images
+        // arrive as `Rgba8UnormSrgb` from the format table and must lose that
+        // suffix for normal, metallic, roughness and occlusion maps.
         let format = if srgb {
             match format {
                 TextureFormat::Rgba8Unorm => TextureFormat::Rgba8UnormSrgb,
@@ -566,7 +568,7 @@ impl GltfImporter {
                 _ => format,
             }
         } else {
-            format
+            format.remove_srgb_suffix()
         };
 
         // Debug log to verify the determined format
@@ -703,96 +705,6 @@ impl GltfImporter {
     /// This version assumes linear color space for data textures like normals, metallic, roughness, etc.
     fn parse_texture_linear(data: &gltf::image::Data) -> TextureDescriptor {
         Self::parse_texture(data, false)
-    }
-
-    /// Handles parsing a "dual" texture.
-    /// Same as [`Self::parse_texture`], but splits the B(lue) and G(reen) channel into two separate
-    /// textures according to the glTF specification for metallic-roughness textures.
-    /// Metallic is in the B channel, Roughness is in the G channel.
-    fn parse_dual_texture(data: &gltf::image::Data) -> (TextureDescriptor, TextureDescriptor) {
-        let (_format, _need_alpha_channel) = Self::gltf_texture_format_to_ignit(data.format);
-
-        // Calculate the number of channels in the source format
-        let source_channels = match data.format {
-            Format::R8 => 1,
-            Format::R8G8 => 2,
-            Format::R8G8B8 => 3,
-            Format::R8G8B8A8 => 4,
-            Format::R16 => 1,
-            Format::R16G16 => 2,
-            Format::R16G16B16 => 3,
-            Format::R16G16B16A16 => 4,
-            Format::R32G32B32FLOAT => 3,
-            Format::R32G32B32A32FLOAT => 4,
-        };
-
-        let mut pixels_0 = Vec::with_capacity(data.pixels.len() / source_channels);
-        let mut pixels_1 = Vec::with_capacity(data.pixels.len() / source_channels);
-
-        for chunk in data.pixels.chunks(source_channels) {
-            // According to glTF spec:
-            // Blue channel (index 2) -> Metallic (texture_0)
-            // Green channel (index 1) -> Roughness (texture_1)
-            // First channel (Blue) -> Metallic
-            if chunk.len() > 2 {
-                pixels_0.push(chunk[2]); // Blue channel for metallic
-            } else if !chunk.is_empty() {
-                // If we don't have enough channels, use the first one
-                pixels_0.push(chunk[0]);
-            }
-            // Second channel (Green) -> Roughness
-            if chunk.len() > 1 {
-                pixels_1.push(chunk[1]); // Green channel for roughness
-            } else if !chunk.is_empty() {
-                // If we don't have enough channels, use the first one
-                pixels_1.push(chunk[0]);
-            }
-        }
-
-        let actual_format = match data.format {
-            Format::R8 | Format::R8G8 | Format::R8G8B8 | Format::R8G8B8A8 => TextureFormat::R8Unorm,
-            Format::R16 | Format::R16G16 | Format::R16G16B16 | Format::R16G16B16A16 => {
-                TextureFormat::R16Unorm
-            }
-            Format::R32G32B32FLOAT | Format::R32G32B32A32FLOAT => R32Float,
-        };
-
-        let texture_0 = TextureDescriptor::Data {
-            pixels: pixels_0,
-            size: TextureSize {
-                width: data.width,
-                height: data.height,
-                depth_or_array_layers: 1,
-                base_mip: 0,
-                mip_levels: 1,
-            },
-            usages: TextureUsages::TEXTURE_BINDING
-                | TextureUsages::COPY_DST
-                | TextureUsages::RENDER_ATTACHMENT,
-            format: actual_format,
-            texture_dimension: TextureDimension::D2,
-            texture_view_dimension: TextureViewDimension::D2,
-            filter_mode: FilterMode::linear(),
-        };
-        let texture_1 = TextureDescriptor::Data {
-            pixels: pixels_1,
-            size: TextureSize {
-                width: data.width,
-                height: data.height,
-                depth_or_array_layers: 1,
-                base_mip: 0,
-                mip_levels: 1,
-            },
-            usages: TextureUsages::TEXTURE_BINDING
-                | TextureUsages::COPY_DST
-                | TextureUsages::RENDER_ATTACHMENT,
-            format: actual_format,
-            texture_dimension: TextureDimension::D2,
-            texture_view_dimension: TextureViewDimension::D2,
-            filter_mode: FilterMode::linear(),
-        };
-
-        (texture_0, texture_1)
     }
 
     /// Parses a glTF skin into a rest-pose skeleton descriptor.
@@ -1068,25 +980,23 @@ impl GltfImporter {
                 (texture, Vector3::new(factor[0], factor[1], factor[2]))
             };
 
+        let metallic_roughness_source = material
+            .pbr_metallic_roughness()
+            .metallic_roughness_texture()
+            .map(|info| info.texture().source().index());
+
         let (metallic, roughness, metallic_factor, roughness_factor) =
-            if let Some(metallic_and_roughness_info) = material
-                .pbr_metallic_roughness()
-                .metallic_roughness_texture()
-            {
-                // If a metallic & roughness texture is set, the factors will be needed to multiplied with the texture.
-
-                let (texture_descriptor_metallic, texture_descriptor_roughness) =
-                    Self::parse_dual_texture(Self::decoded_image(
-                        textures,
-                        metallic_and_roughness_info.texture().source().index(),
-                    ));
-
+            if let Some(source) = metallic_roughness_source {
+                // Keep the glTF metallic-roughness image intact: G is
+                // roughness, B is metallic and R may hold occlusion.
+                let combined = Self::parse_texture_linear(Self::decoded_image(textures, source));
                 let factor_metallic = material.pbr_metallic_roughness().metallic_factor();
                 let factor_roughness = material.pbr_metallic_roughness().roughness_factor();
 
+                // The separate roughness slot is not sampled.
                 (
-                    texture_descriptor_metallic,
-                    texture_descriptor_roughness,
+                    combined,
+                    TextureDescriptor::uniform_rgba_white(false),
                     factor_metallic,
                     factor_roughness,
                 )
@@ -1105,11 +1015,21 @@ impl GltfImporter {
                 )
             };
 
-        let occlusion = if let Some(occlusion_info) = material.occlusion_texture() {
-            Self::parse_texture_linear(Self::decoded_image(
-                textures,
-                occlusion_info.texture().source().index(),
-            ))
+        let occlusion_texture = material.occlusion_texture();
+        let has_occlusion_texture = occlusion_texture.is_some();
+        let occlusion_in_metallic_roughness = occlusion_texture
+            .as_ref()
+            .is_some_and(|info| Some(info.texture().source().index()) == metallic_roughness_source);
+        let occlusion = if let Some(occlusion_info) = occlusion_texture {
+            if occlusion_in_metallic_roughness {
+                // The ORM image's R channel supplies occlusion.
+                TextureDescriptor::uniform_rgba_white(false)
+            } else {
+                Self::parse_texture_linear(Self::decoded_image(
+                    textures,
+                    occlusion_info.texture().source().index(),
+                ))
+            }
         } else {
             TextureDescriptor::uniform_rgba_white(false)
         };
@@ -1152,15 +1072,15 @@ impl GltfImporter {
         if material.normal_texture().is_some() {
             texture_flags |= MATERIAL_TEXTURE_NORMAL;
         }
-        if material
-            .pbr_metallic_roughness()
-            .metallic_roughness_texture()
-            .is_some()
-        {
-            texture_flags |= MATERIAL_TEXTURE_METALLIC | MATERIAL_TEXTURE_ROUGHNESS;
+        if metallic_roughness_source.is_some() {
+            texture_flags |= MATERIAL_TEXTURE_METALLIC_ROUGHNESS;
         }
-        if material.occlusion_texture().is_some() {
-            texture_flags |= MATERIAL_TEXTURE_OCCLUSION;
+        if has_occlusion_texture {
+            if occlusion_in_metallic_roughness {
+                texture_flags |= MATERIAL_TEXTURE_ORM_OCCLUSION;
+            } else {
+                texture_flags |= MATERIAL_TEXTURE_OCCLUSION;
+            }
         }
         let emissive_factor = material.emissive_factor();
         if material.emissive_texture().is_some() || emissive_factor.iter().any(|value| *value > 0.0)

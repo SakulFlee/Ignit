@@ -2260,6 +2260,7 @@ dependencies = [
  "ignit_math",
  "ignit_mesh",
  "ignit_model",
+ "ignit_shader_core",
  "ignit_shader_pbr",
  "ignit_texture",
  "image",

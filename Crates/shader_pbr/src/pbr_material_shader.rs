@@ -22,8 +22,14 @@ pub const MATERIAL_TEXTURE_ROUGHNESS: u32 = 1 << 3;
 pub const MATERIAL_TEXTURE_OCCLUSION: u32 = 1 << 4;
 /// An emissive texture is bound; otherwise use black.
 pub const MATERIAL_TEXTURE_EMISSIVE: u32 = 1 << 5;
+/// The metallic texture is a combined metallic-roughness image:
+/// G = roughness, B = metallic.
+pub const MATERIAL_TEXTURE_METALLIC_ROUGHNESS: u32 = 1 << 6;
+/// The combined metallic-roughness image also carries occlusion in R.
+pub const MATERIAL_TEXTURE_ORM_OCCLUSION: u32 = 1 << 7;
 
-/// Every optional texture is present. This preserves the pre-flag behaviour.
+/// Every separate optional texture is present. The combined ORM bits are
+/// opt-in and are not part of this default.
 pub const MATERIAL_TEXTURE_ALL: u32 = MATERIAL_TEXTURE_ALBEDO
     | MATERIAL_TEXTURE_NORMAL
     | MATERIAL_TEXTURE_METALLIC
@@ -108,10 +114,14 @@ pub struct PBRMaterialShaderDescriptor {
     pub normal: TextureDescriptor,
     pub albedo: TextureDescriptor,
     pub albedo_factor: Vector3<f32>,
+    /// Metallic texture. With [`MATERIAL_TEXTURE_METALLIC_ROUGHNESS`] this is
+    /// the combined image (G = roughness, B = metallic, optionally R = AO).
     pub metallic: TextureDescriptor,
     pub metallic_factor: f32,
+    /// Separate roughness texture; ignored when the combined ORM bit is set.
     pub roughness: TextureDescriptor,
     pub roughness_factor: f32,
+    /// Separate occlusion texture; ignored when the ORM occlusion bit is set.
     pub occlusion: TextureDescriptor,
     pub emissive: TextureDescriptor,
     pub alpha_mode: AlphaMode,

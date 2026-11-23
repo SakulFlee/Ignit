@@ -11,6 +11,11 @@ use std::sync::Arc;
 use ignit_file_manager::{DesktopAssetSource, DirStorage, FileManager};
 use ignit_importer_gltf::{GltfImport, GltfImportTask, GltfImporter};
 use ignit_material_shader::MaterialShaderDescriptor;
+use ignit_shader_core::VariableType;
+use ignit_shader_pbr::{
+    MATERIAL_TEXTURE_METALLIC, MATERIAL_TEXTURE_METALLIC_ROUGHNESS, MATERIAL_TEXTURE_OCCLUSION,
+    MATERIAL_TEXTURE_ORM_OCCLUSION, MATERIAL_TEXTURE_ROUGHNESS,
+};
 use image::{ImageFormat, Rgba, RgbaImage};
 use serde_json::json;
 
@@ -28,6 +33,14 @@ fn make_file_manager(root: &std::path::Path) -> FileManager {
         Box::new(DesktopAssetSource::with_base_dir(root.join("Assets"))),
         Box::new(DirStorage::new(root.to_path_buf())),
     )
+}
+
+/// Reads the PBR texture-presence bitmask from the factor uniform.
+fn material_flags(material: &MaterialShaderDescriptor) -> u32 {
+    let VariableType::Buffer(buffer) = material.variables.last().expect("PBR factor buffer") else {
+        panic!("expected the PBR factor buffer as the last variable");
+    };
+    u32::from_le_bytes(buffer.data[28..32].try_into().expect("flag bytes"))
 }
 
 /// A 3-vertex triangle: positions (3×vec3f32), normals (3×vec3f32), uvs
@@ -389,7 +402,7 @@ fn shared_material_primitives_each_get_correct_material() {
         { "name": "A", "pbrMetallicRoughness": {
             "baseColorTexture": { "index": 0 },
             "metallicRoughnessTexture": { "index": 1 }
-        } },
+        }, "occlusionTexture": { "index": 1 } },
         { "name": "B", "pbrMetallicRoughness": {
             "baseColorTexture": { "index": 2 },
             "metallicRoughnessTexture": { "index": 3 }
@@ -440,6 +453,35 @@ fn shared_material_primitives_each_get_correct_material() {
     let first = material_of(&result.models[0]);
     let second = material_of(&result.models[1]);
     let third = material_of(&result.models[2]);
+
+    // Material A uses the same image for metallic-roughness and occlusion, so
+    // one combined ORM fetch replaces the separate metallic, roughness and
+    // occlusion fetches. Material B has no occlusion texture.
+    let flags_a = material_flags(&first);
+    assert_ne!(flags_a & MATERIAL_TEXTURE_METALLIC_ROUGHNESS, 0);
+    assert_ne!(flags_a & MATERIAL_TEXTURE_ORM_OCCLUSION, 0);
+    assert_eq!(
+        flags_a & (MATERIAL_TEXTURE_METALLIC | MATERIAL_TEXTURE_ROUGHNESS),
+        0
+    );
+    assert_eq!(flags_a & MATERIAL_TEXTURE_OCCLUSION, 0);
+
+    let flags_b = material_flags(&third);
+    assert_ne!(flags_b & MATERIAL_TEXTURE_METALLIC_ROUGHNESS, 0);
+    assert_eq!(flags_b & MATERIAL_TEXTURE_ORM_OCCLUSION, 0);
+    assert_eq!(flags_b & MATERIAL_TEXTURE_OCCLUSION, 0);
+
+    // The metallic slot keeps the combined image and stays linear; RGBA8
+    // glTF images arrive as sRGB in the format table and must be stripped.
+    let metallic = format!("{:?}", first.variables.get(2));
+    assert!(
+        !metallic.contains("Rgba8UnormSrgb"),
+        "metallic-roughness texture must be linear: {metallic}"
+    );
+    assert!(
+        metallic.contains("pixels: [0, 128, 255, 255"),
+        "metallic-roughness texture lost its combined channels: {metallic}"
+    );
 
     // The two primitives sharing material 0 must be identical...
     assert_eq!(
