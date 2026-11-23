@@ -65,6 +65,7 @@ enum ScenePass {
     ClearDepth,
     Models,
     Transparent,
+    Bloom,
     VolumetricInject,
     Tonemap,
     Fxaa,
@@ -119,6 +120,7 @@ const RES_POST_LDR: ResourceId = ResourceId::new(7);
 const RES_GBUFFER: ResourceId = ResourceId::new(8);
 const RES_LIGHT_GRID: ResourceId = ResourceId::new(9);
 const RES_VOLUMETRIC: ResourceId = ResourceId::new(10);
+const RES_BLOOM: ResourceId = ResourceId::new(11);
 
 fn gbuffer_texture_descriptor(
     resolution: Vector2<u32>,
@@ -148,6 +150,7 @@ fn add_scene_passes(
     has_forward_opaque: bool,
     has_transparent: bool,
     has_volumetrics: bool,
+    has_bloom: bool,
 ) {
     graph.add_pass(ScenePass::Shadow, "shadow", &[], &[RES_SHADOW_MAPS]);
     graph.add_pass(
@@ -216,6 +219,10 @@ fn add_scene_passes(
         );
     }
 
+    if has_bloom {
+        graph.add_pass(ScenePass::Bloom, "bloom", &[RES_SCENE_COLOR], &[RES_BLOOM]);
+    }
+
     if has_volumetrics {
         graph.add_pass(
             ScenePass::VolumetricInject,
@@ -232,6 +239,9 @@ fn add_scene_passes(
     let mut tonemap_inputs = vec![RES_SCENE_COLOR, RES_DEPTH];
     if has_volumetrics {
         tonemap_inputs.push(RES_VOLUMETRIC);
+    }
+    if has_bloom {
+        tonemap_inputs.push(RES_BLOOM);
     }
     graph.add_pass(
         ScenePass::Tonemap,
@@ -1227,6 +1237,7 @@ impl Renderer {
             AntiAliasing::Off => self.surface_resolution,
             AntiAliasing::Fxaa | AntiAliasing::Smaa => self.resolution,
         };
+        let has_bloom = self.bloom_enabled && self.bloom_intensity > 0.0;
         self.tonemap.set_glare(
             queue,
             glare_view_projection,
@@ -1416,6 +1427,21 @@ impl Renderer {
             None
         };
 
+        let bloom_targets = if has_bloom {
+            let resolution = cgmath::Vector2::new(
+                (tonemap_resolution.x / 2).max(1),
+                (tonemap_resolution.y / 2).max(1),
+            );
+            let descriptor =
+                gbuffer_texture_descriptor(resolution, SCENE_COLOR_FORMAT, "Ignit::Bloom");
+            Some((
+                self.texture_pool.acquire(device, &descriptor),
+                self.texture_pool.acquire(device, &descriptor),
+            ))
+        } else {
+            None
+        };
+
         let mut volumetric_accumulated: Option<TextureView> = None;
         let mut volumetric_integrated: Option<TextureView> = None;
         let mut graph = std::mem::take(&mut self.render_graph);
@@ -1430,6 +1456,7 @@ impl Renderer {
             has_forward_opaque,
             has_transparent,
             has_volumetrics,
+            has_bloom,
         );
         if self.debug_view != DebugView::Off {
             graph.add_pass(ScenePass::DebugView, "debug-view", &[], &[]);
@@ -1613,6 +1640,17 @@ impl Renderer {
                             );
                         }
                     }
+                    ScenePass::Bloom => {
+                        if let Some((bright, blurred)) = bloom_targets.as_ref() {
+                            self.tonemap.record_bloom(
+                                context.device,
+                                context.encoder,
+                                &scene_color.view,
+                                &bright.view,
+                                &blurred.view,
+                            );
+                        }
+                    }
                     ScenePass::VolumetricInject => {
                         if timestamps_enabled && let Some(qs) = &self.timestamp_query_set {
                             context.encoder.write_timestamp(qs, 7);
@@ -1686,6 +1724,7 @@ impl Renderer {
                             &depth.view,
                             tonemap_target,
                             volumetric_integrated.as_ref(),
+                            bloom_targets.as_ref().map(|(_, blurred)| &blurred.view),
                         );
                         if timestamps_enabled && let Some(qs) = &self.timestamp_query_set {
                             context.encoder.write_timestamp(qs, 12);
@@ -1823,6 +1862,7 @@ impl Renderer {
                 ScenePass::VolumetricInject => {
                     volumetrics_ms += ms(timing.cpu);
                 }
+                ScenePass::Bloom => models_ms += ms(timing.cpu),
                 ScenePass::Transparent => models_ms += ms(timing.cpu),
                 ScenePass::PrepareWorld => skybox_ms += ms(timing.cpu),
                 ScenePass::Compute
@@ -2292,6 +2332,24 @@ mod tests {
         has_transparent: bool,
         has_volumetrics: bool,
     ) -> Vec<&'static str> {
+        graph_order_with_bloom(
+            anti_aliasing,
+            has_deferred,
+            has_forward_opaque,
+            has_transparent,
+            has_volumetrics,
+            false,
+        )
+    }
+
+    fn graph_order_with_bloom(
+        anti_aliasing: AntiAliasing,
+        has_deferred: bool,
+        has_forward_opaque: bool,
+        has_transparent: bool,
+        has_volumetrics: bool,
+        has_bloom: bool,
+    ) -> Vec<&'static str> {
         let mut graph = RenderGraph::new();
         add_scene_passes(
             &mut graph,
@@ -2300,6 +2358,7 @@ mod tests {
             has_forward_opaque,
             has_transparent,
             has_volumetrics,
+            has_bloom,
         );
         graph.compile().unwrap();
         graph
@@ -2388,6 +2447,24 @@ mod tests {
                 "volumetric-inject",
                 "tonemap",
                 "smaa"
+            ]
+        );
+    }
+
+    #[test]
+    fn scene_graph_runs_bloom_before_tonemap() {
+        assert_eq!(
+            graph_order_with_bloom(AntiAliasing::Off, true, false, true, false, true),
+            [
+                "shadow",
+                "prepare-world",
+                "sky",
+                "gbuffer",
+                "light-culling",
+                "deferred-lighting",
+                "transparent",
+                "bloom",
+                "tonemap"
             ]
         );
     }

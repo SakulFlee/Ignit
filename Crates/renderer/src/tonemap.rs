@@ -104,6 +104,14 @@ fn write_f32(data: &mut [u8], offset: usize, value: f32) {
     data[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
+struct TonemapBindGroupCache {
+    hdr: TextureView,
+    depth: TextureView,
+    volumetric: Option<TextureView>,
+    bloom: Option<TextureView>,
+    bind_group: wgpu::BindGroup,
+}
+
 /// Owns the fullscreen tonemap pipeline and its static resources.
 pub struct Tonemap {
     pipeline: RenderPipeline,
@@ -113,12 +121,12 @@ pub struct Tonemap {
     gamma: f32,
     _volumetric_fallback: wgpu::Texture,
     volumetric_fallback_view: TextureView,
-    bind_group_cache: Option<(
-        TextureView,
-        TextureView,
-        Option<TextureView>,
-        wgpu::BindGroup,
-    )>,
+    _bloom_fallback: wgpu::Texture,
+    bloom_fallback_view: TextureView,
+    bloom_bright_pipeline: RenderPipeline,
+    bloom_blur_pipeline: RenderPipeline,
+    bloom_layout: BindGroupLayout,
+    bind_group_cache: Option<TonemapBindGroupCache>,
 }
 
 impl Tonemap {
@@ -193,6 +201,16 @@ impl Tonemap {
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -230,6 +248,77 @@ impl Tonemap {
             multiview_mask: None,
         });
 
+        let bloom_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("Ignit::BloomShader"),
+            source: ShaderSource::Wgsl(include_str!("bloom.wgsl").into()),
+        });
+        let bloom_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("Ignit::BloomBindGroupLayout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let bloom_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("Ignit::BloomPipelineLayout"),
+            bind_group_layouts: &[Some(&bloom_layout)],
+            immediate_size: 0,
+        });
+        let bloom_targets = [Some(ColorTargetState {
+            format: wgpu::TextureFormat::Rgba16Float,
+            blend: Some(BlendState::REPLACE),
+            write_mask: ColorWrites::ALL,
+        })];
+        let create_bloom = |label: &'static str, fragment: &'static str| {
+            device.create_render_pipeline(&RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&bloom_pipeline_layout),
+                vertex: VertexState {
+                    module: &bloom_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(FragmentState {
+                    module: &bloom_shader,
+                    entry_point: Some(fragment),
+                    targets: &bloom_targets,
+                    compilation_options: Default::default(),
+                }),
+                depth_stencil: None,
+                primitive: PrimitiveState::default(),
+                cache: None,
+                multisample: Default::default(),
+                multiview_mask: None,
+            })
+        };
+        let bloom_bright_pipeline = create_bloom("Ignit::BloomBrightPipeline", "fs_bright");
+        let bloom_blur_pipeline = create_bloom("Ignit::BloomBlurPipeline", "fs_blur");
+
         let sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("Ignit::TonemapSampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -266,6 +355,23 @@ impl Tonemap {
         let volumetric_fallback_view =
             volumetric_fallback.create_view(&wgpu::TextureViewDescriptor::default());
 
+        let bloom_fallback = device.create_texture(&WgpuTextureDescriptor {
+            label: Some("Ignit::TonemapBloomFallback"),
+            size: Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let bloom_fallback_view =
+            bloom_fallback.create_view(&wgpu::TextureViewDescriptor::default());
+
         Self {
             pipeline,
             bind_group_layout,
@@ -274,6 +380,11 @@ impl Tonemap {
             gamma,
             _volumetric_fallback: volumetric_fallback,
             volumetric_fallback_view,
+            _bloom_fallback: bloom_fallback,
+            bloom_fallback_view,
+            bloom_bright_pipeline,
+            bloom_blur_pipeline,
+            bloom_layout,
             bind_group_cache: None,
         }
     }
@@ -356,6 +467,98 @@ impl Tonemap {
         queue.write_buffer(&self.params.glare_buffer, 0, &data);
     }
 
+    /// Threshold the scene into `bright`, then blur it into `blurred`, both at
+    /// half resolution.
+    pub fn record_bloom(
+        &self,
+        device: &Device,
+        encoder: &mut wgpu::CommandEncoder,
+        source: &TextureView,
+        bright: &TextureView,
+        blurred: &TextureView,
+    ) {
+        let bright_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Ignit::BloomBrightBindGroup"),
+            layout: &self.bloom_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(
+                        self.params.buffer.as_entire_buffer_binding(),
+                    ),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(source),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("RenderPass::BloomBright"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: bright,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.bloom_bright_pipeline);
+        pass.set_bind_group(0, &bright_bind_group, &[]);
+        pass.draw(0..3, 0..1);
+        drop(pass);
+
+        let blur_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Ignit::BloomBlurBindGroup"),
+            layout: &self.bloom_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(
+                        self.params.buffer.as_entire_buffer_binding(),
+                    ),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(bright),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("RenderPass::BloomBlur"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: blurred,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.bloom_blur_pipeline);
+        pass.set_bind_group(0, &blur_bind_group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn record(
         &mut self,
@@ -366,6 +569,7 @@ impl Tonemap {
         depth_view: &TextureView,
         target_view: &TextureView,
         volumetric_view: Option<&TextureView>,
+        bloom_view: Option<&TextureView>,
     ) {
         // Toggle the fog path from the view that is actually bound. This keeps
         // the fallback texture from being sampled when integration did not run.
@@ -374,16 +578,15 @@ impl Tonemap {
             40,
             &u32::from(volumetric_view.is_some()).to_le_bytes(),
         );
-        let cache_hit =
-            self.bind_group_cache
-                .as_ref()
-                .is_some_and(|(view, depth, volumetric, _)| {
-                    view == hdr_view
-                        && depth == depth_view
-                        && volumetric.as_ref() == volumetric_view
-                });
+        let cache_hit = self.bind_group_cache.as_ref().is_some_and(|cache| {
+            cache.hdr == *hdr_view
+                && cache.depth == *depth_view
+                && cache.volumetric.as_ref() == volumetric_view
+                && cache.bloom.as_ref() == bloom_view
+        });
         if !cache_hit {
             let volume_view = volumetric_view.unwrap_or(&self.volumetric_fallback_view);
+            let bloom_texture = bloom_view.unwrap_or(&self.bloom_fallback_view);
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Ignit::TonemapBindGroup"),
                 layout: &self.bind_group_layout,
@@ -420,20 +623,25 @@ impl Tonemap {
                         binding: 6,
                         resource: wgpu::BindingResource::Sampler(&self.sampler),
                     },
+                    BindGroupEntry {
+                        binding: 7,
+                        resource: wgpu::BindingResource::TextureView(bloom_texture),
+                    },
                 ],
             });
-            self.bind_group_cache = Some((
-                hdr_view.clone(),
-                depth_view.clone(),
-                volumetric_view.cloned(),
+            self.bind_group_cache = Some(TonemapBindGroupCache {
+                hdr: hdr_view.clone(),
+                depth: depth_view.clone(),
+                volumetric: volumetric_view.cloned(),
+                bloom: bloom_view.cloned(),
                 bind_group,
-            ));
+            });
         }
         let bind_group = &self
             .bind_group_cache
             .as_ref()
             .expect("tonemap bind group cache")
-            .3;
+            .bind_group;
 
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("RenderPass::Tonemap"),
