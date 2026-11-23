@@ -45,6 +45,11 @@ pub enum AntiAliasing {
 /// Scene color format for the HDR intermediate target.
 pub const SCENE_COLOR_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
 
+/// Number of bloom levels. Level 0 is half resolution and every following
+/// level halves again. `bloom.wgsl` normalizes the accumulated chain for four
+/// levels, so keep the two in sync.
+const BLOOM_MIP_LEVELS: usize = 4;
+
 /// G-buffer target formats: albedo+AO, normal+roughness, metallic+emissive.
 pub const GBUFFER_COLOR_FORMATS: [TextureFormat; 3] = [
     TextureFormat::Rgba8Unorm,
@@ -1440,16 +1445,23 @@ impl Renderer {
         };
 
         let bloom_targets = if has_bloom {
-            let resolution = cgmath::Vector2::new(
-                (tonemap_resolution.x / 2).max(1),
-                (tonemap_resolution.y / 2).max(1),
-            );
-            let descriptor =
-                gbuffer_texture_descriptor(resolution, SCENE_COLOR_FORMAT, "Ignit::Bloom");
-            Some((
-                self.texture_pool.acquire(device, &descriptor),
-                self.texture_pool.acquire(device, &descriptor),
-            ))
+            Some(
+                (0..BLOOM_MIP_LEVELS)
+                    .map(|level| {
+                        let divisor = 2u32 << level;
+                        let resolution = cgmath::Vector2::new(
+                            (tonemap_resolution.x / divisor).max(1),
+                            (tonemap_resolution.y / divisor).max(1),
+                        );
+                        let descriptor = gbuffer_texture_descriptor(
+                            resolution,
+                            SCENE_COLOR_FORMAT,
+                            "Ignit::Bloom",
+                        );
+                        self.texture_pool.acquire(device, &descriptor)
+                    })
+                    .collect::<Vec<_>>(),
+            )
         } else {
             None
         };
@@ -1666,13 +1678,14 @@ impl Renderer {
                         }
                     }
                     ScenePass::Bloom => {
-                        if let Some((bright, blurred)) = bloom_targets.as_ref() {
+                        if let Some(targets) = bloom_targets.as_ref() {
+                            let views: Vec<&TextureView> =
+                                targets.iter().map(|target| &target.view).collect();
                             self.tonemap.record_bloom(
                                 context.device,
                                 context.encoder,
                                 &scene_color.view,
-                                &bright.view,
-                                &blurred.view,
+                                &views,
                             );
                         }
                     }
@@ -1759,7 +1772,10 @@ impl Renderer {
                             &depth.view,
                             tonemap_target,
                             volumetric_integrated.as_ref(),
-                            bloom_targets.as_ref().map(|(_, blurred)| &blurred.view),
+                            bloom_targets
+                                .as_ref()
+                                .and_then(|targets| targets.first())
+                                .map(|target| &target.view),
                             glare_target.as_ref().map(|glare| &glare.view),
                         );
                         if timestamps_enabled && let Some(qs) = &self.timestamp_query_set {
@@ -2735,6 +2751,52 @@ mod tests {
             &std::collections::HashSet::new(),
             None,
         );
+    }
+
+    #[test]
+    fn renderer_renders_bloom_chain_on_noop_backend() {
+        let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+        let mut renderer = Renderer::new(
+            TextureFormat::Bgra8UnormSrgb,
+            Vector2::new(320, 180),
+            &device,
+            &queue,
+        );
+        renderer.set_bloom(true, 1.0, 1.0);
+        let target = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("Renderer bloom noop target"),
+                size: wgpu::Extent3d {
+                    width: 320,
+                    height: 180,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: TextureFormat::Bgra8UnormSrgb,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
+
+        let world = ignit_ecs::World::new();
+        let scene = RenderScene::from_world(&world);
+        renderer.render(
+            &target,
+            &scene,
+            &device,
+            &queue,
+            None,
+            &std::collections::HashSet::new(),
+            None,
+        );
+
+        let has_bloom_pass = renderer
+            .render_graph
+            .ordered_passes()
+            .any(|(_, name)| name == "bloom");
+        assert!(has_bloom_pass);
     }
 
     #[test]
