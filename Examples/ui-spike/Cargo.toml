@@ -1,0 +1,29 @@
+[package]
+publish = false
+name = "ui_spike"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "ui-spike"
+path = "src/main.rs"
+
+[lib]
+name = "ui_spike"
+path = "src/lib.rs"
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+ignit = { path = "../../Crates/ignit", default-features = false, features = ["auto_request_redraw"] }
+bytemuck = { workspace = true }
+cosmic-text = { workspace = true }
+log = { workspace = true }
+taffy = { workspace = true }
+
+[[test]]
+name = "layout"
+path = "tests/layout.rs"

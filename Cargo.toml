@@ -62,6 +62,18 @@ iced_winit = { package = "ignit-iced-winit", version = "0.15.0-ignit.2", default
 arboard = { version = "3.6", default-features = false }
 bitflags = "2.0"
 bytemuck = { version = "1.0", features = ["derive"] }
+cosmic-text = { version = "0.19.0", default-features = false, features = [
+  "std",
+  "swash",
+] }
+taffy = { version = "0.15.1", default-features = false, features = [
+  "std",
+  "taffy_tree",
+  "flexbox",
+  "grid",
+  "block_layout",
+  "content_size",
+] }
 bytes = "1.6"
 cargo-hot = { version = "0.1", package = "cargo-hot-protocol" }
 futures = { version = "0.3", default-features = false, features = [
