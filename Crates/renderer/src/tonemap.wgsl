@@ -20,6 +20,7 @@ struct TonemapParams {
 @group(0) @binding(3) var scene_depth: texture_depth_2d;
 @group(0) @binding(5) var integrated: texture_3d<f32>;
 @group(0) @binding(6) var integrated_sampler: sampler;
+@group(0) @binding(7) var bloom_texture: texture_2d<f32>;
 
 struct GlareLight {
     position: vec4<f32>,
@@ -60,39 +61,6 @@ fn vs_main(@builtin(vertex_index) id: u32) -> VertexOutput {
     out.position = vec4<f32>(uv * 2.0 - 1.0, 0.0, 1.0);
     out.uv = vec2<f32>(uv.x, 1.0 - uv.y);
     return out;
-}
-
-/// A compact cross-shaped glare kernel sampled from the HDR scene before
-/// tonemapping. The wider taps give light sources a visible halo without a
-/// separate blur pass and keep the cost bounded for every AA mode.
-fn sample_glare(uv: vec2<f32>, texel: vec2<f32>) -> vec3<f32> {
-    if (params.bloom_intensity <= 0.0) {
-        return vec3<f32>(0.0);
-    }
-
-    let offsets = array<vec2<f32>, 12>(
-        vec2<f32>(-3.0, 0.0),
-        vec2<f32>(3.0, 0.0),
-        vec2<f32>(0.0, -3.0),
-        vec2<f32>(0.0, 3.0),
-        vec2<f32>(-2.0, -2.0),
-        vec2<f32>(2.0, -2.0),
-        vec2<f32>(-2.0, 2.0),
-        vec2<f32>(2.0, 2.0),
-        vec2<f32>(-7.0, 0.0),
-        vec2<f32>(7.0, 0.0),
-        vec2<f32>(0.0, -7.0),
-        vec2<f32>(0.0, 7.0),
-    );
-
-    var glare = vec3<f32>(0.0);
-    for (var i = 0u; i < 12u; i = i + 1u) {
-        let sample_uv = clamp(uv + offsets[i] * texel, vec2<f32>(0.0), vec2<f32>(1.0));
-        let sample = textureSample(hdr_texture, hdr_sampler, sample_uv).rgb;
-        glare += max(sample - vec3<f32>(params.bloom_threshold), vec3<f32>(0.0));
-    }
-
-    return glare * (params.bloom_intensity / 12.0);
 }
 
 /// A soft, tapered diffraction spike. The spike is widest near the core and
@@ -253,7 +221,6 @@ fn sample_light_glare(uv: vec2<f32>, pixel: vec2<i32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let texel = 1.0 / vec2<f32>(textureDimensions(hdr_texture));
     let pixel = vec2<i32>(in.position.xy);
     var base = textureSample(hdr_texture, hdr_sampler, in.uv).rgb;
     var transmittance = 1.0;
@@ -285,11 +252,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         transmittance = prefix.a;
     }
 
-    // Glare is sampled from the pre-fog scene. Dim it by the fog
-    // transmittance at this pixel so it stays behind the fog.
-    let scene_glare = sample_glare(in.uv, texel) * transmittance;
+    // The bloom texture is thresholded and blurred at half resolution. Dim
+    // it by the fog transmittance so it stays behind the fog.
+    let bloom =
+        textureSample(bloom_texture, hdr_sampler, in.uv).rgb
+        * params.bloom_intensity
+        * transmittance;
     let light_glare = sample_light_glare(in.uv, pixel);
-    let color = (base + scene_glare + light_glare) * params.exposure;
+    let color = (base + bloom + light_glare) * params.exposure;
 
     // ACES filmic curve.
     let mapped = clamp(

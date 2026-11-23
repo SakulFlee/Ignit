@@ -117,6 +117,11 @@ fn tonemap_shader_is_valid_wgsl() {
 }
 
 #[test]
+fn bloom_shader_is_valid_wgsl() {
+    validate_single("Crates/renderer/src/bloom.wgsl");
+}
+
+#[test]
 fn fxaa_shader_is_valid_wgsl() {
     validate_single("Crates/renderer/src/fxaa.wgsl");
 }
