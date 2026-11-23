@@ -368,3 +368,30 @@ fn switching_theme_updates_text_color() {
     };
     assert!(style.color[0] < 0.2, "text color was {:?}", style.color);
 }
+
+#[test]
+fn golden_progress_draw_list_signature() {
+    let mut world = World::new();
+    init(&mut world);
+    let _entity = build(
+        &mut world,
+        "progress_golden",
+        UiWidgetSpec::ProgressBar { value: 0.5 },
+    );
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    let draw = world.get_resource::<UiDrawList>().unwrap();
+    let signature: Vec<&str> = draw
+        .commands
+        .iter()
+        .map(|command| match command {
+            UiDrawCommand::Shadow { .. } => "shadow",
+            UiDrawCommand::Rect { .. } => "rect",
+            UiDrawCommand::Border { .. } => "border",
+            UiDrawCommand::Text { .. } => "text",
+            UiDrawCommand::Image { .. } => "image",
+            UiDrawCommand::Line { .. } => "line",
+        })
+        .collect();
+    assert_eq!(signature, vec!["rect", "rect"]);
+}
