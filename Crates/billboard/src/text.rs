@@ -23,6 +23,14 @@ use crate::Billboard;
 const TEXT_NODES: &[&str] = &["pbr_vertex"];
 const TEXT_WGSL: &str = include_str!("billboard_text.wgsl");
 
+/// Distance-field spread in font pixels; `generate_sdf` multiplies this by 8.
+/// A tight spread keeps the 8-bit atlas precise at glyph edges and is much
+/// cheaper to build than the old 64-pixel spread.
+const SDF_SCALE: f32 = 1.0;
+/// Smoothing half-width in normalized SDF units. At `SDF_SCALE` 1 this is
+/// about 1.28 font pixels, matching the old edge width.
+const SDF_SMOOTHING: f32 = 0.16;
+
 /// A glyph atlas shared by several world-space text billboards.
 ///
 /// Build the atlas from the union of every string in a label group, then pass
@@ -88,7 +96,7 @@ impl SharedTextAtlas {
             font,
             font_size as u32,
             &characters,
-            8.0,
+            SDF_SCALE,
             atlas_size,
             atlas_size,
         );
@@ -434,7 +442,7 @@ pub fn text_billboard_with_background(
         font,
         font_size as u32,
         &characters,
-        8.0,
+        SDF_SCALE,
         atlas_size,
         atlas_size,
     );
@@ -606,6 +614,9 @@ fn text_material(
         filter_mode: FilterMode::linear(),
     };
     let (outline_color, outline_width) = outline.unwrap_or(([0.0, 0.0, 0.0, 0.0], 0.0));
+    // Outline widths are authored in normalized SDF units. Preserve their
+    // pixel width across the tighter field spread.
+    let outline_width = outline_width * (8.0 / SDF_SCALE);
     let background_color = background.unwrap_or([0.0, 0.0, 0.0, 0.0]);
     let cutoff = alpha_mode.cutoff().unwrap_or(0.0);
 
@@ -614,7 +625,7 @@ fn text_material(
     write_color(&mut params[16..32], outline_color);
     write_color(&mut params[32..48], background_color);
     params[48..52].copy_from_slice(&outline_width.to_le_bytes());
-    params[52..56].copy_from_slice(&0.02f32.to_le_bytes()); // smoothing
+    params[52..56].copy_from_slice(&SDF_SMOOTHING.to_le_bytes());
     params[56..60].copy_from_slice(&cutoff.to_le_bytes());
 
     let (blend, depth_write, render_queue) = if alpha_mode == AlphaMode::Blend {

@@ -175,9 +175,9 @@ const HALLWAY_MIRROR_Z: f32 = 10.0;
 ///
 /// Room labels are read from the hallway, roughly 6-20 m away, but the camera
 /// can walk right up to them. 128 px glyphs in a 1024x1024 atlas (4 MiB) keep
-/// the SDF crisp at close range; the shared atlas takes about 1.14 s to build
-/// in release, on a worker thread. The previous 64 px/512 setup was cheaper
-/// but visibly pixelated up close.
+/// the SDF crisp at close range. The distance field uses a tight spread, so
+/// the atlas still builds quickly on the worker thread. The previous
+/// 64 px/512 setup was cheaper but visibly pixelated up close.
 const LABEL_FONT_SIZE: f32 = 128.0;
 const LABEL_ATLAS_SIZE: u32 = 1024;
 const LABEL_WORLD_SCALE: f32 = 0.00225;
