@@ -7,14 +7,11 @@ use ignit_ecs_bridge::VolumetricSettings;
 use ignit_shader_preprocessor::{NodeRegistry, ShaderBuilder};
 use wgpu::{
     BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
-    BindingResource, BindingType, BlendState, Buffer, BufferDescriptor, BufferUsages,
-    ColorTargetState, ColorWrites, ComputePassDescriptor, ComputePipeline,
-    ComputePipelineDescriptor, Device, FragmentState, LoadOp, Operations, PipelineLayoutDescriptor,
-    PrimitiveState, Queue, RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline,
-    RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor,
-    ShaderModuleDescriptor, ShaderSource, ShaderStages, StorageTextureAccess, StoreOp,
-    TextureDescriptor, TextureDimension, TextureSampleType, TextureUsages, TextureView,
-    TextureViewDimension, VertexState,
+    BindingResource, BindingType, Buffer, BufferDescriptor, BufferUsages, ComputePassDescriptor,
+    ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, Queue, Sampler,
+    SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages,
+    StorageTextureAccess, TextureDescriptor, TextureDimension, TextureSampleType, TextureUsages,
+    TextureView, TextureViewDimension,
 };
 
 const INJECT_NODES: &[&str] = &[
@@ -30,7 +27,6 @@ const INJECT_NODES: &[&str] = &[
 ];
 
 const INJECT_PARAMS_SIZE: u64 = 64;
-const COMPOSITE_PARAMS_SIZE: u64 = 16;
 const ACCUM_PARAMS_SIZE: u64 = 160;
 const INTEGRATE_PARAMS_SIZE: u64 = 32;
 
@@ -46,18 +42,14 @@ pub struct VolumetricRenderer {
     accumulate_layout: BindGroupLayout,
     integrate_pipeline: ComputePipeline,
     integrate_layout: BindGroupLayout,
-    composite_pipeline: RenderPipeline,
-    composite_layout: BindGroupLayout,
     froxel_sampler: Sampler,
     inject_params: Buffer,
     accum_params: Buffer,
     integrate_params: Buffer,
-    composite_params: Buffer,
     grid: [u32; 3],
     integration_steps: u32,
     inject_bind_group: Option<(TextureView, BindGroup)>,
     integrate_bind_group: Option<IntegrateBindGroupCache>,
-    composite_bind_group: Option<CompositeBindGroupCache>,
     prefix: Option<PrefixTargets>,
     history: Option<HistoryTargets>,
     history_index: usize,
@@ -111,7 +103,7 @@ impl HistoryTargets {
 /// Cumulative in-scattering and transmittance along each froxel column.
 ///
 /// The depth dimension stores prefixes at the integration-step resolution,
-/// which is at least the froxel grid depth. The composite then needs one
+/// which is at least the froxel grid depth. The tonemap then needs one
 /// texture fetch per pixel instead of integrating the volume per pixel.
 struct PrefixTargets {
     _texture: wgpu::Texture,
@@ -152,20 +144,8 @@ struct IntegrateBindGroupCache {
     bind_group: BindGroup,
 }
 
-struct CompositeBindGroupCache {
-    scene_color: TextureView,
-    depth: TextureView,
-    froxel: TextureView,
-    bind_group: BindGroup,
-}
-
 impl VolumetricRenderer {
-    pub fn new(
-        device: &Device,
-        queue: &Queue,
-        target_format: wgpu::TextureFormat,
-        world_layout: &BindGroupLayout,
-    ) -> Self {
+    pub fn new(device: &Device, queue: &Queue, world_layout: &BindGroupLayout) -> Self {
         let mut registry = NodeRegistry::new();
         registry
             .register_library(&ignit_shader_math::math_library())
@@ -186,26 +166,6 @@ impl VolumetricRenderer {
         let inject_module = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Ignit::VolumetricInjectShader"),
             source: ShaderSource::Wgsl(inject_source.into()),
-        });
-
-        let mut composite_builder = ShaderBuilder::new(Arc::new({
-            let mut registry = NodeRegistry::new();
-            registry
-                .register_library(&ignit_shader_math::math_library())
-                .expect("math node library");
-            registry
-                .register_library(&ignit_shader_engine::engine_library())
-                .expect("engine node library");
-            registry
-        }));
-        composite_builder
-            .add_nodes(&["camera_uniform"])
-            .expect("volumetric composite nodes");
-        composite_builder.add_source(include_str!("volumetric_composite.wgsl"));
-        let composite_source = composite_builder.build();
-        let composite_module = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("Ignit::VolumetricCompositeShader"),
-            source: ShaderSource::Wgsl(composite_source.into()),
         });
 
         let mut accumulate_builder = ShaderBuilder::new(Arc::new({
@@ -398,92 +358,6 @@ impl VolumetricRenderer {
             cache: None,
         });
 
-        let composite_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("Ignit::VolumetricCompositeLayout"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        sample_type: TextureSampleType::Float { filterable: true },
-                        view_dimension: TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        sample_type: TextureSampleType::Depth,
-                        view_dimension: TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        sample_type: TextureSampleType::Float { filterable: true },
-                        view_dimension: TextureViewDimension::D3,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
-
-        let composite_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("Ignit::VolumetricCompositePipelineLayout"),
-            bind_group_layouts: &[Some(world_layout), Some(&composite_layout)],
-            immediate_size: 0,
-        });
-
-        let targets = [Some(ColorTargetState {
-            format: target_format,
-            blend: Some(BlendState::REPLACE),
-            write_mask: ColorWrites::ALL,
-        })];
-
-        let composite_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("Ignit::VolumetricCompositePipeline"),
-            layout: Some(&composite_pipeline_layout),
-            vertex: VertexState {
-                module: &composite_module,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(FragmentState {
-                module: &composite_module,
-                entry_point: Some("fs_main"),
-                targets: &targets,
-                compilation_options: Default::default(),
-            }),
-            depth_stencil: None,
-            primitive: PrimitiveState::default(),
-            cache: None,
-            multisample: Default::default(),
-            multiview_mask: None,
-        });
-
         let froxel_sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("Ignit::VolumetricFroxelSampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -498,12 +372,6 @@ impl VolumetricRenderer {
         let inject_params = device.create_buffer(&BufferDescriptor {
             label: Some("Ignit::VolumetricInjectParams"),
             size: INJECT_PARAMS_SIZE,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let composite_params = device.create_buffer(&BufferDescriptor {
-            label: Some("Ignit::VolumetricCompositeParams"),
-            size: COMPOSITE_PARAMS_SIZE,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -527,18 +395,14 @@ impl VolumetricRenderer {
             accumulate_layout,
             integrate_pipeline,
             integrate_layout,
-            composite_pipeline,
-            composite_layout,
             froxel_sampler,
             inject_params,
             accum_params,
             integrate_params,
-            composite_params,
             grid: [1, 1, 1],
             integration_steps: 1,
             inject_bind_group: None,
             integrate_bind_group: None,
-            composite_bind_group: None,
             prefix: None,
             history: None,
             history_index: 0,
@@ -595,7 +459,7 @@ impl VolumetricRenderer {
                 .quality
                 .resolved_grid(resolution.x, resolution.y, settings.max_distance);
         // Integrate at least at the froxel grid's native depth resolution so
-        // the composite does not undersample the volume it reads from.
+        // the tonemap does not undersample the volume it reads from.
         self.integration_steps =
             settings
                 .quality
@@ -662,10 +526,6 @@ impl VolumetricRenderer {
         // `ambient.w` carries the environment/IBL contribution multiplier.
         inject[60..64].copy_from_slice(&settings.environment_intensity.to_le_bytes());
         queue.write_buffer(&self.inject_params, 0, &inject);
-
-        let mut composite = [0u8; COMPOSITE_PARAMS_SIZE as usize];
-        composite[0..4].copy_from_slice(&settings.max_distance.to_le_bytes());
-        queue.write_buffer(&self.composite_params, 0, &composite);
     }
 
     pub fn grid(&self) -> [u32; 3] {
@@ -829,7 +689,7 @@ impl VolumetricRenderer {
     /// Pre-integrate the froxel column into cumulative in-scattering and
     /// transmittance so the fullscreen composite only needs one fetch.
     ///
-    /// Returns the prefix texture view for [`Self::record_composite`].
+    /// Returns the prefix texture view consumed by the tonemap pass.
     pub fn record_integrate(
         &mut self,
         device: &Device,
@@ -907,82 +767,6 @@ impl VolumetricRenderer {
         pass.dispatch_workgroups(self.grid[0].div_ceil(4), self.grid[1].div_ceil(4), 1);
 
         prefix.view.clone()
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn record_composite(
-        &mut self,
-        device: &Device,
-        encoder: &mut wgpu::CommandEncoder,
-        world_bind_group: &BindGroup,
-        scene_color: &TextureView,
-        depth: &TextureView,
-        froxel: &TextureView,
-        target: &TextureView,
-    ) {
-        let cache_hit = self.composite_bind_group.as_ref().is_some_and(|cache| {
-            cache.scene_color == *scene_color && cache.depth == *depth && cache.froxel == *froxel
-        });
-        if !cache_hit {
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Ignit::VolumetricCompositeBindGroup"),
-                layout: &self.composite_layout,
-                entries: &[
-                    BindGroupEntry {
-                        binding: 0,
-                        resource: BindingResource::TextureView(scene_color),
-                    },
-                    BindGroupEntry {
-                        binding: 1,
-                        resource: BindingResource::TextureView(depth),
-                    },
-                    BindGroupEntry {
-                        binding: 2,
-                        resource: BindingResource::TextureView(froxel),
-                    },
-                    BindGroupEntry {
-                        binding: 3,
-                        resource: BindingResource::Sampler(&self.froxel_sampler),
-                    },
-                    BindGroupEntry {
-                        binding: 4,
-                        resource: self.composite_params.as_entire_binding(),
-                    },
-                ],
-            });
-            self.composite_bind_group = Some(CompositeBindGroupCache {
-                scene_color: scene_color.clone(),
-                depth: depth.clone(),
-                froxel: froxel.clone(),
-                bind_group,
-            });
-        }
-        let bind_group = &self
-            .composite_bind_group
-            .as_ref()
-            .expect("volumetric composite bind group cache")
-            .bind_group;
-
-        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("RenderPass::VolumetricComposite"),
-            color_attachments: &[Some(RenderPassColorAttachment {
-                view: target,
-                resolve_target: None,
-                ops: Operations {
-                    load: LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(&self.composite_pipeline);
-        pass.set_bind_group(0, world_bind_group, &[]);
-        pass.set_bind_group(1, bind_group, &[]);
-        pass.draw(0..3, 0..1);
     }
 }
 
