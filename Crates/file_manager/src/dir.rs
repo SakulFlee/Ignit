@@ -66,6 +66,12 @@ impl AssetSource for DesktopAssetSource {
     fn path_exists(&self, path: &str) -> bool {
         self.resolve(path).exists()
     }
+
+    fn modified(&self, path: &str) -> Option<std::time::SystemTime> {
+        fs::metadata(self.resolve(path))
+            .and_then(|metadata| metadata.modified())
+            .ok()
+    }
 }
 
 /// A `std::fs`-backed [`Storage`] rooted at a fixed directory.
