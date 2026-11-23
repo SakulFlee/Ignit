@@ -1,7 +1,23 @@
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::ffi::OsStr;
+use std::sync::{Arc, OnceLock};
 
 use crate::{NodeRegistry, ShaderNode};
+
+/// Environment variable that opts into printing the assembled WGSL source.
+///
+/// Any value other than an empty string or `0` enables it. The setting is read
+/// once per process, on the first shader build.
+pub const LOG_SHADER_SOURCE_ENV: &str = "IGNIT_LOG_SHADER_SOURCE";
+
+fn env_flag_enabled(value: Option<&OsStr>) -> bool {
+    value.is_some_and(|value| !value.is_empty() && value != OsStr::new("0"))
+}
+
+fn log_shader_source_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| env_flag_enabled(std::env::var_os(LOG_SHADER_SOURCE_ENV).as_deref()))
+}
 
 /// Assembles a full WGSL shader from registered [`ShaderNode`]s.
 ///
@@ -49,7 +65,9 @@ impl ShaderBuilder {
     /// Enables (or disables) `log::debug!` output of the assembled node list
     /// and full WGSL source when [`ShaderBuilder::build`] is called.
     ///
-    /// This lets end-users verify that everything was included correctly.
+    /// Logging is off by default. Setting the [`LOG_SHADER_SOURCE_ENV`]
+    /// environment variable to a non-empty value other than `0` also enables
+    /// it for every builder in the process, without recompiling.
     pub fn set_debug(&mut self, debug: bool) -> &mut Self {
         self.debug = debug;
         self
@@ -136,9 +154,9 @@ impl ShaderBuilder {
     /// deduplicated) followed by any raw source appended via
     /// [`ShaderBuilder::add_source`].
     ///
-    /// If debug output is enabled (see [`ShaderBuilder::set_debug`]), the
-    /// ordered node list and full assembled source are logged via
-    /// `log::debug!`.
+    /// If debug output is enabled (see [`ShaderBuilder::set_debug`] and
+    /// [`LOG_SHADER_SOURCE_ENV`]), the ordered node list and full assembled
+    /// source are logged via `log::debug!`.
     pub fn build(&self) -> String {
         let mut out = String::new();
         for name in &self.order {
@@ -156,7 +174,7 @@ impl ShaderBuilder {
             out.push_str(extra);
         }
 
-        if self.debug {
+        if self.debug || log_shader_source_enabled() {
             let nodes = self
                 .order
                 .iter()
@@ -183,5 +201,21 @@ impl ShaderBuilder {
     /// A deduplicated set of node names (for graph introspection).
     pub fn node_names(&self) -> HashSet<&str> {
         self.order.iter().map(|s| &**s).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsStr;
+
+    use super::env_flag_enabled;
+
+    #[test]
+    fn shader_logging_env_flag_is_off_unless_explicitly_enabled() {
+        assert!(!env_flag_enabled(None));
+        assert!(!env_flag_enabled(Some(OsStr::new(""))));
+        assert!(!env_flag_enabled(Some(OsStr::new("0"))));
+        assert!(env_flag_enabled(Some(OsStr::new("1"))));
+        assert!(env_flag_enabled(Some(OsStr::new("true"))));
     }
 }
