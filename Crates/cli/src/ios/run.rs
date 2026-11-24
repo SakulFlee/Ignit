@@ -9,6 +9,7 @@ pub fn run(
     device_id: Option<&str>,
     skip_build: bool,
     release: bool,
+    features: &crate::CargoFeatures,
 ) -> Result<()> {
     // Check that we're on macOS
     if cfg!(not(target_os = "macos")) {
@@ -20,7 +21,7 @@ pub fn run(
 
     // First build (unless skipped)
     if !skip_build {
-        super::build::build(package_name, release)?;
+        super::build::build(package_name, release, features)?;
     }
 
     let ios_config = config::load_ios_config()?;

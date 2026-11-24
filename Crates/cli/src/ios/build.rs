@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+use crate::CargoFeatures;
 use crate::config;
 
-pub fn build(package_name: Option<&str>, release: bool) -> Result<()> {
+pub fn build(package_name: Option<&str>, release: bool, features: &CargoFeatures) -> Result<()> {
     // Check that we're on macOS (xcodebuild is macOS-only)
     if cfg!(not(target_os = "macos")) {
         anyhow::bail!(
@@ -34,20 +35,29 @@ pub fn build(package_name: Option<&str>, release: bool) -> Result<()> {
     println!("  Package: {}", package);
     println!("  Library: {}", lib_name);
     println!("  Mode: {}", if release { "release" } else { "debug" });
+    if !features.is_empty() {
+        println!("  Cargo: {}", features.summary());
+    }
 
     // Ensure aarch64-apple-ios target is installed
     ensure_ios_target()?;
 
     // Build the Rust static library
     println!("\nBuilding Rust static library...");
-    let mut cargo_args = vec!["build", "--lib", "--target", "aarch64-apple-ios"];
+    let mut cargo_args = vec![
+        "build".to_string(),
+        "--lib".to_string(),
+        "--target".to_string(),
+        "aarch64-apple-ios".to_string(),
+    ];
     if let Some(pkg) = package_name {
-        cargo_args.push("--package");
-        cargo_args.push(pkg);
+        cargo_args.push("--package".to_string());
+        cargo_args.push(pkg.to_string());
     }
     if release {
-        cargo_args.push("--release");
+        cargo_args.push("--release".to_string());
     }
+    features.apply(&mut cargo_args);
 
     let status = Command::new("cargo")
         .args(&cargo_args)

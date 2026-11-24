@@ -1,17 +1,23 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+use crate::CargoFeatures;
+
 /// Builds the desktop binary of the current project.
-pub fn build(release: bool) -> Result<()> {
+pub fn build(release: bool, features: &CargoFeatures) -> Result<()> {
     let project_root = crate::config::find_project_root()?;
 
     println!("Building for Desktop...");
     println!("  Mode: {}", if release { "release" } else { "debug" });
-
-    let mut args = vec!["build"];
-    if release {
-        args.push("--release");
+    if !features.is_empty() {
+        println!("  Cargo: {}", features.summary());
     }
+
+    let mut args = vec!["build".to_string()];
+    if release {
+        args.push("--release".to_string());
+    }
+    features.apply(&mut args);
 
     let status = Command::new("cargo")
         .args(&args)
@@ -28,16 +34,20 @@ pub fn build(release: bool) -> Result<()> {
 }
 
 /// Runs the desktop binary of the current project.
-pub fn run(release: bool) -> Result<()> {
+pub fn run(release: bool, features: &CargoFeatures) -> Result<()> {
     let project_root = crate::config::find_project_root()?;
 
     println!("Running Desktop app...");
     println!("  Mode: {}", if release { "release" } else { "debug" });
-
-    let mut args = vec!["run"];
-    if release {
-        args.push("--release");
+    if !features.is_empty() {
+        println!("  Cargo: {}", features.summary());
     }
+
+    let mut args = vec!["run".to_string()];
+    if release {
+        args.push("--release".to_string());
+    }
+    features.apply(&mut args);
 
     let status = Command::new("cargo")
         .args(&args)
