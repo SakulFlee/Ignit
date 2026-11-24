@@ -2,9 +2,14 @@
 //!
 //! A single invalid resource can fail validation on every submit, which turns
 //! one underlying problem into an unbounded log flood. The journal logs the
-//! first occurrence with full details and then at most one counted repeat per
-//! window, while keeping the latest fingerprint available for the GPU health
-//! state.
+//! first occurrence of each distinct error with full details and then at most
+//! one counted repeat per window.
+//!
+//! WGPU often reports the same failure twice per frame, once while recording
+//! (`In a CommandEncoder`) and once at submit (`In Queue::submit`). Those two
+//! descriptions share the innermost cause but differ in their context prefix,
+//! so the fingerprint is taken from the end of the message. A small bounded
+//! set of entries handles any remaining alternation without growing forever.
 
 use std::{
     collections::hash_map::DefaultHasher,
@@ -67,10 +72,10 @@ pub struct GpuErrorSnapshot {
     pub suppressed: u64,
 }
 
-/// Maximum length of the stored summary.
-const SUMMARY_LIMIT: usize = 160;
-/// Prefix used to fingerprint errors, ignoring volatile tails.
-const FINGERPRINT_PREFIX_LIMIT: usize = 120;
+/// Maximum length of the stored summary, taken from the end of the message.
+const SUMMARY_TAIL_LIMIT: usize = 240;
+/// Upper bound on tracked distinct errors.
+const MAX_TRACKED_ERRORS: usize = 8;
 
 #[derive(Debug)]
 struct Entry {
@@ -78,6 +83,7 @@ struct Entry {
     fingerprint: u64,
     summary: String,
     last_logged: Instant,
+    last_seen: Instant,
     suppressed: u64,
 }
 
@@ -85,7 +91,7 @@ struct Entry {
 #[derive(Debug)]
 pub struct GpuErrorJournal {
     window: Duration,
-    last: Option<Entry>,
+    entries: Vec<Entry>,
 }
 
 impl Default for GpuErrorJournal {
@@ -96,23 +102,25 @@ impl Default for GpuErrorJournal {
 
 impl GpuErrorJournal {
     pub fn new(window: Duration) -> Self {
-        Self { window, last: None }
+        Self {
+            window,
+            entries: Vec::new(),
+        }
     }
 
     /// Records one occurrence at `now` and decides whether it should be logged.
     pub fn record(&mut self, error: &wgpu::Error, now: Instant) -> GpuErrorDecision {
         let kind = GpuErrorKind::classify(error);
-        let summary = normalize(describe(error));
-        let prefix = summary
-            .chars()
-            .take(FINGERPRINT_PREFIX_LIMIT)
-            .collect::<String>();
-        let fingerprint = fingerprint(kind, &prefix);
+        let summary = summarize(describe(error));
+        let fingerprint = fingerprint(kind, &summary);
 
-        if let Some(entry) = self.last.as_mut()
-            && entry.fingerprint == fingerprint
+        if let Some(entry) = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.fingerprint == fingerprint)
         {
             entry.suppressed += 1;
+            entry.last_seen = now;
             if now.saturating_duration_since(entry.last_logged) < self.window {
                 return GpuErrorDecision::Suppress;
             }
@@ -126,27 +134,38 @@ impl GpuErrorJournal {
             };
         }
 
-        self.last = Some(Entry {
+        if self.entries.len() >= MAX_TRACKED_ERRORS
+            && let Some((index, _)) = self
+                .entries
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, entry)| entry.last_seen)
+        {
+            self.entries.remove(index);
+        }
+
+        self.entries.push(Entry {
             kind,
             fingerprint,
-            summary: prefix.clone(),
+            summary: summary.clone(),
             last_logged: now,
+            last_seen: now,
             suppressed: 0,
         });
-        GpuErrorDecision::First {
-            kind,
-            summary: prefix,
-        }
+        GpuErrorDecision::First { kind, summary }
     }
 
-    /// The most recent error, if any.
+    /// The most recently seen error, if any.
     pub fn snapshot(&self) -> Option<GpuErrorSnapshot> {
-        self.last.as_ref().map(|entry| GpuErrorSnapshot {
-            kind: entry.kind,
-            fingerprint: entry.fingerprint,
-            summary: entry.summary.clone(),
-            suppressed: entry.suppressed,
-        })
+        self.entries
+            .iter()
+            .max_by_key(|entry| entry.last_seen)
+            .map(|entry| GpuErrorSnapshot {
+                kind: entry.kind,
+                fingerprint: entry.fingerprint,
+                summary: entry.summary.clone(),
+                suppressed: entry.suppressed,
+            })
     }
 }
 
@@ -159,15 +178,32 @@ fn describe(error: &wgpu::Error) -> &str {
     }
 }
 
-fn normalize(description: &str) -> String {
+/// Collapses whitespace and keeps the innermost part of a WGPU message.
+///
+/// WGPU stacks the context in front of the actual failure:
+///
+/// ```text
+/// Validation Error
+///
+/// Caused by:
+///   In a CommandEncoder, label = '...'
+///     In a set_pipeline command
+///       <actual cause>
+/// ```
+///
+/// The encoder and submit reports differ only in that context prefix, so the
+/// tail is the stable part that identifies the resource and failure.
+fn summarize(description: &str) -> String {
     let collapsed = description.split_whitespace().collect::<Vec<_>>().join(" ");
-    collapsed.chars().take(SUMMARY_LIMIT).collect()
+    let characters = collapsed.chars().collect::<Vec<_>>();
+    let start = characters.len().saturating_sub(SUMMARY_TAIL_LIMIT);
+    characters[start..].iter().collect()
 }
 
-fn fingerprint(kind: GpuErrorKind, prefix: &str) -> u64 {
+fn fingerprint(kind: GpuErrorKind, summary: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     kind.hash(&mut hasher);
-    prefix.hash(&mut hasher);
+    summary.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -222,6 +258,13 @@ mod tests {
         }
     }
 
+    fn long_cause() -> String {
+        "In a set_pipeline command Render pipeline targets are incompatible with render pass \
+         Incompatible color attachments at indices [0]: the RenderPass uses textures with one \
+         format but the RenderPipeline with 'Ignit::GlarePipeline' label uses another format"
+            .to_string()
+    }
+
     #[test]
     fn errors_are_classified_by_kind() {
         assert_eq!(
@@ -274,47 +317,82 @@ mod tests {
     }
 
     #[test]
-    fn distinct_errors_are_not_collapsed() {
+    fn encoder_and_submit_reports_of_one_cause_share_a_fingerprint() {
+        let cause = long_cause();
+        let recording = validation(&format!(
+            "Validation Error\n\nCaused by:\n  In a CommandEncoder, label = 'Ignit::Render::Encoder'\n    {cause}"
+        ));
+        let submit = validation(&format!(
+            "Validation Error\n\nCaused by:\n  In Queue::submit\n    {cause}"
+        ));
         let mut journal = GpuErrorJournal::new(Duration::from_secs(5));
         let start = Instant::now();
 
         assert!(matches!(
-            journal.record(&validation("pipeline 'a' is invalid"), start),
-            GpuErrorDecision::First { .. }
-        ));
-        assert!(matches!(
-            journal.record(&validation("pipeline 'b' is invalid"), start),
-            GpuErrorDecision::First { .. }
-        ));
-        assert!(matches!(
-            journal.record(&validation("pipeline 'a' is invalid"), start),
-            GpuErrorDecision::First { .. }
-        ));
-    }
-
-    #[test]
-    fn volatile_tails_do_not_change_the_fingerprint() {
-        let mut journal = GpuErrorJournal::new(Duration::from_secs(5));
-        let start = Instant::now();
-        let prefix = "x".repeat(FINGERPRINT_PREFIX_LIMIT);
-
-        assert!(matches!(
-            journal.record(&validation(&format!("{prefix} first tail")), start),
+            journal.record(&recording, start),
             GpuErrorDecision::First { .. }
         ));
         assert_eq!(
-            journal.record(&validation(&format!("{prefix} second tail")), start),
+            journal.record(&submit, start + Duration::from_millis(1)),
             GpuErrorDecision::Suppress
         );
+        assert_eq!(journal.entries.len(), 1);
     }
 
     #[test]
-    fn summaries_collapse_whitespace_and_are_bounded() {
-        let normalized = normalize("  alpha\n\n beta\tgamma  ");
+    fn alternating_errors_are_each_suppressed() {
+        let mut journal = GpuErrorJournal::new(Duration::from_secs(5));
+        let a = validation("first distinct failure");
+        let b = validation("second distinct failure");
+        let start = Instant::now();
+
+        assert!(matches!(
+            journal.record(&a, start),
+            GpuErrorDecision::First { .. }
+        ));
+        assert!(matches!(
+            journal.record(&b, start),
+            GpuErrorDecision::First { .. }
+        ));
+        assert_eq!(
+            journal.record(&a, start + Duration::from_millis(1)),
+            GpuErrorDecision::Suppress
+        );
+        assert_eq!(
+            journal.record(&b, start + Duration::from_millis(1)),
+            GpuErrorDecision::Suppress
+        );
+        assert_eq!(journal.entries.len(), 2);
+    }
+
+    #[test]
+    fn the_journal_is_bounded() {
+        let mut journal = GpuErrorJournal::new(Duration::from_secs(5));
+        let start = Instant::now();
+
+        for index in 0..=MAX_TRACKED_ERRORS {
+            let error = validation(&format!("distinct failure number {index}"));
+            journal.record(&error, start);
+        }
+
+        assert_eq!(journal.entries.len(), MAX_TRACKED_ERRORS);
+    }
+
+    #[test]
+    fn summaries_keep_the_innermost_cause_and_are_bounded() {
+        let cause = long_cause();
+        let recording = format!(
+            "Validation Error\n\nCaused by:\n  In a CommandEncoder, label = 'Ignit::Render::Encoder'\n    {cause}"
+        );
+        let submit = format!("Validation Error\n\nCaused by:\n  In Queue::submit\n    {cause}");
+
+        assert_eq!(summarize(&recording), summarize(&submit));
+
+        let normalized = summarize("  alpha\n\n beta\tgamma  ");
         assert_eq!(normalized, "alpha beta gamma");
 
-        let long = "z".repeat(SUMMARY_LIMIT * 2);
-        assert_eq!(normalize(&long).chars().count(), SUMMARY_LIMIT);
+        let long = "z".repeat(SUMMARY_TAIL_LIMIT * 2);
+        assert_eq!(summarize(&long).chars().count(), SUMMARY_TAIL_LIMIT);
     }
 
     #[test]
