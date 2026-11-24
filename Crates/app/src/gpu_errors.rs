@@ -197,7 +197,18 @@ fn summarize(description: &str) -> String {
     let collapsed = description.split_whitespace().collect::<Vec<_>>().join(" ");
     let characters = collapsed.chars().collect::<Vec<_>>();
     let start = characters.len().saturating_sub(SUMMARY_TAIL_LIMIT);
-    characters[start..].iter().collect()
+    let tail = characters[start..].iter().collect::<String>();
+
+    if start == 0 {
+        return tail;
+    }
+
+    // The fixed-size tail may start in the middle of a word. Drop that partial
+    // token so repeat lines begin at something readable.
+    match tail.split_once(' ') {
+        Some((_, rest)) => rest.to_string(),
+        None => tail,
+    }
 }
 
 fn fingerprint(kind: GpuErrorKind, summary: &str) -> u64 {
@@ -393,6 +404,12 @@ mod tests {
 
         let long = "z".repeat(SUMMARY_TAIL_LIMIT * 2);
         assert_eq!(summarize(&long).chars().count(), SUMMARY_TAIL_LIMIT);
+    }
+
+    #[test]
+    fn truncated_summaries_start_at_a_word_boundary() {
+        let long = format!("{} visible tail", "p".repeat(SUMMARY_TAIL_LIMIT));
+        assert_eq!(summarize(&long), "visible tail");
     }
 
     #[test]
