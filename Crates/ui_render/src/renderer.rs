@@ -132,7 +132,7 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
         let width = max(input.aux.x, 0.5);
         let outer = 1.0 - smoothstep(-aa, aa, distance);
         let inner = 1.0 - smoothstep(-aa, aa, distance + width);
-        color.a *= (outer - inner).max(0.0);
+        color.a *= max(outer - inner, 0.0);
     } else if (mode == 4u) {
         let blur = max(input.aux.x, 0.5);
         color.a *= 1.0 - smoothstep(-blur, blur, distance);
@@ -937,6 +937,16 @@ mod tests {
 
     fn rect(x: f32, y: f32, w: f32, h: f32) -> UiRect {
         UiRect::new(x, y, w, h)
+    }
+
+    #[test]
+    fn ui_shader_validates() {
+        let module = wgpu::naga::front::wgsl::parse_str(SHADER).expect("WGSL parses");
+        let mut validator = wgpu::naga::valid::Validator::new(
+            wgpu::naga::valid::ValidationFlags::all(),
+            wgpu::naga::valid::Capabilities::all(),
+        );
+        validator.validate(&module).expect("WGSL validates");
     }
 
     #[test]
