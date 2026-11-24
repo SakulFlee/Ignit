@@ -54,12 +54,7 @@ impl Module for UiDemoModule {
         _queue: &ignit::wgpu::Queue,
     ) -> Vec<Box<dyn System>> {
         ignit::ui::init(ecs);
-        let dark = UiTheme::dark();
-        let light = UiTheme::light();
-        let mut themes = UiThemes::with_active(dark.clone());
-        themes.named.insert("dark".into(), dark);
-        themes.named.insert("light".into(), light);
-        ecs.insert_resource(themes);
+        install_themes(ecs);
 
         let camera = ecs.spawn_entity();
         ecs.attach_component(
@@ -88,6 +83,15 @@ impl Module for UiDemoModule {
     fn ui_systems(&self, _ecs: &mut World) -> Vec<Box<dyn UiSystem>> {
         vec![Box::new(DemoSystem::new())]
     }
+}
+
+fn install_themes(world: &mut World) {
+    let dark = UiTheme::dark();
+    let light = UiTheme::light();
+    let mut themes = UiThemes::with_active(dark.clone());
+    themes.named.insert("dark".into(), dark);
+    themes.named.insert("light".into(), light);
+    world.insert_resource(themes);
 }
 
 fn build_showcase(world: &mut World) {
@@ -528,6 +532,7 @@ mod action_tests {
     fn theme_action_mutates_theme_tokens() {
         let mut world = World::new();
         ignit::ui::init(&mut world);
+        install_themes(&mut world);
         let mut system = DemoSystem::new();
         let before = world
             .get_resource::<UiThemes>()
