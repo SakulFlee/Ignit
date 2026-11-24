@@ -7,7 +7,8 @@ use crate::{NodeRegistry, ShaderNode};
 /// Environment variable that opts into printing the assembled WGSL source.
 ///
 /// Any value other than an empty string or `0` enables it. The setting is read
-/// once per process, on the first shader build.
+/// once per process, on the first shader build, and logs at `info` so it also
+/// shows in release builds.
 pub const LOG_SHADER_SOURCE_ENV: &str = "IGNIT_LOG_SHADER_SOURCE";
 
 fn env_flag_enabled(value: Option<&OsStr>) -> bool {
@@ -156,7 +157,8 @@ impl ShaderBuilder {
     ///
     /// If debug output is enabled (see [`ShaderBuilder::set_debug`] and
     /// [`LOG_SHADER_SOURCE_ENV`]), the ordered node list and full assembled
-    /// source are logged via `log::debug!`.
+    /// source are logged. The environment opt-in uses `log::info!` so it also
+    /// appears in release builds; `set_debug` uses `log::debug!`.
     pub fn build(&self) -> String {
         let mut out = String::new();
         for name in &self.order {
@@ -181,11 +183,20 @@ impl ShaderBuilder {
                 .map(|n| n.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
-            log::debug!(
+            // `set_debug` keeps the debug level. The environment opt-in logs at
+            // info so it also shows in release builds, whose default level is
+            // info.
+            let level = if self.debug {
+                log::Level::Debug
+            } else {
+                log::Level::Info
+            };
+            log::log!(
+                level,
                 "[ShaderBuilder] resolved nodes ({}): {nodes}",
                 self.order.len()
             );
-            log::debug!("[ShaderBuilder] assembled WGSL:\n{out}");
+            log::log!(level, "[ShaderBuilder] assembled WGSL:\n{out}");
         }
 
         out
