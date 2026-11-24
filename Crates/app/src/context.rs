@@ -213,6 +213,7 @@ impl AppContext {
             Features::TIMESTAMP_QUERY,
             Features::TIMESTAMP_QUERY_INSIDE_ENCODERS,
             Features::SHADER_F16,
+            Features::RG11B10UFLOAT_RENDERABLE,
         ] {
             if adapter.features().contains(feature) {
                 features |= feature;

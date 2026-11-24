@@ -196,7 +196,8 @@ pub fn realize_models(ecs: &mut World) {
             Some(q) => q.0.clone(),
             None => return,
         };
-        (d, q, ignit_renderer::SCENE_COLOR_FORMAT)
+        let color_format = ignit_renderer::preferred_scene_color_format(d.features());
+        (d, q, color_format)
     };
 
     // Get cache references (Arc-wrapped RwLocks, cheap to clone)
@@ -737,7 +738,8 @@ pub fn realize_environment(ecs: &mut World) {
             Some(q) => q.0.clone(),
             None => return,
         };
-        (d, q, ignit_renderer::SCENE_COLOR_FORMAT)
+        let color_format = ignit_renderer::preferred_scene_color_format(d.features());
+        (d, q, color_format)
     };
 
     // If the environment is already realized AND no new descriptor is

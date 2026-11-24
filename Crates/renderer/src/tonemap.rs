@@ -178,7 +178,11 @@ pub struct Tonemap {
 }
 
 impl Tonemap {
-    pub fn new(device: &Device, target_format: wgpu::TextureFormat) -> Self {
+    pub fn new(
+        device: &Device,
+        target_format: wgpu::TextureFormat,
+        intermediate_format: wgpu::TextureFormat,
+    ) -> Self {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Ignit::TonemapShader"),
             source: ShaderSource::Wgsl(TONEMAP_WGSL.into()),
@@ -347,7 +351,7 @@ impl Tonemap {
             immediate_size: 0,
         });
         let bloom_replace_targets = [Some(ColorTargetState {
-            format: wgpu::TextureFormat::Rgba16Float,
+            format: intermediate_format,
             blend: Some(BlendState::REPLACE),
             write_mask: ColorWrites::ALL,
         })];
@@ -358,7 +362,7 @@ impl Tonemap {
             operation: wgpu::BlendOperation::Add,
         };
         let bloom_add_targets = [Some(ColorTargetState {
-            format: wgpu::TextureFormat::Rgba16Float,
+            format: intermediate_format,
             blend: Some(BlendState {
                 color: bloom_additive,
                 alpha: bloom_additive,
@@ -450,7 +454,7 @@ impl Tonemap {
             immediate_size: 0,
         });
         let glare_targets = [Some(ColorTargetState {
-            format: wgpu::TextureFormat::Rgba16Float,
+            format: intermediate_format,
             blend: Some(BlendState::REPLACE),
             write_mask: ColorWrites::ALL,
         })];
