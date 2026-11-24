@@ -480,8 +480,9 @@ impl DebugRenderer {
     /// Draw every realized model's triangles as a wireframe.
     ///
     /// Uses the model's existing vertex, index, and instance buffers, so this
-    /// does not duplicate mesh data. Backends without line polygon mode simply
-    /// skip the pass.
+    /// does not duplicate mesh data. Skinned models use the animated vertex
+    /// buffer through `model.vertex_buffer()`. Backends without line polygon
+    /// mode simply skip the pass.
     pub fn render_wireframe(
         &mut self,
         render_pass: &mut RenderPass,
@@ -510,7 +511,7 @@ impl DebugRenderer {
                 continue;
             }
 
-            render_pass.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
+            render_pass.set_vertex_buffer(0, model.vertex_buffer().slice(..));
             render_pass.set_vertex_buffer(1, model.instance_buffer().slice(..));
             render_pass.set_index_buffer(mesh.index_buffer().slice(..), IndexFormat::Uint32);
             render_pass.draw_indexed(0..mesh.index_count(), 0, 0..model.instance_count());
