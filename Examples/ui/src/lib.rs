@@ -237,7 +237,7 @@ fn build_showcase(world: &mut World) {
                 .child(
                     UiDocumentNode::new("scroll_rows")
                         .layout(UiLayout::column().gap(6.0).padding(8.0))
-                        .child((0..18).fold(
+                        .child((1..18).fold(
                             UiDocumentNode::new("row_00").text("Row 00"),
                             |parent, index| {
                                 parent.child(
@@ -353,5 +353,21 @@ impl System for DemoSystem {
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn showcase_builds_with_unique_ids() {
+        let mut world = World::new();
+        ignit::ui::init(&mut world);
+        build_showcase(&mut world);
+        let forest = world.get_resource::<ignit::ui::UiForest>().unwrap();
+        assert!(forest.find(&"row_00".into()).is_some());
+        assert!(forest.find(&"row_17".into()).is_some());
+        assert!(forest.find(&"ron_title".into()).is_some());
     }
 }
