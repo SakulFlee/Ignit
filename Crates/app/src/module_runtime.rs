@@ -40,21 +40,21 @@ use ignit_ecs_bridge::{
     ActiveCamera, AdapterResource, CameraDescriptor, CameraDirty, CameraStore, CursorGrabConfig,
     CursorGrabState, CursorPosition, DeltaTime, DeviceResource, EngineEvent, EngineEvents,
     FpsStats, FrameCounter, FrameTimings, IcedCapturedMouseDrag, IcedCapturedMouseWheel,
-    IcedCapturedTouches, IcedEventQueue, IcedTextInputFocus, InputSnapshot, PerformanceLogConfig,
-    QueueResource, STAGE_BIND_MODELS, STAGE_CORE_SCHEDULE, STAGE_CULL_EXTRACT, STAGE_ENGINE_EVENTS,
-    STAGE_FRAME_GAP, STAGE_FRAME_LIMITER, STAGE_GAME_SCHEDULE, STAGE_GPU_AA, STAGE_GPU_COMPLETE,
-    STAGE_GPU_DEFERRED, STAGE_GPU_GBUFFER, STAGE_GPU_LIGHT_CULLING, STAGE_GPU_MODELS,
-    STAGE_GPU_SCENE_TOTAL, STAGE_GPU_SHADOW, STAGE_GPU_SKYBOX, STAGE_GPU_TONEMAP,
-    STAGE_GPU_TRANSPARENT, STAGE_GPU_VOLUMETRIC_ACCUMULATE, STAGE_GPU_VOLUMETRIC_COMPOSITE,
-    STAGE_GPU_VOLUMETRIC_INJECT, STAGE_GPU_VOLUMETRIC_INTEGRATE, STAGE_GPU_VOLUMETRICS,
-    STAGE_ICED_DRAW, STAGE_ICED_SUBMIT, STAGE_IMPORTER_POLL, STAGE_INPUT, STAGE_OVERLAY_LAYERS,
-    STAGE_OVERLAY_MAIN, STAGE_PRESENT, STAGE_REALIZE, STAGE_REALIZE_CAMERAS, STAGE_REALIZE_ENV,
-    STAGE_REALIZE_LIGHTS, STAGE_REALIZE_MODELS, STAGE_RENDER_TOTAL, STAGE_SCENE_ENCODE,
-    STAGE_SCENE_SUBMIT, STAGE_STAGGER, STAGE_SURFACE_ACQ, STAGE_SURFACE_ACQUIRE,
-    STAGE_SURFACE_LOCK, STAGE_SURFACE_VIEW, STAGE_TIMESTAMP_READBACK, STAGE_UI_EVENTS,
-    STAGE_UPDATE, STAGE_VOLUMETRICS, ShadowCubeFaceCount, ShadowDebugData, ShadowLayerCount,
-    ShadowSettings, SurfaceFormatResource, TIMING_STAGES, TimingsHistoryConfig, TotalTime,
-    VolumetricSettings, WindowSize,
+    IcedCapturedTouches, IcedEventQueue, IcedTextInputFocus, InputCapture, InputSnapshot,
+    PerformanceLogConfig, QueueResource, STAGE_BIND_MODELS, STAGE_CORE_SCHEDULE,
+    STAGE_CULL_EXTRACT, STAGE_ENGINE_EVENTS, STAGE_FRAME_GAP, STAGE_FRAME_LIMITER,
+    STAGE_GAME_SCHEDULE, STAGE_GPU_AA, STAGE_GPU_COMPLETE, STAGE_GPU_DEFERRED, STAGE_GPU_GBUFFER,
+    STAGE_GPU_LIGHT_CULLING, STAGE_GPU_MODELS, STAGE_GPU_SCENE_TOTAL, STAGE_GPU_SHADOW,
+    STAGE_GPU_SKYBOX, STAGE_GPU_TONEMAP, STAGE_GPU_TRANSPARENT, STAGE_GPU_VOLUMETRIC_ACCUMULATE,
+    STAGE_GPU_VOLUMETRIC_COMPOSITE, STAGE_GPU_VOLUMETRIC_INJECT, STAGE_GPU_VOLUMETRIC_INTEGRATE,
+    STAGE_GPU_VOLUMETRICS, STAGE_ICED_DRAW, STAGE_ICED_SUBMIT, STAGE_IMPORTER_POLL, STAGE_INPUT,
+    STAGE_OVERLAY_LAYERS, STAGE_OVERLAY_MAIN, STAGE_PRESENT, STAGE_REALIZE, STAGE_REALIZE_CAMERAS,
+    STAGE_REALIZE_ENV, STAGE_REALIZE_LIGHTS, STAGE_REALIZE_MODELS, STAGE_RENDER_TOTAL,
+    STAGE_SCENE_ENCODE, STAGE_SCENE_SUBMIT, STAGE_STAGGER, STAGE_SURFACE_ACQ,
+    STAGE_SURFACE_ACQUIRE, STAGE_SURFACE_LOCK, STAGE_SURFACE_VIEW, STAGE_TIMESTAMP_READBACK,
+    STAGE_UI_EVENTS, STAGE_UPDATE, STAGE_VOLUMETRICS, ShadowCubeFaceCount, ShadowDebugData,
+    ShadowLayerCount, ShadowSettings, SurfaceFormatResource, TIMING_STAGES, TimingsHistoryConfig,
+    TotalTime, VolumetricSettings, WindowEventQueue, WindowScaleFactor, WindowSize,
 };
 use ignit_renderer::GPU_TIMESTAMP_COUNT;
 
@@ -133,6 +133,7 @@ impl FrameStageScratch {
 struct UpdateTimings {
     total_ms: f64,
     ui_events_ms: f64,
+    ui_schedule_ms: f64,
     input_ms: f64,
     core_schedule_ms: f64,
     importer_poll_ms: f64,
@@ -300,6 +301,7 @@ pub struct ModuleRuntime {
     ecs_world: ignit_ecs::World,
     core_schedule: Schedule,
     game_schedule: Schedule,
+    ui_schedule: crate::ui_schedule::UiSchedule,
     module_setup_done: bool,
     renderer: Option<ignit_renderer::Renderer>,
     frame_timings: FrameStageScratch,
@@ -411,6 +413,7 @@ impl ModuleRuntime {
             ecs_world: ignit_ecs::World::new(),
             core_schedule: make_core_schedule(),
             game_schedule: Schedule::new(),
+            ui_schedule: crate::ui_schedule::UiSchedule::new(),
             module_setup_done: false,
             renderer: None,
             frame_timings: FrameStageScratch::new(),
@@ -1251,8 +1254,10 @@ impl ModuleRuntime {
         self.frame_timings.set(STAGE_SURFACE_VIEW, d_surface_view);
         self.frame_timings
             .set_ms(STAGE_UPDATE, self.update_timings.total_ms);
-        self.frame_timings
-            .set_ms(STAGE_UI_EVENTS, self.update_timings.ui_events_ms);
+        self.frame_timings.set_ms(
+            STAGE_UI_EVENTS,
+            self.update_timings.ui_events_ms + self.update_timings.ui_schedule_ms,
+        );
         self.frame_timings
             .set_ms(STAGE_INPUT, self.update_timings.input_ms);
         self.frame_timings
@@ -1629,6 +1634,9 @@ impl ModuleRuntime {
             // Focus is re-probed from every panel below.
             focus.0 = false;
         }
+        if let Some(mut capture) = self.ecs_world.get_resource_mut::<InputCapture>() {
+            capture.clear();
+        }
 
         let t_ui_events_start = std::time::Instant::now();
         {
@@ -1652,25 +1660,60 @@ impl ModuleRuntime {
         self.update_timings.ui_events_ms = t_ui_events_start.elapsed().as_secs_f64() * 1000.0;
 
         let t_input_start = std::time::Instant::now();
+
+        #[cfg(all(
+            feature = "gamepad_input_poll",
+            not(any(target_os = "android", target_os = "ios"))
+        ))]
+        // Poll gamepads BEFORE UI processing so UI and game see this frame's
+        // stick/button state instead of last frame's.
+        self.receive_controller_inputs();
+
+        #[cfg(all(feature = "gamepad_input_poll", target_os = "ios"))]
+        for input_event in self.ios_gamepad.poll() {
+            self.input_state.handle_event(input_event);
+        }
+
+        // Run core schedule (timing, frame counter)
+        let t_core_schedule_start = std::time::Instant::now();
+        self.core_schedule.run(&mut self.ecs_world);
+        self.update_timings.core_schedule_ms =
+            t_core_schedule_start.elapsed().as_secs_f64() * 1000.0;
+
+        // UI phase: reconcile, style, layout, hit-test, focus, events, draw
+        // list. This runs after the core schedule (so `TotalTime` is current)
+        // and before deferred game input and the game schedule.
+        let t_ui_schedule_start = std::time::Instant::now();
+        self.ui_schedule.run(&mut self.ecs_world);
+        self.update_timings.ui_schedule_ms = t_ui_schedule_start.elapsed().as_secs_f64() * 1000.0;
+        if self.ui_schedule.system_count() == 0
+            && let Some(mut queue) = self.ecs_world.get_resource_mut::<WindowEventQueue>()
+        {
+            // No UI phase consumer registered; keep the queue bounded.
+            queue.drain();
+        }
+
         // ── Process deferred game touch input ───────────────────────
-        // Touches were deferred in window_event() so that iced could
-        // declare captures first.  Now process them using the current
-        // IcedCapturedTouches state.
+        // Touches were deferred in window_event() so iced and the generic UI
+        // phase can declare captures first. Both capture sources are unioned
+        // while the iced debug UI coexists with the new stack.
+        let generic_capture = self
+            .ecs_world
+            .get_resource::<ignit_ecs_bridge::InputCapture>()
+            .map(|capture| (*capture).clone())
+            .unwrap_or_default();
         let deferred = std::mem::take(&mut self.deferred_touches);
         for touch in deferred {
-            // If iced captured this touch, skip game-input processing.
-            if let Some(captured) = self.ecs_world.get_resource::<IcedCapturedTouches>()
-                && captured.contains(touch.id)
-            {
+            let iced_captured = self
+                .ecs_world
+                .get_resource::<IcedCapturedTouches>()
+                .is_some_and(|captured| captured.contains(touch.id));
+            if iced_captured || generic_capture.captures_touch(touch.id) {
                 let game_phases =
                     touch.phase == TouchPhase::Started || touch.phase == TouchPhase::Moved;
                 if game_phases && self.input_state.touch_position(touch.id).is_some() {
                     // Touch leaked through before capture was known —
                     // synthesise a Cancelled so the game releases the finger.
-                    info!(
-                        "iced: touch {} captured by UI — cancelling game input",
-                        touch.id
-                    );
                     self.input_state.handle_event(InputEvent::Touch {
                         device_id: touch.device_id,
                         phase: TouchPhase::Cancelled,
@@ -1680,8 +1723,6 @@ impl ModuleRuntime {
                     });
                 }
                 if game_phases {
-                    // Drop this event for the game.  The iced queue already
-                    // has every touch so UI widgets keep working.
                     continue;
                 }
                 // Ended/Cancelled forwarded to clear game-input state.
@@ -1697,13 +1738,11 @@ impl ModuleRuntime {
         }
 
         // ── Process deferred game wheel input ───────────────────────
-        // Like touches, wheels were deferred so iced could claim them first.
-        // The flag is a union across panels: if any panel captured a wheel
-        // this update, none of the deferred wheels reach the game.
         let wheel_captured = self
             .ecs_world
             .get_resource::<IcedCapturedMouseWheel>()
-            .is_some_and(|captured| captured.0);
+            .is_some_and(|captured| captured.0)
+            || generic_capture.wheel;
         let deferred_wheels = std::mem::take(&mut self.deferred_wheels);
 
         if !wheel_captured {
@@ -1716,48 +1755,23 @@ impl ModuleRuntime {
             }
         }
 
-        #[cfg(all(
-            feature = "gamepad_input_poll",
-            not(any(target_os = "android", target_os = "ios"))
-        ))]
-        // Poll gamepads BEFORE taking the input snapshot and running the
-        // schedules, so this frame's stick/button input is visible to the
-        // game systems instead of arriving one frame late.
-        self.receive_controller_inputs();
-
-        // iOS pads arrive through the GameController provider (winit has
-        // no gamepad path there); drain them BEFORE the snapshot so game
-        // systems see this frame's state, like desktop's gilrs poll.
-        #[cfg(all(feature = "gamepad_input_poll", target_os = "ios"))]
-        for input_event in self.ios_gamepad.poll() {
-            self.input_state.handle_event(input_event);
-        }
-
-        // A focused debug text field owns all game input. Clear the live input
-        // state after all event sources have been polled so typing cannot also
-        // move the player or camera.
+        // A focused text field in either UI stack owns all game keyboard
+        // input. Clear the live input state after all event sources have been
+        // polled so typing cannot also move the player or camera.
         let text_focus = self
             .ecs_world
             .get_resource::<IcedTextInputFocus>()
-            .is_some_and(|focus| focus.0);
+            .is_some_and(|focus| focus.0)
+            || generic_capture.text;
         if text_focus {
             self.input_state.clear();
         }
 
-        // Snapshot input state AFTER deferred touches are processed so game
-        // systems (camera controller, etc.) see the current frame's touch
-        // data — including right-side look deltas.
-        // `take_snapshot` moves the per-frame delta maps into the resource
-        // instead of deep-cloning the whole `InputState`.
+        // Snapshot input state AFTER deferred touches and UI capture are
+        // processed so game systems see the current frame's data and masks.
         self.ecs_world
             .insert_resource(InputSnapshot(self.input_state.take_snapshot()));
         self.update_timings.input_ms = t_input_start.elapsed().as_secs_f64() * 1000.0;
-
-        // Run core schedule (timing, frame counter)
-        let t_core_schedule_start = std::time::Instant::now();
-        self.core_schedule.run(&mut self.ecs_world);
-        self.update_timings.core_schedule_ms =
-            t_core_schedule_start.elapsed().as_secs_f64() * 1000.0;
 
         // Poll importer for completed glTF imports
         let t_importer_poll_start = std::time::Instant::now();
@@ -1975,6 +1989,10 @@ impl ApplicationHandler for ModuleRuntime {
                 .insert_resource(IcedCapturedMouseWheel::default());
             self.ecs_world
                 .insert_resource(IcedTextInputFocus::default());
+            self.ecs_world.insert_resource(WindowEventQueue::default());
+            self.ecs_world
+                .insert_resource(WindowScaleFactor(self.scale_factor));
+            self.ecs_world.insert_resource(InputCapture::default());
 
             // Initialize import pipeline resources
             self.ecs_world
@@ -2098,6 +2116,13 @@ impl ApplicationHandler for ModuleRuntime {
                     let mut layer_renderers = self.overlay_renderers.lock().unwrap();
                     self.module
                         .register_overlays(&mut self.ecs_world, &mut layer_renderers);
+                }
+
+                // Collect the pre-game UI phase. It runs with `&mut World`
+                // after the core schedule and before the game schedule.
+                let ui_systems = self.module.ui_systems(&mut self.ecs_world);
+                for system in ui_systems {
+                    self.ui_schedule.add_system(system);
                 }
 
                 // Register engine-level systems
@@ -2327,6 +2352,65 @@ impl ApplicationHandler for ModuleRuntime {
                     // Window(RedrawRequested) event on every frame per panel.
                 }
                 _ => {}
+            }
+        }
+
+        // Forward the same events to the generic UI phase. Both queues are
+        // populated while the iced debug UI and the new UI coexist.
+        {
+            use ignit_ecs_bridge::WindowEvent as UiWindowEvent;
+            let scale = ctx_lock!(ctx).window().scale_factor();
+            if let Some(mut scale_factor) = self.ecs_world.get_resource_mut::<WindowScaleFactor>() {
+                scale_factor.0 = scale;
+            }
+            if let Some(mut queue) = self.ecs_world.get_resource_mut::<WindowEventQueue>() {
+                queue.scale_factor = scale;
+                match &event {
+                    WindowEvent::CursorMoved { position, .. } => {
+                        queue.push(UiWindowEvent::CursorMoved {
+                            position: *position,
+                        });
+                    }
+                    WindowEvent::MouseInput { state, button, .. } => {
+                        queue.push(UiWindowEvent::MouseInput {
+                            state: *state,
+                            button: *button,
+                        });
+                    }
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        queue.push(UiWindowEvent::MouseWheel { delta: *delta });
+                    }
+                    WindowEvent::KeyboardInput {
+                        event,
+                        is_synthetic,
+                        ..
+                    } => {
+                        queue.push(UiWindowEvent::KeyboardInput {
+                            event: event.clone(),
+                            is_synthetic: *is_synthetic,
+                        });
+                    }
+                    WindowEvent::ModifiersChanged(mods) => {
+                        queue.push(UiWindowEvent::ModifiersChanged(mods.state()));
+                    }
+                    WindowEvent::Resized(size) => {
+                        queue.push(UiWindowEvent::Resized(*size));
+                    }
+                    WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                        queue.push(UiWindowEvent::ScaleFactorChanged(*scale_factor));
+                    }
+                    WindowEvent::Focused(focused) => {
+                        queue.push(UiWindowEvent::Focused(*focused));
+                    }
+                    WindowEvent::Touch(touch) => {
+                        queue.push(UiWindowEvent::Touch(*touch));
+                    }
+                    WindowEvent::Ime(ime) => {
+                        queue.push(UiWindowEvent::Ime(ime.clone()));
+                    }
+                    WindowEvent::RedrawRequested => {}
+                    _ => {}
+                }
             }
         }
 

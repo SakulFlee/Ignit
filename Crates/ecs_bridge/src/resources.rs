@@ -895,6 +895,138 @@ impl IcedEventQueue {
     }
 }
 
+/// Generic window event forwarded to the engine UI phases.
+///
+/// This is the non-iced counterpart of [`IcedWindowEvent`]. Both queues are
+/// populated during the transition; the iced queue is removed with the debug
+/// UI port.
+#[derive(Debug, Clone)]
+pub enum WindowEvent {
+    CursorMoved {
+        position: winit::dpi::PhysicalPosition<f64>,
+    },
+    MouseInput {
+        state: winit::event::ElementState,
+        button: winit::event::MouseButton,
+    },
+    MouseWheel {
+        delta: winit::event::MouseScrollDelta,
+    },
+    KeyboardInput {
+        event: winit::event::KeyEvent,
+        is_synthetic: bool,
+    },
+    ModifiersChanged(winit::keyboard::ModifiersState),
+    Resized(winit::dpi::PhysicalSize<u32>),
+    ScaleFactorChanged(f64),
+    Focused(bool),
+    Touch(winit::event::Touch),
+    Ime(winit::event::Ime),
+}
+
+/// Queue of generic window events consumed by the UI phase.
+pub struct WindowEventQueue {
+    pub events: Vec<WindowEvent>,
+    pub cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
+    pub modifiers: winit::keyboard::ModifiersState,
+    pub scale_factor: f64,
+    pub size: winit::dpi::PhysicalSize<u32>,
+}
+
+impl Default for WindowEventQueue {
+    fn default() -> Self {
+        Self {
+            events: Vec::new(),
+            cursor_position: None,
+            modifiers: winit::keyboard::ModifiersState::empty(),
+            scale_factor: 1.0,
+            size: winit::dpi::PhysicalSize::new(0, 0),
+        }
+    }
+}
+
+impl WindowEventQueue {
+    pub fn push(&mut self, event: WindowEvent) {
+        match &event {
+            WindowEvent::CursorMoved { position } => {
+                self.cursor_position = Some(*position);
+            }
+            WindowEvent::Touch(touch) => {
+                self.cursor_position = Some(touch.location);
+            }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = *modifiers;
+            }
+            WindowEvent::Resized(size) => {
+                self.size = *size;
+            }
+            WindowEvent::ScaleFactorChanged(scale) => {
+                self.scale_factor = *scale;
+            }
+            _ => {}
+        }
+        self.events.push(event);
+    }
+
+    pub fn drain(&mut self) -> Vec<WindowEvent> {
+        std::mem::take(&mut self.events)
+    }
+}
+
+/// Window scale factor exposed to UI systems and input capture.
+#[derive(Debug, Clone, Copy)]
+pub struct WindowScaleFactor(pub f64);
+
+impl Default for WindowScaleFactor {
+    fn default() -> Self {
+        Self(1.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CursorIcon {
+    #[default]
+    Default,
+    Pointer,
+    Text,
+    ResizeHorizontal,
+    ResizeVertical,
+    Grab,
+    Grabbing,
+}
+
+/// Generic UI input capture for the current frame.
+///
+/// `pointer`/`wheel`/`keyboard`/`text` mask the corresponding game input.
+/// `captured_touches` and `mouse_drag` mirror the iced capture resources while
+/// both stacks coexist.
+#[derive(Debug, Clone, Default)]
+pub struct InputCapture {
+    pub pointer: bool,
+    pub wheel: bool,
+    pub keyboard: bool,
+    pub text: bool,
+    pub cursor: Option<CursorIcon>,
+    pub captured_touches: hashbrown::HashSet<u64>,
+    pub mouse_drag: bool,
+}
+
+impl InputCapture {
+    pub fn clear(&mut self) {
+        self.pointer = false;
+        self.wheel = false;
+        self.keyboard = false;
+        self.text = false;
+        self.cursor = None;
+        self.captured_touches.clear();
+        self.mouse_drag = false;
+    }
+
+    pub fn captures_touch(&self, id: u64) -> bool {
+        self.captured_touches.contains(&id)
+    }
+}
+
 /// Winit touch ids currently **captured** by an iced UI overlay.
 ///
 /// Populated by the iced overlay renderers (`ignit_iced`): whenever a

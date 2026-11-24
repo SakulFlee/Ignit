@@ -96,4 +96,12 @@ impl Module for CombinedModule {
             module.register_overlays(ecs, layer_renderers);
         }
     }
+
+    fn ui_systems(&self, ecs: &mut World) -> Vec<Box<dyn crate::ui_schedule::UiSystem>> {
+        let mut all = Vec::new();
+        for module in &self.modules {
+            all.extend(module.ui_systems(ecs));
+        }
+        all
+    }
 }

@@ -2646,6 +2646,7 @@ name = "ignit_ui_render"
 version = "1.6.3"
 dependencies = [
  "bytemuck",
+ "ignit-winit",
  "ignit_app",
  "ignit_ecs",
  "ignit_ecs_bridge",
