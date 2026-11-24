@@ -719,8 +719,22 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     radius: [2.0; 4],
                     clip,
                 });
+                let text_style = style.text.clone().unwrap_or_else(default_text);
+                if let Some(option) = options.get(*selected) {
+                    draw.commands.push(UiDrawCommand::Text {
+                        entity,
+                        rect: UiRect::new(
+                            rect.rect.x + 10.0,
+                            rect.rect.y + 9.0,
+                            rect.rect.width - 34.0,
+                            20.0,
+                        ),
+                        text: option.clone(),
+                        style: text_style.clone(),
+                        clip,
+                    });
+                }
                 if *open {
-                    let text_style = style.text.clone().unwrap_or_else(default_text);
                     for (index, option) in options.iter().enumerate() {
                         let y = rect.rect.y + 38.0 + index as f32 * 24.0;
                         if index == *selected {
