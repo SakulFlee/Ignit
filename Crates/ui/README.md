@@ -81,3 +81,14 @@ Game systems then see the same-frame capture state and event queue.
 - The ECS has no change detection. External writers must set `UiDirty` or rely
   on the periodic full reconcile.
 - Text shaping, glyph atlases, and the widget set are separate crates/issues.
+
+## Widgets
+
+`ignit_ui::widgets` provides the v1 control set as ECS components:
+
+- `Button`, `Toggle`, `Checkbox`, `Slider`, `ProgressBar`, `TextBox`,
+  `Dropdown`, `ListBox`, `Tabs`, `Collapsible`, `FloatingWindow`,
+  `Sparkline`, `Tooltip`, `Popup`, `Menu`, `Modal`, `Divider`.
+- Widgets emit semantic `UiEvent::ValueChanged`/`Action` values; no stored
+  callbacks.
+- `Examples/ui` showcases the code-authored and RON-authored screens.

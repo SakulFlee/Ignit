@@ -22,6 +22,7 @@ pub mod layout_engine;
 pub mod node;
 pub mod style;
 pub mod style_pass;
+pub mod widgets;
 
 pub use builder::{UiBuilder, UiHandle};
 pub use document::{
@@ -56,6 +57,7 @@ pub use style::{
     UiState, UiStateStyles, UiStyle, UiStyleClass, UiStylePatch, UiText, UiTextStyle, UiTextWrap,
     UiTheme, UiThemes,
 };
+pub use widgets::{UiWidget, UiWidgetSpec, append_widget_commands, update_widgets};
 
 use std::time::Instant;
 
@@ -108,6 +110,11 @@ pub fn init(world: &mut World) {
 /// same-frame [`UiInputCapture`] and [`UiEvent`] queue.
 pub fn update(world: &mut World, measure: &mut dyn UiTextMeasure) -> UiStats {
     init(world);
+    // UI events live for exactly one frame. Clear the previous frame before
+    // hit-testing, then game systems read the events emitted by this frame.
+    if let Some(mut events) = world.get_resource_mut::<Events<UiEvent>>() {
+        events.clear();
+    }
     let start = Instant::now();
 
     let style_start = Instant::now();
@@ -189,6 +196,7 @@ pub fn update(world: &mut World, measure: &mut dyn UiTextMeasure) -> UiStats {
         capture.pointer = true;
     }
 
+    widgets::update_widgets(world, &input);
     input.end_frame();
     world.insert_resource(input);
     world.insert_resource(capture);
@@ -199,6 +207,8 @@ pub fn update(world: &mut World, measure: &mut dyn UiTextMeasure) -> UiStats {
         .map(|list| list.clone())
         .unwrap_or_default();
     draw::build_draw_list(world, &mut draw);
+    widgets::append_widget_commands(world, &mut draw);
+    draw.sort_by_z(world);
     let draw_ms = draw_start.elapsed().as_secs_f32() * 1000.0;
     let commands = draw.command_count();
     world.insert_resource(draw);

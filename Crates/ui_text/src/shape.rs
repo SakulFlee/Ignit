@@ -19,6 +19,7 @@ pub struct ShapedGlyph {
     pub color: [f32; 4],
     pub start: usize,
     pub end: usize,
+    pub advance: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -63,6 +64,7 @@ struct TextKey {
     ellipsis: bool,
     width_bits: u32,
     scale_bits: u32,
+    color_bits: [u32; 4],
 }
 
 pub struct TextEngine {
@@ -149,6 +151,7 @@ impl TextEngine {
 
     pub fn shape(&mut self, text: &str, style: &UiTextStyle, max_width: f32) -> Arc<ShapedText> {
         let width = max_width.max(1.0);
+        let color = resolve_color(&style.color);
         let key = TextKey {
             text: text.to_string(),
             size_bits: style.size.to_bits(),
@@ -159,6 +162,7 @@ impl TextEngine {
             ellipsis: style.ellipsis,
             width_bits: width.to_bits(),
             scale_bits: self.scale.to_bits(),
+            color_bits: color.map(f32::to_bits),
         };
         if let Some(shaped) = self.cache.get(&key) {
             self.cache_hits += 1;
@@ -204,25 +208,35 @@ impl TextEngine {
             let mut line_end = 0usize;
             for glyph in run.glyphs {
                 let physical = glyph.physical((0.0, run.line_y), scale);
-                let Some(image) = self
+                let glyph_rect = if let Some(image) = self
                     .swash_cache
                     .get_image(&mut self.font_system, physical.cache_key)
-                else {
-                    continue;
+                    && image.placement.width > 0
+                    && image.placement.height > 0
+                {
+                    [
+                        physical.x as f32 / scale + image.placement.left as f32 / scale,
+                        physical.y as f32 / scale - image.placement.top as f32 / scale,
+                        image.placement.width as f32 / scale,
+                        image.placement.height as f32 / scale,
+                    ]
+                } else {
+                    // Spaces and other non-rasterized glyphs still need an
+                    // advance so the caret can sit after them.
+                    [
+                        glyph.x + glyph.x_offset * glyph.font_size,
+                        run.line_y,
+                        0.0,
+                        0.0,
+                    ]
                 };
-                if image.placement.width == 0 || image.placement.height == 0 {
-                    continue;
-                }
-                let x = glyph.x + image.placement.left as f32 / scale;
-                let y = run.line_y - image.placement.top as f32 / scale;
-                let w = image.placement.width as f32 / scale;
-                let h = image.placement.height as f32 / scale;
                 shaped.glyphs.push(ShapedGlyph {
                     cache_key: physical.cache_key,
-                    rect: [x, y, w, h],
+                    rect: glyph_rect,
                     color,
                     start: glyph.start,
                     end: glyph.end,
+                    advance: glyph.w,
                 });
                 line_start = line_start.min(glyph.start);
                 line_end = line_end.max(glyph.end);
@@ -307,7 +321,22 @@ impl TextEngine {
             .lines
             .iter()
             .find(|line| cursor >= line.start && cursor <= line.end)?;
-        Some((glyph.rect[0], line.y))
+        let x = if cursor >= glyph.end {
+            glyph.rect[0] + glyph.advance
+        } else {
+            glyph.rect[0]
+        };
+        Some((x, line.y))
+    }
+
+    pub fn cursor_rect(&mut self, shaped: &ShapedText, cursor: usize) -> Option<[f32; 4]> {
+        let (x, y) = self.cursor_position(shaped, cursor).unwrap_or((0.0, 0.0));
+        let height = shaped
+            .lines
+            .iter()
+            .find(|line| cursor >= line.start && cursor <= line.end)
+            .map_or(16.0, |line| line.height);
+        Some([x, y, 1.5, height])
     }
 
     pub fn stats(&self) -> TextStats {

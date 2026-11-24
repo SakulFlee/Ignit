@@ -308,7 +308,12 @@ fn hot_reload_restores_scroll_text_and_focus_by_id() {
                     UiDocumentNode::new("scroll")
                         .layout(UiLayout::default().height(100.0))
                         .scroll()
-                        .child(UiDocumentNode::new("text").text("old").focusable()),
+                        .child(
+                            UiDocumentNode::new("text")
+                                .layout(UiLayout::default().height(200.0).shrink(0.0))
+                                .text("old")
+                                .focusable(),
+                        ),
                 );
             root.view = Some(UiView::new(400.0, 300.0));
             root
@@ -479,4 +484,12 @@ fn text_component_and_dirty_reset() {
         .copied()
         .unwrap();
     assert!(!dirty.contains(ignit_ui::UiDirty::LAYOUT));
+}
+
+#[test]
+fn light_theme_resolves_dark_text() {
+    let theme = UiTheme::light();
+    let resolved = theme.resolve_style(&UiStyle::default(), &[], ignit_ui::UiState::Normal);
+    let color = resolved.text.expect("body text").color;
+    assert!(color[0] < 0.2 && color[1] < 0.2 && color[2] < 0.2);
 }

@@ -107,7 +107,7 @@ impl Default for UiTextStyle {
         Self {
             size: 14.0,
             line_height: None,
-            color: UiColor::rgba([0.92, 0.94, 1.0, 1.0]),
+            color: UiColor::token("text"),
             family: None,
             weight: 400,
             wrap: UiTextWrap::Word,
@@ -173,6 +173,11 @@ impl UiStyle {
 
     pub fn padding_text(mut self, style: UiTextStyle) -> Self {
         self.text = Some(style);
+        self
+    }
+
+    pub fn visible(mut self, visible: bool) -> Self {
+        self.visible = Some(visible);
         self
     }
 
@@ -401,7 +406,13 @@ impl UiTheme {
         radii.insert("lg".into(), 12.0);
 
         let mut typography = HashMap::new();
-        typography.insert("body".into(), UiTextStyle::default());
+        typography.insert(
+            "body".into(),
+            UiTextStyle {
+                size: 16.0,
+                ..Default::default()
+            },
+        );
         typography.insert(
             "title".into(),
             UiTextStyle {
@@ -413,7 +424,7 @@ impl UiTheme {
         typography.insert(
             "caption".into(),
             UiTextStyle {
-                size: 12.0,
+                size: 13.0,
                 color: UiColor::token("text_muted"),
                 ..Default::default()
             },
@@ -470,6 +481,57 @@ impl UiTheme {
             motion: HashMap::new(),
             classes,
         }
+    }
+
+    pub fn light() -> Self {
+        let mut theme = Self::dark();
+        theme.name = "light".into();
+        theme.revision += 1;
+        theme.paint_revision += 1;
+        theme.colors.insert("bg".into(), [0.94, 0.95, 0.98, 1.0]);
+        theme.colors.insert("surface".into(), [1.0, 1.0, 1.0, 1.0]);
+        theme
+            .colors
+            .insert("surface_alt".into(), [0.88, 0.90, 0.95, 1.0]);
+        theme
+            .colors
+            .insert("border".into(), [0.55, 0.60, 0.70, 1.0]);
+        theme.colors.insert("text".into(), [0.08, 0.10, 0.14, 1.0]);
+        theme
+            .colors
+            .insert("text_muted".into(), [0.30, 0.35, 0.42, 1.0]);
+        theme
+            .colors
+            .insert("accent".into(), [0.10, 0.45, 0.80, 1.0]);
+        theme
+            .colors
+            .insert("accent_hover".into(), [0.16, 0.52, 0.88, 1.0]);
+        theme
+            .colors
+            .insert("danger".into(), [0.78, 0.18, 0.22, 1.0]);
+        for (name, style) in &mut theme.typography {
+            style.color = if name == "caption" {
+                UiColor::rgba([0.30, 0.35, 0.42, 1.0])
+            } else {
+                UiColor::rgba([0.08, 0.10, 0.14, 1.0])
+            };
+        }
+        if let Some(panel) = theme.classes.get_mut("panel") {
+            panel.style.shadow = Some(UiShadow {
+                color: UiColor::rgba([0.15, 0.18, 0.25, 0.22]),
+                ..Default::default()
+            });
+        }
+        theme
+    }
+
+    pub fn from_ron(source: &str) -> Result<Self, String> {
+        ron::from_str(source).map_err(|error| error.to_string())
+    }
+
+    pub fn to_ron(&self) -> Result<String, String> {
+        ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
+            .map_err(|error| error.to_string())
     }
 
     pub fn color(&self, name: &str) -> Option<UiRgba> {
@@ -531,7 +593,7 @@ impl UiTheme {
         inherited_classes: &[String],
         state: UiState,
     ) -> UiResolvedStyle {
-        let mut merged = style.clone();
+        let mut merged = UiStyle::default();
         let mut relevant: Vec<&UiStyleClass> = Vec::new();
         for name in inherited_classes.iter().chain(style.classes.iter()) {
             if let Some(class) = self.classes.get(name) {
@@ -539,6 +601,20 @@ impl UiTheme {
                 class.style.apply(&mut merged);
             }
         }
+        // Inline node style wins over class base values; state overrides win
+        // over both so hover/pressed feedback is always visible.
+        UiStylePatch {
+            background: style.background.clone(),
+            border: style.border.clone(),
+            radius: Some(style.radius),
+            shadow: style.shadow.clone(),
+            text: style.text.clone(),
+            image: style.image.clone(),
+            opacity: style.opacity,
+            visible: style.visible,
+            cursor: style.cursor,
+        }
+        .apply(&mut merged);
         for class in &relevant {
             if let Some(patch) = class.states.patch(state) {
                 patch.apply(&mut merged);

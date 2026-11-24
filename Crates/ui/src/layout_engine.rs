@@ -9,7 +9,7 @@ use taffy::prelude::*;
 
 use crate::forest::UiForest;
 use crate::geometry::{UiRect, UiSize};
-use crate::layout::UiLayout;
+use crate::layout::{UiDimension, UiLayout};
 use crate::node::{UiComputed, UiDirty, UiNode, UiScroll, UiView};
 use crate::style::{UiResolvedStyle, UiStyle, UiText, UiTextStyle, UiThemes};
 
@@ -226,9 +226,17 @@ impl UiLayoutEngine {
         self.last_layout_revision = theme_layout_revision(world);
         self.last_viewports = last_views;
 
-        for (_root_entity, root_node, order) in roots {
+        for (root_entity, root_node, order) in roots {
             let z_base = order.saturating_mul(10_000);
-            self.write_computed(world, root_node, (0.0, 0.0), None, z_base, true);
+            let origin = world
+                .get_component_store::<UiView>()
+                .and_then(|store| {
+                    store
+                        .get_component(root_entity.index)
+                        .map(|view| (view.offset.x, view.offset.y))
+                })
+                .unwrap_or((0.0, 0.0));
+            self.write_computed(world, root_node, origin, None, z_base, true);
         }
         clear_layout_dirty(world);
         true
@@ -248,6 +256,53 @@ impl UiLayoutEngine {
             .get_component_store::<UiLayout>()
             .and_then(|store| store.get_component(entity.index).cloned())
             .unwrap_or_default();
+        let visible = world
+            .get_component_store::<UiStyle>()
+            .and_then(|store| {
+                store
+                    .get_component(entity.index)
+                    .and_then(|style| style.visible)
+            })
+            .unwrap_or(true);
+        let mut taffy_style = layout.to_taffy();
+        if !visible {
+            taffy_style.display = taffy::Display::None;
+        }
+        let is_modal = world
+            .get_component_store::<crate::widgets::UiWidget>()
+            .and_then(|store| {
+                store.get_component(entity.index).map(|widget| {
+                    matches!(&widget.spec, crate::widgets::UiWidgetSpec::Modal { .. })
+                })
+            })
+            .unwrap_or(false);
+        if is_modal {
+            let mut root = entity;
+            let nodes = world.get_component_store::<UiNode>();
+            while let Some(parent) = nodes
+                .as_ref()
+                .and_then(|store| store.get_component(root.index))
+                .and_then(|node| node.parent)
+            {
+                root = parent;
+            }
+            if let Some(view_size) = world
+                .get_component_store::<UiView>()
+                .and_then(|store| store.get_component(root.index).map(|view| view.size))
+            {
+                let width = resolved_dimension(layout.width, view_size.width);
+                let height = resolved_dimension(layout.height, view_size.height);
+                let x = ((view_size.width - width) * 0.5).max(0.0);
+                let y = ((view_size.height - height) * 0.5).max(0.0);
+                taffy_style.position = Position::Absolute;
+                taffy_style.inset = taffy::Rect {
+                    left: length(x),
+                    right: auto(),
+                    top: length(y),
+                    bottom: auto(),
+                };
+            }
+        }
 
         let text = world
             .get_component_store::<UiText>()
@@ -262,7 +317,7 @@ impl UiLayoutEngine {
 
         let taffy_node = self
             .taffy
-            .new_leaf_with_context(layout.to_taffy(), LayoutNode { entity, text })
+            .new_leaf_with_context(taffy_style, LayoutNode { entity, text })
             .ok()?;
         self.node_ids.insert(entity, taffy_node);
 
@@ -290,6 +345,18 @@ impl UiLayoutEngine {
             return;
         };
         let entity = context.entity;
+        let z_index = world
+            .get_component_store::<crate::widgets::UiWidget>()
+            .and_then(|store| {
+                store
+                    .get_component(entity.index)
+                    .map(|widget| match &widget.spec {
+                        crate::widgets::UiWidgetSpec::FloatingWindow { .. } => z_index + 100_000,
+                        crate::widgets::UiWidgetSpec::Modal { .. } => z_index + 1_000_000,
+                        _ => z_index,
+                    })
+            })
+            .unwrap_or(z_index);
         let abs = UiRect::new(
             origin.0 + layout.location.x,
             origin.1 + layout.location.y,
@@ -313,9 +380,30 @@ impl UiLayoutEngine {
                 .max(0.0),
         );
 
-        let scroll = world
+        let children = self.taffy.children(node).unwrap_or_default();
+        let mut content_width = abs.width;
+        let mut content_height = abs.height;
+        for child in &children {
+            if let Ok(child_layout) = self.taffy.layout(*child) {
+                content_width = content_width
+                    .max(child_layout.location.x + child_layout.size.width + layout.padding.right);
+                content_height = content_height.max(
+                    child_layout.location.y + child_layout.size.height + layout.padding.bottom,
+                );
+            }
+        }
+
+        let mut scroll = world
             .get_component_store::<UiScroll>()
             .and_then(|store| store.get_component(entity.index).copied());
+        if let Some(scroll) = scroll.as_mut() {
+            scroll.viewport_size = UiSize::new(abs.width, abs.height);
+            scroll.content_size = UiSize::new(content_width, content_height);
+            scroll.clamp();
+            if let Some(store) = world.get_component_store_mut::<UiScroll>() {
+                store.get_mut_store().attach(entity.index, *scroll);
+            }
+        }
         let clip = if scroll.is_some() {
             Some(abs.intersect(parent_clip.unwrap_or(abs)).unwrap_or(abs))
         } else {
@@ -475,5 +563,13 @@ fn clear_layout_dirty(world: &mut World) {
                 dirty.remove(UiDirty::LAYOUT | UiDirty::HIERARCHY);
             }
         }
+    }
+}
+
+fn resolved_dimension(value: UiDimension, parent: f32) -> f32 {
+    match value {
+        UiDimension::Length(value) => value,
+        UiDimension::Percent(value) => parent * value / 100.0,
+        UiDimension::Auto => 0.0,
     }
 }

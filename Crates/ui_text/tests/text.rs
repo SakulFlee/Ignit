@@ -218,3 +218,35 @@ fn integrates_with_core_layout_measurement() {
         .unwrap();
     assert!(computed.rect.height > 0.0);
 }
+
+#[test]
+fn caret_after_spaces_remains_visible() {
+    let mut engine = TextEngine::new();
+    let shaped = engine.shape("a ", &style(16.0), 200.0);
+    let caret = engine.cursor_rect(&shaped, 2).expect("caret exists");
+    assert!(caret[0] > 0.0);
+    assert!(caret[3] > 0.0);
+
+    let empty_space = engine.shape(" ", &style(16.0), 200.0);
+    let caret = engine
+        .cursor_rect(&empty_space, 1)
+        .expect("caret after space");
+    assert!(caret[0] >= 0.0);
+}
+
+#[test]
+fn color_change_invalidates_shaped_cache() {
+    let mut engine = TextEngine::new();
+    let white = UiTextStyle {
+        color: ignit_ui::UiColor::rgba([1.0, 1.0, 1.0, 1.0]),
+        ..style(16.0)
+    };
+    let black = UiTextStyle {
+        color: ignit_ui::UiColor::rgba([0.0, 0.0, 0.0, 1.0]),
+        ..style(16.0)
+    };
+    let first = engine.shape("Theme text", &white, 200.0);
+    let second = engine.shape("Theme text", &black, 200.0);
+    assert_eq!(first.glyphs[0].color, [1.0, 1.0, 1.0, 1.0]);
+    assert_eq!(second.glyphs[0].color, [0.0, 0.0, 0.0, 1.0]);
+}

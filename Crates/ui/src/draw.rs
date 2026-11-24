@@ -2,9 +2,11 @@
 
 use ignit_ecs::{Entity, World};
 
+use crate::focus::UiFocusState;
 use crate::geometry::{UiPoint, UiRect};
 use crate::node::{UiComputed, UiNode};
 use crate::style::{UiImage, UiResolvedStyle, UiResolvedTextStyle, UiText};
+use crate::widgets::{UiWidget, UiWidgetSpec};
 
 #[derive(Clone, Debug)]
 pub enum UiDrawCommand {
@@ -39,6 +41,7 @@ pub enum UiDrawCommand {
         text: String,
         style: UiResolvedTextStyle,
         clip: Option<UiRect>,
+        caret: Option<usize>,
     },
     Image {
         entity: Entity,
@@ -66,6 +69,35 @@ impl UiDrawList {
     pub fn command_count(&self) -> usize {
         self.commands.len()
     }
+
+    /// Sorts commands by layout z order after widget paint commands have been
+    /// appended. This keeps floating windows and their child text above or
+    /// below other roots consistently.
+    pub fn sort_by_z(&mut self, world: &World) {
+        let Some(computed) = world.get_component_store::<UiComputed>() else {
+            return;
+        };
+        self.commands.sort_by_key(|command| {
+            let entity = command.entity();
+            let z = computed
+                .get_component(entity.index)
+                .map_or(0, |computed| computed.z_index);
+            (z, entity.index)
+        });
+    }
+}
+
+impl UiDrawCommand {
+    pub fn entity(&self) -> Entity {
+        match self {
+            Self::Shadow { entity, .. }
+            | Self::Rect { entity, .. }
+            | Self::Border { entity, .. }
+            | Self::Text { entity, .. }
+            | Self::Image { entity, .. }
+            | Self::Line { entity, .. } => *entity,
+        }
+    }
 }
 
 /// Builds a sorted draw list. Commands are ordered by the layout z index, so
@@ -79,6 +111,10 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
     let styles = world.get_component_store::<UiResolvedStyle>();
     let texts = world.get_component_store::<UiText>();
     let images = world.get_component_store::<UiImage>();
+    let widgets = world.get_component_store::<UiWidget>();
+    let focused = world
+        .get_resource::<UiFocusState>()
+        .and_then(|state| state.focused);
 
     let mut entities: Vec<(i32, usize, Entity)> = world
         .entities()
@@ -141,12 +177,42 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
             .and_then(|store| store.get_component(entity.index))
             && let Some(style) = &style.text
         {
+            let text_clip = Some(match clip {
+                Some(clip) => clip.intersect(computed.content).unwrap_or(UiRect::ZERO),
+                None => computed.content,
+            });
+            if text_clip.is_some_and(|clip| clip.is_empty()) {
+                continue;
+            }
+            let mut text_rect = computed.content;
+            let mut caret = None;
+            if let Some(widget) = widgets
+                .as_ref()
+                .and_then(|store| store.get_component(entity.index))
+            {
+                match &widget.spec {
+                    UiWidgetSpec::TextBox { .. } => {
+                        if focused == Some(entity) {
+                            caret = Some(widget.cursor);
+                        }
+                        text_rect.x -= widget.scroll_x;
+                        let line_height = style.line_height.unwrap_or(style.size * 1.25);
+                        text_rect.y += ((text_rect.height - line_height) * 0.5).max(0.0);
+                    }
+                    UiWidgetSpec::Button { .. } | UiWidgetSpec::Collapsible { .. } => {
+                        let line_height = style.line_height.unwrap_or(style.size * 1.25);
+                        text_rect.y += ((text_rect.height - line_height) * 0.5).max(0.0);
+                    }
+                    _ => {}
+                }
+            }
             list.commands.push(UiDrawCommand::Text {
                 entity,
-                rect: computed.content,
+                rect: text_rect,
                 text: text.value.clone(),
                 style: style.clone(),
-                clip,
+                clip: text_clip,
+                caret,
             });
         }
         if let Some(image) = images

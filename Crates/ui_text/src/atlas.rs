@@ -154,13 +154,14 @@ impl GlyphAtlas {
         page.dirty = true;
         page.last_used = self.frame;
 
+        let half_texel = 0.5 / page.size as f32;
         let glyph = AtlasGlyph {
             page: page_index,
             uv: [
-                x as f32 / page.size as f32,
-                y as f32 / page.size as f32,
-                (x + width) as f32 / page.size as f32,
-                (y + height) as f32 / page.size as f32,
+                x as f32 / page.size as f32 + half_texel,
+                y as f32 / page.size as f32 + half_texel,
+                (x + width) as f32 / page.size as f32 - half_texel,
+                (y + height) as f32 / page.size as f32 - half_texel,
             ],
             placement: [
                 image.placement.left,

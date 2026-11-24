@@ -6,7 +6,7 @@ use crate::events::UiEvent;
 use crate::focus;
 use crate::geometry::UiPoint;
 use crate::id::UiId;
-use crate::node::{UiAction, UiComputed, UiInteraction, UiNode, UiScroll};
+use crate::node::{UiAction, UiComputed, UiDirty, UiInteraction, UiNode, UiScroll};
 use crate::style::{UiCursorIcon, UiResolvedStyle};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -140,7 +140,69 @@ pub fn hit_test(world: &World, point: UiPoint) -> Option<UiHit> {
             best = Some((key.0, key.1, hit));
         }
     }
-    best.map(|(_, _, hit)| hit)
+    best.map(|(_, _, hit)| {
+        let Some(target) = interactive_ancestor(world, hit.entity) else {
+            return hit;
+        };
+        let Some(rect) = computed.get_component(target.index) else {
+            return hit;
+        };
+        let Some(node) = nodes.get_component(target.index) else {
+            return hit;
+        };
+        UiHit {
+            entity: target,
+            id: node.id.clone(),
+            rect: rect.rect,
+        }
+    })
+}
+
+/// Finds the nearest interactive ancestor for a hit. Labels and layout
+/// containers should route clicks to their button/toggle/scroll parent.
+fn interactive_ancestor(world: &World, entity: Entity) -> Option<Entity> {
+    let nodes = world.get_component_store::<UiNode>()?;
+    let widgets = world.get_component_store::<crate::widgets::UiWidget>();
+    let focusable = world.get_component_store::<crate::node::UiFocusable>();
+    let actions = world.get_component_store::<UiAction>();
+    let scrolls = world.get_component_store::<UiScroll>();
+    let mut current = Some(entity);
+    while let Some(candidate) = current {
+        let interactive = widgets
+            .as_ref()
+            .is_some_and(|store| store.get_component(candidate.index).is_some())
+            || focusable
+                .as_ref()
+                .is_some_and(|store| store.get_component(candidate.index).is_some())
+            || actions
+                .as_ref()
+                .is_some_and(|store| store.get_component(candidate.index).is_some())
+            || scrolls
+                .as_ref()
+                .is_some_and(|store| store.get_component(candidate.index).is_some());
+        if interactive {
+            return Some(candidate);
+        }
+        current = nodes
+            .get_component(candidate.index)
+            .and_then(|node| node.parent);
+    }
+    None
+}
+
+fn scroll_ancestor(world: &World, entity: Entity) -> Option<Entity> {
+    let nodes = world.get_component_store::<UiNode>()?;
+    let scrolls = world.get_component_store::<UiScroll>()?;
+    let mut current = Some(entity);
+    while let Some(candidate) = current {
+        if scrolls.get_component(candidate.index).is_some() {
+            return Some(candidate);
+        }
+        current = nodes
+            .get_component(candidate.index)
+            .and_then(|node| node.parent);
+    }
+    None
 }
 
 /// Routes pointer/click/scroll input and emits UI events.
@@ -204,20 +266,38 @@ pub fn process_pointer(
         }
 
         if input.wheel != UiPoint::ZERO
+            && let Some(scroll_entity) = scroll_ancestor(world, hit.entity)
             && let Some(mut scroll) = world
                 .get_component_store_mut::<UiScroll>()
-                .and_then(|store| store.get_component(hit.entity.index).copied())
+                .and_then(|store| store.get_component(scroll_entity.index).copied())
         {
-            scroll.offset.x -= input.wheel.x;
-            scroll.offset.y -= input.wheel.y;
+            scroll.offset.x += input.wheel.x;
+            scroll.offset.y += input.wheel.y;
             scroll.clamp();
             if let Some(store) = world.get_component_store_mut::<UiScroll>().as_mut() {
-                store.get_mut_store().attach(hit.entity.index, scroll);
+                store.get_mut_store().attach(scroll_entity.index, scroll);
+            }
+            if let Some(store) = world.get_component_store_mut::<UiDirty>() {
+                let store = store.get_mut_store();
+                let next = store
+                    .get_component(scroll_entity.index)
+                    .copied()
+                    .unwrap_or_default()
+                    | UiDirty::LAYOUT;
+                store.attach(scroll_entity.index, next);
             }
             if let Some(mut events) = world.get_resource_mut::<Events<UiEvent>>() {
+                let id = world
+                    .get_component_store::<UiNode>()
+                    .and_then(|store| {
+                        store
+                            .get_component(scroll_entity.index)
+                            .map(|node| node.id.clone())
+                    })
+                    .unwrap_or_default();
                 events.send(UiEvent::Scroll {
-                    entity: hit.entity,
-                    id: hit.id.clone(),
+                    entity: scroll_entity,
+                    id,
                     delta: input.wheel,
                 });
             }

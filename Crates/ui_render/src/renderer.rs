@@ -148,6 +148,7 @@ pub struct UiRenderer {
     screen_bind_group: BindGroup,
     texture_layout: BindGroupLayout,
     sampler: Sampler,
+    atlas_sampler: Sampler,
     page_textures: Vec<Texture>,
     page_bind_groups: Vec<BindGroup>,
     white_bind_group: BindGroup,
@@ -227,6 +228,12 @@ impl UiRenderer {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
+        let atlas_sampler = device.create_sampler(&SamplerDescriptor {
+            label: Some("ignit ui atlas sampler"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
 
         let atlas_texture = make_texture(
             device,
@@ -274,7 +281,7 @@ impl UiRenderer {
             device,
             &texture_layout,
             &atlas_view,
-            &sampler,
+            &atlas_sampler,
             "ignit ui atlas bind group",
         );
 
@@ -376,6 +383,7 @@ impl UiRenderer {
             screen_bind_group,
             texture_layout,
             sampler,
+            atlas_sampler,
             page_textures: vec![atlas_texture],
             page_bind_groups: vec![atlas_bind_group],
             white_bind_group,
@@ -434,7 +442,7 @@ impl UiRenderer {
                     device,
                     &self.texture_layout,
                     &view,
-                    &self.sampler,
+                    &self.atlas_sampler,
                     "ignit ui atlas page bind group",
                 );
                 self.page_textures.push(texture);
@@ -694,6 +702,7 @@ impl UiRenderer {
                 text: value,
                 style,
                 clip,
+                caret,
             } => {
                 let (scale, origin) = self.transform(world, *entity);
                 let text_style = text_style(style);
@@ -723,6 +732,31 @@ impl UiRenderer {
                         UiTextureRef::Atlas(quad.page),
                     );
                 }
+                if let Some(cursor) = caret
+                    && let Some(caret_rect) = text.cursor_rect(&shaped, *cursor)
+                {
+                    let caret_rect = transform_rect(
+                        UiRect::new(
+                            rect.x + caret_rect[0],
+                            rect.y + caret_rect[1],
+                            caret_rect[2],
+                            caret_rect[3],
+                        ),
+                        scale,
+                        origin,
+                    );
+                    push_quad(
+                        vertices,
+                        batches,
+                        caret_rect,
+                        [0.92, 0.94, 1.0, 0.9],
+                        [0.0, 0.0, 1.0, 1.0],
+                        [0.0, 0.0, caret_rect.width, caret_rect.height],
+                        [0.0; 2],
+                        clip,
+                        UiTextureRef::White,
+                    );
+                }
             }
         }
     }
@@ -740,13 +774,12 @@ impl UiRenderer {
             };
             root = parent;
         }
-        let scale = views
+        let view = views
             .as_ref()
-            .and_then(|store| store.get_component(root.index))
-            .map(|view| view.scale)
-            .unwrap_or(1.0);
-        let offset = self.root_offsets.get(&root).copied().unwrap_or_default();
-        (scale, offset)
+            .and_then(|store| store.get_component(root.index));
+        let scale = view.map(|view| view.scale).unwrap_or(1.0);
+        let extra = self.root_offsets.get(&root).copied().unwrap_or_default();
+        (scale, extra)
     }
 }
 
