@@ -16,6 +16,7 @@ use crate::forest::UiForest;
 use crate::geometry::UiRect;
 use crate::id::UiId;
 use crate::input::UiInputState;
+use crate::layout::{UiDimension, UiLayout};
 use crate::node::{UiComputed, UiDirty};
 use crate::style::{UiResolvedStyle, UiResolvedTextStyle, UiStyle, UiText, UiTextWrap};
 
@@ -215,8 +216,39 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
                     });
                 }
             }
-            UiWidgetSpec::Dropdown { open, .. } if clicks.contains(&id) => {
-                *open = !*open;
+            UiWidgetSpec::Dropdown {
+                options,
+                selected,
+                open,
+            } if clicks.contains(&id) => {
+                let header = 38.0;
+                if *open {
+                    let option_index = ((input.pointer.y - (rect.rect.y + header)) / 24.0).floor();
+                    if option_index >= 0.0 && (option_index as usize) < options.len() {
+                        *selected = option_index as usize;
+                    }
+                    *open = false;
+                } else {
+                    *open = true;
+                }
+                set_widget_height(
+                    world,
+                    entity,
+                    if *open {
+                        header + options.len() as f32 * 24.0
+                    } else {
+                        header
+                    },
+                );
+            }
+            UiWidgetSpec::Tabs { tabs, active } if clicks.contains(&id) => {
+                if !tabs.is_empty() && rect.rect.width > 0.0 {
+                    let width = rect.rect.width / tabs.len() as f32;
+                    let index = ((input.pointer.x - rect.rect.x) / width).floor();
+                    if index >= 0.0 && (index as usize) < tabs.len() {
+                        *active = index as usize;
+                    }
+                }
             }
             UiWidgetSpec::Collapsible { open, content } if clicks.contains(&id) => {
                 *open = !*open;
@@ -289,6 +321,18 @@ fn set_entity_visible(world: &mut World, entity: Entity, visible: bool) {
     }
     style.visible = Some(visible);
     let _ = world.attach_component(&entity, style);
+    mark_dirty(world, entity, UiDirty::LAYOUT | UiDirty::PAINT);
+}
+
+fn set_widget_height(world: &mut World, entity: Entity, height: f32) {
+    let Some(mut layout) = world
+        .get_component_store::<UiLayout>()
+        .and_then(|store| store.get_component(entity.index).cloned())
+    else {
+        return;
+    };
+    layout.height = UiDimension::Length(height);
+    let _ = world.attach_component(&entity, layout);
     mark_dirty(world, entity, UiDirty::LAYOUT | UiDirty::PAINT);
 }
 
@@ -454,10 +498,14 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     clip,
                 });
             }
-            UiWidgetSpec::Dropdown { options, open, .. } => {
+            UiWidgetSpec::Dropdown {
+                options,
+                selected,
+                open,
+            } => {
                 let arrow = UiRect::new(
                     rect.rect.x + rect.rect.width - 22.0,
-                    rect.rect.y + rect.rect.height * 0.5 - 4.0,
+                    rect.rect.y + 15.0,
                     8.0,
                     8.0,
                 );
@@ -471,13 +519,23 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 if *open {
                     let text_style = style.text.clone().unwrap_or_else(default_text);
                     for (index, option) in options.iter().enumerate() {
+                        let y = rect.rect.y + 38.0 + index as f32 * 24.0;
+                        if index == *selected {
+                            draw.commands.push(UiDrawCommand::Rect {
+                                entity,
+                                rect: UiRect::new(rect.rect.x, y, rect.rect.width, 22.0),
+                                color: [0.20, 0.32, 0.48, 1.0],
+                                radius: [3.0; 4],
+                                clip,
+                            });
+                        }
                         draw.commands.push(UiDrawCommand::Text {
                             entity,
                             rect: UiRect::new(
                                 rect.rect.x + 10.0,
-                                rect.rect.y + rect.rect.height + index as f32 * 24.0 + 4.0,
+                                y + 2.0,
                                 rect.rect.width - 20.0,
-                                22.0,
+                                20.0,
                             ),
                             text: option.clone(),
                             style: text_style.clone(),

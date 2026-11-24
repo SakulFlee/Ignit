@@ -110,6 +110,11 @@ pub fn init(world: &mut World) {
 /// same-frame [`UiInputCapture`] and [`UiEvent`] queue.
 pub fn update(world: &mut World, measure: &mut dyn UiTextMeasure) -> UiStats {
     init(world);
+    // UI events live for exactly one frame. Clear the previous frame before
+    // hit-testing, then game systems read the events emitted by this frame.
+    if let Some(mut events) = world.get_resource_mut::<Events<UiEvent>>() {
+        events.clear();
+    }
     let start = Instant::now();
 
     let style_start = Instant::now();

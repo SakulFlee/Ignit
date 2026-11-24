@@ -30,6 +30,8 @@ impl UiNode {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct UiView {
     pub size: UiSize,
+    #[serde(default)]
+    pub offset: UiPoint,
     pub scale: f32,
     pub order: i32,
     pub visible: bool,
@@ -40,6 +42,7 @@ impl Default for UiView {
     fn default() -> Self {
         Self {
             size: UiSize::new(800.0, 600.0),
+            offset: UiPoint::ZERO,
             scale: 1.0,
             order: 0,
             visible: true,

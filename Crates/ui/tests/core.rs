@@ -308,7 +308,12 @@ fn hot_reload_restores_scroll_text_and_focus_by_id() {
                     UiDocumentNode::new("scroll")
                         .layout(UiLayout::default().height(100.0))
                         .scroll()
-                        .child(UiDocumentNode::new("text").text("old").focusable()),
+                        .child(
+                            UiDocumentNode::new("text")
+                                .layout(UiLayout::default().height(200.0).shrink(0.0))
+                                .text("old")
+                                .focusable(),
+                        ),
                 );
             root.view = Some(UiView::new(400.0, 300.0));
             root

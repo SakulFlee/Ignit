@@ -59,6 +59,8 @@ fn toggle_and_checkbox_flip_on_click() {
         input.primary_released = true;
         world.insert_resource(input);
         update(&mut world, &mut text);
+        // A stale click must not replay and toggle the widget back off.
+        update(&mut world, &mut text);
 
         let widget = world
             .get_component_store::<UiWidget>()
@@ -200,4 +202,76 @@ fn widget_paint_commands_are_appended() {
             .focused
             .is_none()
     );
+}
+
+#[test]
+fn text_box_backspace_deletes_a_character() {
+    let mut world = World::new();
+    init(&mut world);
+    let entity = build(
+        &mut world,
+        "text_backspace",
+        UiWidgetSpec::TextBox {
+            value: "abc".into(),
+            placeholder: String::new(),
+            multiline: false,
+        },
+    );
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    ignit_ui::focus_entity(&mut world, entity);
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::Backspace],
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let value = world
+        .get_component_store::<UiText>()
+        .unwrap()
+        .get_component(entity.index)
+        .unwrap()
+        .value
+        .clone();
+    assert_eq!(value, "ab");
+}
+
+#[test]
+fn wheel_scrolls_a_scroll_container() {
+    let mut world = World::new();
+    init(&mut world);
+    let mut root = UiDocumentNode::new("scroll_root")
+        .layout(UiLayout::column().size(400.0, 300.0).padding(10.0))
+        .child(
+            UiDocumentNode::new("scroll_area")
+                .layout(UiLayout::default().width(300.0).height(100.0))
+                .scroll()
+                .child(
+                    UiDocumentNode::new("scroll_content")
+                        .layout(UiLayout::column().height(300.0).shrink(0.0)),
+                ),
+        );
+    root.view = Some(UiView::new(400.0, 300.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    let scroll_entity = world
+        .get_resource::<ignit_ui::UiForest>()
+        .unwrap()
+        .find(&"scroll_area".into())
+        .unwrap();
+    let rect = rect(&world, scroll_entity);
+    world.insert_resource(UiInputState {
+        pointer: UiPoint::new(rect.rect.x + 10.0, rect.rect.y + 10.0),
+        wheel: UiPoint::new(0.0, -25.0),
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    update(&mut world, &mut text);
+    let scroll = world
+        .get_component_store::<ignit_ui::UiScroll>()
+        .unwrap()
+        .get_component(scroll_entity.index)
+        .copied()
+        .unwrap();
+    assert!(scroll.offset.y > 0.0);
 }

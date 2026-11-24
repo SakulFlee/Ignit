@@ -248,6 +248,18 @@ impl UiLayoutEngine {
             .get_component_store::<UiLayout>()
             .and_then(|store| store.get_component(entity.index).cloned())
             .unwrap_or_default();
+        let visible = world
+            .get_component_store::<UiStyle>()
+            .and_then(|store| {
+                store
+                    .get_component(entity.index)
+                    .and_then(|style| style.visible)
+            })
+            .unwrap_or(true);
+        let mut taffy_style = layout.to_taffy();
+        if !visible {
+            taffy_style.display = taffy::Display::None;
+        }
 
         let text = world
             .get_component_store::<UiText>()
@@ -262,7 +274,7 @@ impl UiLayoutEngine {
 
         let taffy_node = self
             .taffy
-            .new_leaf_with_context(layout.to_taffy(), LayoutNode { entity, text })
+            .new_leaf_with_context(taffy_style, LayoutNode { entity, text })
             .ok()?;
         self.node_ids.insert(entity, taffy_node);
 
@@ -313,9 +325,30 @@ impl UiLayoutEngine {
                 .max(0.0),
         );
 
-        let scroll = world
+        let children = self.taffy.children(node).unwrap_or_default();
+        let mut content_width = abs.width;
+        let mut content_height = abs.height;
+        for child in &children {
+            if let Ok(child_layout) = self.taffy.layout(*child) {
+                content_width = content_width
+                    .max(child_layout.location.x + child_layout.size.width + layout.padding.right);
+                content_height = content_height.max(
+                    child_layout.location.y + child_layout.size.height + layout.padding.bottom,
+                );
+            }
+        }
+
+        let mut scroll = world
             .get_component_store::<UiScroll>()
             .and_then(|store| store.get_component(entity.index).copied());
+        if let Some(scroll) = scroll.as_mut() {
+            scroll.viewport_size = UiSize::new(abs.width, abs.height);
+            scroll.content_size = UiSize::new(content_width, content_height);
+            scroll.clamp();
+            if let Some(store) = world.get_component_store_mut::<UiScroll>() {
+                store.get_mut_store().attach(entity.index, *scroll);
+            }
+        }
         let clip = if scroll.is_some() {
             Some(abs.intersect(parent_clip.unwrap_or(abs)).unwrap_or(abs))
         } else {

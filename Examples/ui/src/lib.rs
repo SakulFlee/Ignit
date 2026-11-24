@@ -6,8 +6,8 @@ use ignit::ecs::{ComponentAccess, System, World};
 use ignit::ecs_bridge::{ActiveCamera, CameraDescriptor, Position, Rotation};
 use ignit::logging::{self, error, info};
 use ignit::ui::{
-    UiAction, UiBuilder, UiColor, UiDocument, UiDocumentNode, UiEvent, UiLayout, UiStyle,
-    UiTextStyle, UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec,
+    UiAction, UiBuilder, UiColor, UiDocument, UiDocumentNode, UiEdges, UiEvent, UiLayout,
+    UiLengthPercentage, UiStyle, UiTextStyle, UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec,
 };
 use ignit::ui_render::UiRenderModule;
 use ignit::ui_text::TextEngine;
@@ -185,7 +185,7 @@ fn build_showcase(world: &mut World) {
                         .widget(UiWidgetSpec::Dropdown {
                             options: vec!["Low".into(), "Medium".into(), "High".into()],
                             selected: 1,
-                            open: true,
+                            open: false,
                         })
                         .focusable()
                         .style(UiStyle::default().class("panel")),
@@ -236,7 +236,7 @@ fn build_showcase(world: &mut World) {
                 .style(UiStyle::default().class("panel"))
                 .child(
                     UiDocumentNode::new("scroll_rows")
-                        .layout(UiLayout::column().gap(6.0).padding(8.0))
+                        .layout(UiLayout::column().gap(6.0).padding(8.0).shrink(0.0))
                         .child((1..18).fold(
                             UiDocumentNode::new("row_00").text("Row 00"),
                             |parent, index| {
@@ -250,7 +250,17 @@ fn build_showcase(world: &mut World) {
         )
         .child(
             UiDocumentNode::new("floating")
-                .layout(UiLayout::column().width(300.0).height(120.0).padding(10.0))
+                .layout(
+                    UiLayout::column()
+                        .width(300.0)
+                        .height(140.0)
+                        .padding_edges(UiEdges {
+                            left: UiLengthPercentage::Length(10.0),
+                            right: UiLengthPercentage::Length(10.0),
+                            top: UiLengthPercentage::Length(36.0),
+                            bottom: UiLengthPercentage::Length(10.0),
+                        }),
+                )
                 .widget(UiWidgetSpec::FloatingWindow {
                     title: "Floating window".into(),
                     open: true,

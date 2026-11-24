@@ -213,8 +213,12 @@ impl TextEngine {
                 if image.placement.width == 0 || image.placement.height == 0 {
                     continue;
                 }
-                let x = glyph.x + image.placement.left as f32 / scale;
-                let y = run.line_y - image.placement.top as f32 / scale;
+                let x = glyph.x
+                    + glyph.x_offset * glyph.font_size
+                    + image.placement.left as f32 / scale;
+                let y = run.line_y
+                    - glyph.y_offset * glyph.font_size
+                    - image.placement.top as f32 / scale;
                 let w = image.placement.width as f32 / scale;
                 let h = image.placement.height as f32 / scale;
                 shaped.glyphs.push(ShapedGlyph {

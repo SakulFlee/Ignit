@@ -141,12 +141,16 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
             .and_then(|store| store.get_component(entity.index))
             && let Some(style) = &style.text
         {
+            let text_clip = Some(
+                clip.and_then(|clip| clip.intersect(computed.content))
+                    .unwrap_or(computed.content),
+            );
             list.commands.push(UiDrawCommand::Text {
                 entity,
                 rect: computed.content,
                 text: text.value.clone(),
                 style: style.clone(),
-                clip,
+                clip: text_clip,
             });
         }
         if let Some(image) = images
