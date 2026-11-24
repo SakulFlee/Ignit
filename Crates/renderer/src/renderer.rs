@@ -5,9 +5,9 @@ use std::time::Instant;
 use cgmath::{InnerSpace, Matrix4, Point3, Vector2};
 use wgpu::{
     BindGroup, BindGroupEntry, Color, CommandEncoder, CommandEncoderDescriptor, CompareFunction,
-    Device, FilterMode, IndexFormat, LoadOp, Operations, Queue, RenderPassColorAttachment,
-    RenderPassDepthStencilAttachment, RenderPassDescriptor, SamplerDescriptor, StoreOp,
-    TextureFormat, TextureView, TextureViewDimension,
+    Device, Features, FilterMode, IndexFormat, LoadOp, Operations, Queue,
+    RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
+    SamplerDescriptor, StoreOp, TextureFormat, TextureView, TextureViewDimension,
 };
 
 use ignit_camera::{Camera, CameraDescriptor};
@@ -42,8 +42,23 @@ pub enum AntiAliasing {
     Smaa,
 }
 
-/// Scene color format for the HDR intermediate target.
+/// Fallback scene color format for the HDR intermediate target.
+///
+/// [`preferred_scene_color_format`] switches to `Rg11b10Ufloat` when the
+/// adapter can render it, which cuts the scene-color bandwidth in half.
 pub const SCENE_COLOR_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
+
+/// Scene color format to use for an adapter with `features`.
+///
+/// `Rg11b10Ufloat` halves the scene-color bandwidth, but is only a legal render
+/// target when the adapter advertises `RG11B10UFLOAT_RENDERABLE`.
+pub fn preferred_scene_color_format(features: Features) -> TextureFormat {
+    if features.contains(Features::RG11B10UFLOAT_RENDERABLE) {
+        TextureFormat::Rg11b10Ufloat
+    } else {
+        SCENE_COLOR_FORMAT
+    }
+}
 
 /// Number of bloom levels. Level 0 is half resolution and every following
 /// level halves again. `bloom.wgsl` normalizes the accumulated chain for four
@@ -494,6 +509,8 @@ struct TimestampReadback {
 
 pub struct Renderer {
     surface_texture_format: TextureFormat,
+    /// HDR scene-color target format, chosen from the adapter features.
+    scene_color_format: TextureFormat,
     /// Native surface size. The internal scene targets can be smaller when
     /// render scaling is active.
     surface_resolution: Vector2<u32>,
@@ -540,6 +557,13 @@ pub struct Renderer {
 impl Renderer {
     pub fn surface_texture_format(&self) -> &TextureFormat {
         &self.surface_texture_format
+    }
+
+    /// Format of the HDR scene-color target and the bloom/glare intermediates.
+    ///
+    /// Material pipelines must render to this format.
+    pub fn scene_color_format(&self) -> TextureFormat {
+        self.scene_color_format
     }
 
     pub fn prev_gpu_ns(&self) -> [f64; TS_COUNT as usize] {
@@ -769,6 +793,7 @@ impl Renderer {
         let has_timestamps = device
             .features()
             .contains(wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS);
+        let scene_color_format = preferred_scene_color_format(device.features());
 
         let timestamp_query_set = if has_timestamps {
             Some(device.create_query_set(&wgpu::QuerySetDescriptor {
@@ -804,7 +829,7 @@ impl Renderer {
         let fallbacks = RendererFallbacks::new(device, queue);
         let deferred_lighting = DeferredLighting::new(
             device,
-            SCENE_COLOR_FORMAT,
+            scene_color_format,
             &fallbacks.world_bind_group_layout,
         );
         let light_culling = LightCulling::new(
@@ -817,6 +842,7 @@ impl Renderer {
 
         Self {
             surface_texture_format,
+            scene_color_format,
             surface_resolution: resolution,
             resolution,
             render_graph: RenderGraph::default(),
@@ -1312,7 +1338,7 @@ impl Renderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: SCENE_COLOR_FORMAT,
+            format: self.scene_color_format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
@@ -1456,7 +1482,7 @@ impl Renderer {
                         );
                         let descriptor = gbuffer_texture_descriptor(
                             resolution,
-                            SCENE_COLOR_FORMAT,
+                            self.scene_color_format,
                             "Ignit::Bloom",
                         );
                         self.texture_pool.acquire(device, &descriptor)
@@ -1473,7 +1499,7 @@ impl Renderer {
                 (tonemap_resolution.y / 2).max(1),
             );
             let descriptor =
-                gbuffer_texture_descriptor(resolution, SCENE_COLOR_FORMAT, "Ignit::Glare");
+                gbuffer_texture_descriptor(resolution, self.scene_color_format, "Ignit::Glare");
             Some(self.texture_pool.acquire(device, &descriptor))
         } else {
             None
@@ -2378,6 +2404,18 @@ impl Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scene_color_uses_r11b10_only_when_the_adapter_can_render_it() {
+        assert_eq!(
+            preferred_scene_color_format(Features::empty()),
+            SCENE_COLOR_FORMAT
+        );
+        assert_eq!(
+            preferred_scene_color_format(Features::RG11B10UFLOAT_RENDERABLE),
+            TextureFormat::Rg11b10Ufloat
+        );
+    }
 
     fn graph_order(
         anti_aliasing: AntiAliasing,
