@@ -307,7 +307,22 @@ impl TextEngine {
             .lines
             .iter()
             .find(|line| cursor >= line.start && cursor <= line.end)?;
-        Some((glyph.rect[0], line.y))
+        let x = if cursor >= glyph.end {
+            glyph.rect[0] + glyph.rect[2]
+        } else {
+            glyph.rect[0]
+        };
+        Some((x, line.y))
+    }
+
+    pub fn cursor_rect(&mut self, shaped: &ShapedText, cursor: usize) -> Option<[f32; 4]> {
+        let (x, y) = self.cursor_position(shaped, cursor)?;
+        let height = shaped
+            .lines
+            .iter()
+            .find(|line| cursor >= line.start && cursor <= line.end)
+            .map_or(16.0, |line| line.height);
+        Some([x, y, 1.5, height])
     }
 
     pub fn stats(&self) -> TextStats {

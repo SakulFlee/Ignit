@@ -271,8 +271,8 @@ pub fn process_pointer(
                 .get_component_store_mut::<UiScroll>()
                 .and_then(|store| store.get_component(scroll_entity.index).copied())
         {
-            scroll.offset.x -= input.wheel.x;
-            scroll.offset.y -= input.wheel.y;
+            scroll.offset.x += input.wheel.x;
+            scroll.offset.y += input.wheel.y;
             scroll.clamp();
             if let Some(store) = world.get_component_store_mut::<UiScroll>().as_mut() {
                 store.get_mut_store().attach(scroll_entity.index, scroll);

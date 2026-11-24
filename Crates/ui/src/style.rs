@@ -406,7 +406,13 @@ impl UiTheme {
         radii.insert("lg".into(), 12.0);
 
         let mut typography = HashMap::new();
-        typography.insert("body".into(), UiTextStyle::default());
+        typography.insert(
+            "body".into(),
+            UiTextStyle {
+                size: 16.0,
+                ..Default::default()
+            },
+        );
         typography.insert(
             "title".into(),
             UiTextStyle {
@@ -418,7 +424,7 @@ impl UiTheme {
         typography.insert(
             "caption".into(),
             UiTextStyle {
-                size: 12.0,
+                size: 13.0,
                 color: UiColor::token("text_muted"),
                 ..Default::default()
             },

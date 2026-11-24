@@ -262,7 +262,7 @@ fn wheel_scrolls_a_scroll_container() {
     let rect = rect(&world, scroll_entity);
     world.insert_resource(UiInputState {
         pointer: UiPoint::new(rect.rect.x + 10.0, rect.rect.y + 10.0),
-        wheel: UiPoint::new(0.0, -25.0),
+        wheel: UiPoint::new(0.0, 25.0),
         ..Default::default()
     });
     update(&mut world, &mut text);

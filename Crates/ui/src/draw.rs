@@ -40,6 +40,7 @@ pub enum UiDrawCommand {
         text: String,
         style: UiResolvedTextStyle,
         clip: Option<UiRect>,
+        caret: Option<usize>,
     },
     Image {
         entity: Entity,
@@ -66,6 +67,35 @@ pub struct UiDrawList {
 impl UiDrawList {
     pub fn command_count(&self) -> usize {
         self.commands.len()
+    }
+
+    /// Sorts commands by layout z order after widget paint commands have been
+    /// appended. This keeps floating windows and their child text above or
+    /// below other roots consistently.
+    pub fn sort_by_z(&mut self, world: &World) {
+        let Some(computed) = world.get_component_store::<UiComputed>() else {
+            return;
+        };
+        self.commands.sort_by_key(|command| {
+            let entity = command.entity();
+            let z = computed
+                .get_component(entity.index)
+                .map_or(0, |computed| computed.z_index);
+            (z, entity.index)
+        });
+    }
+}
+
+impl UiDrawCommand {
+    pub fn entity(&self) -> Entity {
+        match self {
+            Self::Shadow { entity, .. }
+            | Self::Rect { entity, .. }
+            | Self::Border { entity, .. }
+            | Self::Text { entity, .. }
+            | Self::Image { entity, .. }
+            | Self::Line { entity, .. } => *entity,
+        }
     }
 }
 
@@ -151,12 +181,14 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
                 continue;
             }
             let mut text_rect = computed.content;
+            let mut caret = None;
             if let Some(widget) = widgets
                 .as_ref()
                 .and_then(|store| store.get_component(entity.index))
             {
                 match &widget.spec {
                     UiWidgetSpec::TextBox { .. } => {
+                        caret = Some(widget.cursor);
                         text_rect.x -= widget.scroll_x;
                         let line_height = style.line_height.unwrap_or(style.size * 1.25);
                         text_rect.y += ((text_rect.height - line_height) * 0.5).max(0.0);
@@ -174,6 +206,7 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
                 text: text.value.clone(),
                 style: style.clone(),
                 clip: text_clip,
+                caret,
             });
         }
         if let Some(image) = images

@@ -230,8 +230,8 @@ impl UiRenderer {
         });
         let atlas_sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("ignit ui atlas sampler"),
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
 
@@ -702,6 +702,7 @@ impl UiRenderer {
                 text: value,
                 style,
                 clip,
+                caret,
             } => {
                 let (scale, origin) = self.transform(world, *entity);
                 let text_style = text_style(style);
@@ -729,6 +730,31 @@ impl UiRenderer {
                         [0.0; 2],
                         clip,
                         UiTextureRef::Atlas(quad.page),
+                    );
+                }
+                if let Some(cursor) = caret
+                    && let Some(caret_rect) = text.cursor_rect(&shaped, *cursor)
+                {
+                    let caret_rect = transform_rect(
+                        UiRect::new(
+                            rect.x + caret_rect[0],
+                            rect.y + caret_rect[1],
+                            caret_rect[2],
+                            caret_rect[3],
+                        ),
+                        scale,
+                        origin,
+                    );
+                    push_quad(
+                        vertices,
+                        batches,
+                        caret_rect,
+                        [0.92, 0.94, 1.0, 0.9],
+                        [0.0, 0.0, 1.0, 1.0],
+                        [0.0, 0.0, caret_rect.width, caret_rect.height],
+                        [0.0; 2],
+                        clip,
+                        UiTextureRef::White,
                     );
                 }
             }

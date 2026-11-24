@@ -539,9 +539,6 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
     };
     let computed = world.get_component_store::<UiComputed>();
     let styles = world.get_component_store::<UiResolvedStyle>();
-    let focused = world
-        .get_resource::<UiFocusState>()
-        .and_then(|state| state.focused);
 
     for entity in world.entities() {
         let Some(widget) = widgets.get_component(entity.index) else {
@@ -692,29 +689,6 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     clip,
                 });
             }
-            UiWidgetSpec::TextBox { value, .. } if focused == Some(entity) => {
-                let size = style.text.as_ref().map_or(14.0, |text| text.size);
-                let line_height = style
-                    .text
-                    .as_ref()
-                    .and_then(|text| text.line_height)
-                    .unwrap_or(size * 1.25);
-                let cursor_chars = value
-                    .get(..widget.cursor.min(value.len()))
-                    .unwrap_or(value)
-                    .chars()
-                    .count();
-                let caret_x = (rect.content.x + cursor_chars as f32 * size * 0.55
-                    - widget.scroll_x)
-                    .clamp(rect.content.x, rect.content.x + rect.content.width - 2.0);
-                let caret_y = rect.content.y + (rect.content.height - line_height).max(0.0) * 0.5;
-                draw.commands.push(UiDrawCommand::Line {
-                    entity,
-                    rect: UiRect::new(caret_x, caret_y, 1.5, line_height),
-                    color: [0.92, 0.94, 1.0, 0.9],
-                    clip,
-                });
-            }
             UiWidgetSpec::Dropdown {
                 options,
                 selected,
@@ -745,6 +719,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                         ),
                         text: option.clone(),
                         style: text_style.clone(),
+                        caret: None,
                         clip,
                     });
                 }
@@ -775,6 +750,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                             ),
                             text: option.clone(),
                             style: text_style.clone(),
+                            caret: None,
                             clip,
                         });
                     }
@@ -806,6 +782,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                         ),
                         text: item.clone(),
                         style: text_style.clone(),
+                        caret: None,
                         clip,
                     });
                 }
@@ -850,6 +827,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                         ),
                         text: tab.clone(),
                         style: text_style.clone(),
+                        caret: None,
                         clip,
                     });
                 }
@@ -866,6 +844,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     ),
                     text: title.clone(),
                     style: title_style,
+                    caret: None,
                     clip,
                 });
                 draw.commands.push(UiDrawCommand::Line {
@@ -930,7 +909,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
 
 fn default_text() -> UiResolvedTextStyle {
     UiResolvedTextStyle {
-        size: 14.0,
+        size: 16.0,
         line_height: None,
         color: [0.90, 0.93, 1.0, 1.0],
         family: None,

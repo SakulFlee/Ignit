@@ -208,6 +208,7 @@ pub fn update(world: &mut World, measure: &mut dyn UiTextMeasure) -> UiStats {
         .unwrap_or_default();
     draw::build_draw_list(world, &mut draw);
     widgets::append_widget_commands(world, &mut draw);
+    draw.sort_by_z(world);
     let draw_ms = draw_start.elapsed().as_secs_f32() * 1000.0;
     let commands = draw.command_count();
     world.insert_resource(draw);
