@@ -656,10 +656,19 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     radius: [3.0; 4],
                     clip,
                 });
+                let knob = UiRect::new(track.x + track.width * t - 7.0, track.y - 5.0, 14.0, 16.0);
                 draw.commands.push(UiDrawCommand::Rect {
                     entity,
-                    rect: UiRect::new(track.x + track.width * t - 7.0, track.y - 5.0, 14.0, 16.0),
+                    rect: knob,
                     color: token_color(theme, "surface", [0.94, 0.96, 1.0, 1.0]),
+                    radius: [7.0; 4],
+                    clip,
+                });
+                draw.commands.push(UiDrawCommand::Border {
+                    entity,
+                    rect: knob,
+                    width: 1.0,
+                    color: token_color(theme, "border", [0.40, 0.45, 0.55, 1.0]),
                     radius: [7.0; 4],
                     clip,
                 });
@@ -674,7 +683,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 draw.commands.push(UiDrawCommand::Rect {
                     entity,
                     rect: track,
-                    color: [0.18, 0.21, 0.28, 1.0],
+                    color: token_color(theme, "border", [0.18, 0.21, 0.28, 1.0]),
                     radius: [4.0; 4],
                     clip,
                 });
@@ -709,7 +718,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     radius: [2.0; 4],
                     clip,
                 });
-                let text_style = style.text.clone().unwrap_or_else(default_text);
+                let text_style = style.text.clone().unwrap_or_else(|| default_text(theme));
                 if let Some(option) = options.get(*selected) {
                     draw.commands.push(UiDrawCommand::Text {
                         entity,
@@ -759,7 +768,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 }
             }
             UiWidgetSpec::ListBox { items, selected } => {
-                let text_style = style.text.clone().unwrap_or_else(default_text);
+                let text_style = style.text.clone().unwrap_or_else(|| default_text(theme));
                 for (index, item) in items.iter().take(12).enumerate() {
                     let y = rect.content.y + index as f32 * 22.0;
                     if y > rect.content.y + rect.content.height {
@@ -817,7 +826,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     color: token_color(theme, "accent", [0.30, 0.68, 0.96, 1.0]),
                     clip,
                 });
-                let text_style = style.text.clone().unwrap_or_else(default_text);
+                let text_style = style.text.clone().unwrap_or_else(|| default_text(theme));
                 for (index, tab) in tabs.iter().enumerate() {
                     draw.commands.push(UiDrawCommand::Text {
                         entity,
@@ -835,7 +844,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 }
             }
             UiWidgetSpec::FloatingWindow { title, .. } => {
-                let title_style = style.text.clone().unwrap_or_else(default_text);
+                let title_style = style.text.clone().unwrap_or_else(|| default_text(theme));
                 draw.commands.push(UiDrawCommand::Text {
                     entity,
                     rect: UiRect::new(
@@ -909,7 +918,12 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
     }
 }
 
-fn default_text() -> UiResolvedTextStyle {
+fn default_text(theme: Option<&UiThemes>) -> UiResolvedTextStyle {
+    if let Some(themes) = theme
+        && let Some(body) = themes.active.typography.get("body")
+    {
+        return themes.active.resolve_text(body);
+    }
     UiResolvedTextStyle {
         size: 16.0,
         line_height: None,

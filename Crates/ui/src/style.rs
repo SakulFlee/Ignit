@@ -509,6 +509,13 @@ impl UiTheme {
         theme
             .colors
             .insert("danger".into(), [0.78, 0.18, 0.22, 1.0]);
+        for (name, style) in &mut theme.typography {
+            style.color = if name == "caption" {
+                UiColor::rgba([0.30, 0.35, 0.42, 1.0])
+            } else {
+                UiColor::rgba([0.08, 0.10, 0.14, 1.0])
+            };
+        }
         if let Some(panel) = theme.classes.get_mut("panel") {
             panel.style.shadow = Some(UiShadow {
                 color: UiColor::rgba([0.15, 0.18, 0.25, 0.22]),

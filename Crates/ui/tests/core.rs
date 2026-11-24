@@ -485,3 +485,11 @@ fn text_component_and_dirty_reset() {
         .unwrap();
     assert!(!dirty.contains(ignit_ui::UiDirty::LAYOUT));
 }
+
+#[test]
+fn light_theme_resolves_dark_text() {
+    let theme = UiTheme::light();
+    let resolved = theme.resolve_style(&UiStyle::default(), &[], ignit_ui::UiState::Normal);
+    let color = resolved.text.expect("body text").color;
+    assert!(color[0] < 0.2 && color[1] < 0.2 && color[2] < 0.2);
+}

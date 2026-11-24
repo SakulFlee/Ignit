@@ -1,7 +1,7 @@
 use ignit_ecs::{Entity, World};
 use ignit_ui::{
     UiBuilder, UiComputed, UiDocumentNode, UiDrawCommand, UiDrawList, UiFocusState, UiInputState,
-    UiLayout, UiPoint, UiText, UiView, UiWidget, UiWidgetSpec, init, update,
+    UiLayout, UiPoint, UiText, UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec, init, update,
 };
 
 fn build(world: &mut World, id: &str, widget: UiWidgetSpec) -> Entity {
@@ -312,4 +312,59 @@ fn root_offset_moves_layout_and_hit_testing() {
     let hit = ignit_ui::hit_test(&world, UiPoint::new(button.x + 5.0, button.y + 5.0)).unwrap();
     assert_eq!(hit.id.as_str(), "offset_button");
     assert!(ignit_ui::hit_test(&world, UiPoint::new(5.0, 5.0)).is_none());
+}
+
+#[test]
+fn light_theme_draw_text_is_dark() {
+    let mut world = World::new();
+    init(&mut world);
+    let mut root = UiDocumentNode::new("light_root")
+        .layout(UiLayout::column().size(300.0, 100.0))
+        .child(UiDocumentNode::new("light_label").text("Light text"));
+    root.view = Some(UiView::new(300.0, 100.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    if let Some(mut themes) = world.get_resource_mut::<UiThemes>() {
+        themes.active = UiTheme::light();
+    }
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    let draw = world.get_resource::<UiDrawList>().unwrap();
+    let command = draw
+        .commands
+        .iter()
+        .find(|command| matches!(command, UiDrawCommand::Text { text, .. } if text == "Light text"))
+        .unwrap();
+    let UiDrawCommand::Text { style, .. } = command else {
+        unreachable!()
+    };
+    assert!(style.color[0] < 0.2, "text color was {:?}", style.color);
+}
+
+#[test]
+fn switching_theme_updates_text_color() {
+    let mut world = World::new();
+    init(&mut world);
+    let mut root = UiDocumentNode::new("switch_root")
+        .layout(UiLayout::column().size(300.0, 100.0))
+        .child(UiDocumentNode::new("switch_label").text("Switch text"));
+    root.view = Some(UiView::new(300.0, 100.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    if let Some(mut themes) = world.get_resource_mut::<UiThemes>() {
+        themes.active = UiTheme::light();
+    }
+    update(&mut world, &mut text);
+    let draw = world.get_resource::<UiDrawList>().unwrap();
+    let command = draw
+        .commands
+        .iter()
+        .find(
+            |command| matches!(command, UiDrawCommand::Text { text, .. } if text == "Switch text"),
+        )
+        .unwrap();
+    let UiDrawCommand::Text { style, .. } = command else {
+        unreachable!()
+    };
+    assert!(style.color[0] < 0.2, "text color was {:?}", style.color);
 }
