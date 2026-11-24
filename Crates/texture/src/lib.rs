@@ -7,6 +7,9 @@
 mod buffer;
 pub use buffer::*;
 
+mod dds;
+pub use dds::*;
+
 mod texture;
 pub use texture::*;
 

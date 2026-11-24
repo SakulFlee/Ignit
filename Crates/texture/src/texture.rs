@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::ffi::OsString;
 use std::io::Cursor;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -16,6 +17,7 @@ use wgpu::{
     TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension,
 };
 
+use crate::dds::parse_dds;
 use crate::{FilterMode, TextureDescriptor, TextureError, TextureSize};
 
 /// Maximum total time to spend polling for GPU work completion.
@@ -237,7 +239,14 @@ impl Texture {
     ) -> Result<Self, TextureError> {
         match descriptor {
             TextureDescriptor::File { path, usages } => {
-                Self::from_path_srgb(path, *usages, device, queue)
+                if Path::new(path)
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("dds"))
+                {
+                    Self::from_dds_path(path, *usages, device, queue)
+                } else {
+                    Self::from_path_srgb(path, *usages, device, queue)
+                }
             }
             TextureDescriptor::Data {
                 pixels,
@@ -448,6 +457,95 @@ impl Texture {
             device,
             queue,
         )
+    }
+
+    /// Loads a block-compressed `.dds` file into a 2D texture.
+    ///
+    /// Only BC1, BC3, BC5, and BC7 are accepted. The file's own mip chain is
+    /// uploaded as-is; DDS files without mips produce a single-level texture.
+    /// Legacy DXT1/DXT5 files are treated as sRGB; DX10 files use their explicit
+    /// sRGB or linear variant, and BC5 stays linear because it normally stores
+    /// normals.
+    pub fn from_dds_path(
+        file_path: &OsString,
+        usages: TextureUsages,
+        device: &Device,
+        queue: &Queue,
+    ) -> Result<Self, TextureError> {
+        let path = file_path.to_string_lossy();
+
+        let file_manager = FileManager::global().map_err(TextureError::FsError)?;
+        let bytes = file_manager
+            .read_asset_bytes(&path)
+            .map_err(TextureError::FsError)?;
+
+        let image = parse_dds(&bytes)?;
+
+        let required = image.format.required_features();
+        if !required.is_empty() && !device.features().contains(required) {
+            return Err(TextureError::UnsupportedFormat(image.format));
+        }
+
+        let texture = device.create_texture(&WTextureDescriptor {
+            label: Some("DDS Texture"),
+            size: Extent3d {
+                width: image.width,
+                height: image.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: image.mip_levels,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: image.format,
+            usage: usages | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&TextureViewDescriptor::default());
+        let filter_mode = FilterMode::linear();
+        let sampler = device.create_sampler(&SamplerDescriptor {
+            label: Some("DDS Sampler"),
+            address_mode_u: AddressMode::Repeat,
+            address_mode_v: AddressMode::Repeat,
+            address_mode_w: AddressMode::Repeat,
+            mag_filter: filter_mode.mag,
+            min_filter: filter_mode.min,
+            mipmap_filter: filter_mode.mipmap,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 100.0,
+            ..Default::default()
+        });
+
+        let texture = Self::from_existing(texture, view, sampler, TextureViewDimension::D2);
+
+        let mut offset = 0usize;
+        for level in 0..image.mip_levels {
+            let layout = image
+                .level(level)
+                .ok_or(TextureError::UnsupportedFormat(image.format))?;
+            let end = offset + layout.bytes;
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture: texture.texture(),
+                    aspect: TextureAspect::All,
+                    origin: Origin3d::ZERO,
+                    mip_level: level,
+                },
+                &image.data[offset..end],
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(layout.bytes_per_row),
+                    rows_per_image: Some(layout.rows),
+                },
+                Extent3d {
+                    width: layout.width,
+                    height: layout.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            offset = end;
+        }
+
+        Ok(texture)
     }
 
     /// In case you want a uniform, one color, image.
