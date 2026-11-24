@@ -190,7 +190,14 @@ fn build_showcase(world: &mut World) {
                 )
                 .child(
                     UiDocumentNode::new("textbox")
-                        .layout(UiLayout::default().width(220.0).height(38.0))
+                        .layout(UiLayout::default().width(220.0).height(38.0).padding_edges(
+                            UiEdges {
+                                left: UiLengthPercentage::Length(10.0),
+                                right: UiLengthPercentage::Length(10.0),
+                                top: UiLengthPercentage::Length(0.0),
+                                bottom: UiLengthPercentage::Length(0.0),
+                            },
+                        ))
                         .widget(UiWidgetSpec::TextBox {
                             value: "Edit me".into(),
                             placeholder: "Type here".into(),
@@ -248,7 +255,16 @@ fn build_showcase(world: &mut World) {
         )
         .child(
             UiDocumentNode::new("collapsible_header")
-                .layout(UiLayout::default().size(260.0, 36.0))
+                .layout(
+                    UiLayout::default()
+                        .size(260.0, 36.0)
+                        .padding_edges(UiEdges {
+                            left: UiLengthPercentage::Length(10.0),
+                            right: UiLengthPercentage::Length(10.0),
+                            top: UiLengthPercentage::Length(0.0),
+                            bottom: UiLengthPercentage::Length(0.0),
+                        }),
+                )
                 .text("Collapsible section")
                 .widget(UiWidgetSpec::Collapsible {
                     open: true,
@@ -326,9 +342,9 @@ fn build_showcase(world: &mut World) {
                         })
                         .absolute()
                         .inset(UiEdges {
-                            left: UiDimension::Length(880.0),
+                            left: UiDimension::Length(940.0),
                             right: UiDimension::Auto,
-                            top: UiDimension::Length(540.0),
+                            top: UiDimension::Length(24.0),
                             bottom: UiDimension::Auto,
                         }),
                 )
