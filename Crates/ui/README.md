@@ -73,6 +73,34 @@ desktop hot reload. Reload preserves scroll, text values, and focus by `UiId`.
 
 Game systems then see the same-frame capture state and event queue.
 
+## Notifications
+
+`ignit_ui::UiNotifications` is a screen-space toast queue painted after the
+normal z sort, so cards sit above every root without joining layout or input
+routing. `ignit_ui_render` advances the queue from `DeltaTime` every frame.
+
+```rust
+use ignit_ui::{UiNotification, UiNotifications};
+
+if let Some(mut notifications) = world.get_resource_mut::<UiNotifications>() {
+    notifications.post(UiNotification::warning("GPU pressure", "Quality reduced"));
+}
+```
+
+Keyed notifications coalesce while visible and expose a repeat count:
+
+```rust
+notifications.post(
+    UiNotification::warning("GPU pressure", "Quality reduced")
+        .key("gpu.pressure")
+        .sticky(),
+);
+```
+
+Cards use the `surface`, `border`, `text`, and severity tokens (`info`,
+`success`, `warning`, `danger`). Placement defaults to the top-right corner and
+can be changed with `UiNotificationPlacement`.
+
 ## Notes
 
 - Taffy 0.15's `TaffyTree` contains a tagged pointer and is not `Send`/`Sync`.

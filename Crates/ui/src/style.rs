@@ -391,6 +391,9 @@ impl UiTheme {
         colors.insert("text_muted".into(), [0.60, 0.64, 0.74, 1.0]);
         colors.insert("accent".into(), [0.26, 0.62, 0.92, 1.0]);
         colors.insert("accent_hover".into(), [0.34, 0.70, 0.98, 1.0]);
+        colors.insert("info".into(), [0.26, 0.62, 0.92, 1.0]);
+        colors.insert("success".into(), [0.30, 0.70, 0.50, 1.0]);
+        colors.insert("warning".into(), [0.92, 0.70, 0.22, 1.0]);
         colors.insert("danger".into(), [0.92, 0.32, 0.36, 1.0]);
 
         let mut spacing = HashMap::new();
@@ -506,6 +509,13 @@ impl UiTheme {
         theme
             .colors
             .insert("accent_hover".into(), [0.16, 0.52, 0.88, 1.0]);
+        theme.colors.insert("info".into(), [0.10, 0.45, 0.80, 1.0]);
+        theme
+            .colors
+            .insert("success".into(), [0.12, 0.55, 0.34, 1.0]);
+        theme
+            .colors
+            .insert("warning".into(), [0.80, 0.55, 0.05, 1.0]);
         theme
             .colors
             .insert("danger".into(), [0.78, 0.18, 0.22, 1.0]);

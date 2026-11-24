@@ -5,10 +5,12 @@ use std::sync::{Arc, Mutex};
 use ignit_app::{Module, UiSystem};
 use ignit_ecs::{System, World};
 use ignit_ecs_bridge::{
-    CursorIcon, DeviceResource, InputCapture, QueueResource, SurfaceFormatResource, WindowEvent,
-    WindowEventQueue, WindowScaleFactor,
+    CursorIcon, DeltaTime, DeviceResource, InputCapture, QueueResource, SurfaceFormatResource,
+    WindowEvent, WindowEventQueue, WindowScaleFactor,
 };
-use ignit_ui::{UiInputCapture, UiInputState, UiKey, UiModifiers, UiPoint, UiView};
+use ignit_ui::{
+    UiInputCapture, UiInputState, UiKey, UiModifiers, UiNotifications, UiPoint, UiView,
+};
 use ignit_ui_text::TextEngine;
 use wgpu::{Device, Queue, TextureFormat};
 use winit::event::{ElementState, MouseScrollDelta, TouchPhase};
@@ -92,6 +94,13 @@ impl UiSystem for UiUpdateSystem {
 
     fn run(&mut self, world: &mut World) {
         apply_window_events(world, &mut self.touch);
+        let delta = world
+            .get_resource::<DeltaTime>()
+            .map(|time| time.0)
+            .unwrap_or(0.0);
+        if let Some(mut notifications) = world.get_resource_mut::<UiNotifications>() {
+            notifications.advance(delta);
+        }
         let mut text = self.text.lock().expect("ui text mutex poisoned");
         ignit_ui::update(world, &mut *text);
         publish_capture(world, self.touch);
