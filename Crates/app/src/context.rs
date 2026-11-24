@@ -1,7 +1,7 @@
 use std::{error::Error, sync::Arc};
 
 use ignit_core::wgpu_util::block_on;
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use wgpu::{
     Adapter, BackendOptions, Backends, CompositeAlphaMode, CreateSurfaceError,
     CurrentSurfaceTexture, Device, DeviceDescriptor, ExperimentalFeatures, Features, Instance,
@@ -87,8 +87,9 @@ impl AppContext {
 
         // Surface wgpu errors through the `log` crate so they appear in logcat
         // (`rust_std_out` tag) instead of a panic whose output gets filtered.
+        // The journal logs the first occurrence in full and rate-limits repeats.
         device.on_uncaptured_error(Arc::new(|err| {
-            error!("wgpu uncaptured error: {err:?}");
+            crate::gpu_errors::record_uncaptured(&err);
         }));
 
         let ctx = Self {
