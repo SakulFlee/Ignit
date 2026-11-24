@@ -541,9 +541,10 @@ mod action_tests {
             .color("bg")
             .unwrap();
         if let Some(mut events) = world.get_resource_mut::<Events<UiEvent>>() {
-            events.send(UiEvent::Click {
+            events.send(UiEvent::Action {
                 entity: ignit::ecs::Entity::new(0, 0),
                 id: "theme_button".into(),
+                action: UiAction::new("theme"),
             });
         }
         system.apply_events(&mut world);
