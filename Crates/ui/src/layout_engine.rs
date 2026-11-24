@@ -9,7 +9,7 @@ use taffy::prelude::*;
 
 use crate::forest::UiForest;
 use crate::geometry::{UiRect, UiSize};
-use crate::layout::UiLayout;
+use crate::layout::{UiDimension, UiLayout};
 use crate::node::{UiComputed, UiDirty, UiNode, UiScroll, UiView};
 use crate::style::{UiResolvedStyle, UiStyle, UiText, UiTextStyle, UiThemes};
 
@@ -267,6 +267,41 @@ impl UiLayoutEngine {
         let mut taffy_style = layout.to_taffy();
         if !visible {
             taffy_style.display = taffy::Display::None;
+        }
+        let is_modal = world
+            .get_component_store::<crate::widgets::UiWidget>()
+            .and_then(|store| {
+                store.get_component(entity.index).map(|widget| {
+                    matches!(&widget.spec, crate::widgets::UiWidgetSpec::Modal { .. })
+                })
+            })
+            .unwrap_or(false);
+        if is_modal {
+            let mut root = entity;
+            let nodes = world.get_component_store::<UiNode>();
+            while let Some(parent) = nodes
+                .as_ref()
+                .and_then(|store| store.get_component(root.index))
+                .and_then(|node| node.parent)
+            {
+                root = parent;
+            }
+            if let Some(view_size) = world
+                .get_component_store::<UiView>()
+                .and_then(|store| store.get_component(root.index).map(|view| view.size))
+            {
+                let width = resolved_dimension(layout.width, view_size.width);
+                let height = resolved_dimension(layout.height, view_size.height);
+                let x = ((view_size.width - width) * 0.5).max(0.0);
+                let y = ((view_size.height - height) * 0.5).max(0.0);
+                taffy_style.position = Position::Absolute;
+                taffy_style.inset = taffy::Rect {
+                    left: length(x),
+                    right: auto(),
+                    top: length(y),
+                    bottom: auto(),
+                };
+            }
         }
 
         let text = world
@@ -528,5 +563,13 @@ fn clear_layout_dirty(world: &mut World) {
                 dirty.remove(UiDirty::LAYOUT | UiDirty::HIERARCHY);
             }
         }
+    }
+}
+
+fn resolved_dimension(value: UiDimension, parent: f32) -> f32 {
+    match value {
+        UiDimension::Length(value) => value,
+        UiDimension::Percent(value) => parent * value / 100.0,
+        UiDimension::Auto => 0.0,
     }
 }
