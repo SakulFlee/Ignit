@@ -68,6 +68,7 @@ ignit_2d = { path = "../2d", version = "1.6.3" }
 ignit_text = { path = "../text", version = "1.6.3" }
 ignit_ui = { path = "../ui", version = "1.6.3" }
 ignit_ui_text = { path = "../ui_text", version = "1.6.3" }
+ignit_ui_render = { path = "../ui_render", version = "1.6.3" }
 ignit_iced = { path = "../iced", version = "1.6.3" }
 
 gilrs = { workspace = true, optional = true }
