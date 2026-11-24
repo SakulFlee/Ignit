@@ -3,7 +3,7 @@
     roots: [
         (
             id: "ron_root",
-            view: Some((size: (width: 420.0, height: 170.0), offset: (x: 24.0, y: 520.0), scale: 1.0, order: 20, visible: true, modal: false)),
+            view: Some((size: (width: 420.0, height: 170.0), offset: (x: 840.0, y: 530.0), scale: 1.0, order: 20, visible: true, modal: false)),
             layout: (display: Flex, direction: Column, width: Length(420.0), height: Length(170.0), padding: (left: Length(16.0), right: Length(16.0), top: Length(16.0), bottom: Length(16.0)), gap: (width: Length(8.0), height: Length(8.0))),
             style: (background: Some(Token("surface")), radius: (top_left: 10.0, top_right: 10.0, bottom_right: 10.0, bottom_left: 10.0), classes: ["panel"]),
             children: [
