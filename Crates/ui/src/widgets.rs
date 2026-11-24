@@ -18,7 +18,7 @@ use crate::id::UiId;
 use crate::input::UiInputState;
 use crate::layout::{UiDimension, UiLayout, UiPosition};
 use crate::node::{UiComputed, UiDirty};
-use crate::style::{UiResolvedStyle, UiResolvedTextStyle, UiStyle, UiText, UiTextWrap};
+use crate::style::{UiResolvedStyle, UiResolvedTextStyle, UiStyle, UiText, UiTextWrap, UiThemes};
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum UiWidgetSpec {
@@ -539,6 +539,8 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
     };
     let computed = world.get_component_store::<UiComputed>();
     let styles = world.get_component_store::<UiResolvedStyle>();
+    let themes = world.get_resource::<UiThemes>();
+    let theme = themes.as_deref();
 
     for entity in world.entities() {
         let Some(widget) = widgets.get_component(entity.index) else {
@@ -569,9 +571,9 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     track_h,
                 );
                 let fill = if *on {
-                    [0.20, 0.62, 0.44, 1.0]
+                    token_color(theme, "accent", [0.20, 0.62, 0.44, 1.0])
                 } else {
-                    [0.22, 0.25, 0.32, 1.0]
+                    token_color(theme, "border", [0.22, 0.25, 0.32, 1.0])
                 };
                 draw.commands.push(UiDrawCommand::Rect {
                     entity,
@@ -584,7 +586,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 draw.commands.push(UiDrawCommand::Rect {
                     entity,
                     rect: UiRect::new(knob_x, track.y + 2.0, 18.0, 18.0),
-                    color: [0.94, 0.96, 1.0, 1.0],
+                    color: token_color(theme, "surface", [0.94, 0.96, 1.0, 1.0]),
                     radius: [9.0; 4],
                     clip,
                 });
@@ -600,7 +602,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 draw.commands.push(UiDrawCommand::Rect {
                     entity,
                     rect: box_rect,
-                    color: [0.12, 0.14, 0.19, 1.0],
+                    color: token_color(theme, "surface_alt", [0.12, 0.14, 0.19, 1.0]),
                     radius: [4.0; 4],
                     clip,
                 });
@@ -608,7 +610,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     entity,
                     rect: box_rect,
                     width: 1.0,
-                    color: [0.40, 0.45, 0.55, 1.0],
+                    color: token_color(theme, "border", [0.40, 0.45, 0.55, 1.0]),
                     radius: [4.0; 4],
                     clip,
                 });
@@ -621,7 +623,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                             box_rect.width - 8.0,
                             box_rect.height - 8.0,
                         ),
-                        color: [0.30, 0.75, 0.52, 1.0],
+                        color: token_color(theme, "accent", [0.30, 0.75, 0.52, 1.0]),
                         radius: [2.0; 4],
                         clip,
                     });
@@ -638,7 +640,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 draw.commands.push(UiDrawCommand::Rect {
                     entity,
                     rect: track,
-                    color: [0.20, 0.23, 0.30, 1.0],
+                    color: token_color(theme, "border", [0.20, 0.23, 0.30, 1.0]),
                     radius: [3.0; 4],
                     clip,
                 });
@@ -650,14 +652,14 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                         width: track.width * t,
                         height: track.height,
                     },
-                    color: [0.26, 0.62, 0.92, 1.0],
+                    color: token_color(theme, "accent", [0.26, 0.62, 0.92, 1.0]),
                     radius: [3.0; 4],
                     clip,
                 });
                 draw.commands.push(UiDrawCommand::Rect {
                     entity,
                     rect: UiRect::new(track.x + track.width * t - 7.0, track.y - 5.0, 14.0, 16.0),
-                    color: [0.94, 0.96, 1.0, 1.0],
+                    color: token_color(theme, "surface", [0.94, 0.96, 1.0, 1.0]),
                     radius: [7.0; 4],
                     clip,
                 });
@@ -684,7 +686,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                         width: track.width * value.clamp(0.0, 1.0),
                         height: track.height,
                     },
-                    color: [0.30, 0.70, 0.50, 1.0],
+                    color: token_color(theme, "accent", [0.30, 0.70, 0.50, 1.0]),
                     radius: [4.0; 4],
                     clip,
                 });
@@ -703,7 +705,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 draw.commands.push(UiDrawCommand::Rect {
                     entity,
                     rect: arrow,
-                    color: [0.78, 0.82, 0.92, 1.0],
+                    color: token_color(theme, "text_muted", [0.78, 0.82, 0.92, 1.0]),
                     radius: [2.0; 4],
                     clip,
                 });
@@ -800,7 +802,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                         rect.rect.width,
                         2.0,
                     ),
-                    color: [0.28, 0.31, 0.40, 1.0],
+                    color: token_color(theme, "border", [0.28, 0.31, 0.40, 1.0]),
                     clip,
                 });
                 let active_rect = UiRect::new(
@@ -812,7 +814,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 draw.commands.push(UiDrawCommand::Line {
                     entity,
                     rect: active_rect,
-                    color: [0.30, 0.68, 0.96, 1.0],
+                    color: token_color(theme, "accent", [0.30, 0.68, 0.96, 1.0]),
                     clip,
                 });
                 let text_style = style.text.clone().unwrap_or_else(default_text);
@@ -850,7 +852,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 draw.commands.push(UiDrawCommand::Line {
                     entity,
                     rect: UiRect::new(rect.rect.x, rect.rect.y + 30.0, rect.rect.width, 1.0),
-                    color: [0.24, 0.27, 0.36, 1.0],
+                    color: token_color(theme, "border", [0.24, 0.27, 0.36, 1.0]),
                     clip,
                 });
             }
@@ -874,7 +876,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                             step.max(1.0),
                             height,
                         ),
-                        color: [0.30, 0.70, 0.96, 1.0],
+                        color: token_color(theme, "accent", [0.30, 0.70, 0.96, 1.0]),
                         radius: [0.0; 4],
                         clip,
                     });
@@ -889,7 +891,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                         rect.rect.width,
                         1.0,
                     ),
-                    color: [0.24, 0.27, 0.36, 1.0],
+                    color: token_color(theme, "border", [0.24, 0.27, 0.36, 1.0]),
                     clip,
                 });
             }
@@ -956,4 +958,10 @@ fn next_boundary(text: &str, index: usize) -> usize {
         .char_indices()
         .nth(1)
         .map_or(text.len(), |(offset, _)| index + offset)
+}
+
+fn token_color(theme: Option<&UiThemes>, name: &str, fallback: [f32; 4]) -> [f32; 4] {
+    theme
+        .and_then(|themes| themes.active.color(name))
+        .unwrap_or(fallback)
 }

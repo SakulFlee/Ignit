@@ -107,7 +107,7 @@ impl Default for UiTextStyle {
         Self {
             size: 14.0,
             line_height: None,
-            color: UiColor::rgba([0.92, 0.94, 1.0, 1.0]),
+            color: UiColor::token("text"),
             family: None,
             weight: 400,
             wrap: UiTextWrap::Word,
