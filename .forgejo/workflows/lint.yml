@@ -36,6 +36,10 @@ jobs:
           key: sccache-lint-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             sccache-lint-
+      - name: Check UI F16
+        run: bash .forgejo/ci/check-ui-f16.sh
+      - name: Check UI examples
+        run: cargo check -p template_ui -p template_all_in_one -p template_minimal_3d -p template_minimal_2d
       - name: Check formatting
         id: fmt
         run: cargo fmt --all -- --check

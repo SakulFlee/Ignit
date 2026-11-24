@@ -93,7 +93,9 @@ jobs:
             printf 'Ignit examples %s (%s).\n\n' "$version" "$target"
             printf 'Each example lives in its own directory. Run it from that directory:\n'
             printf '  cd template_minimal_3d\n'
-            printf '  ./template_minimal_3d\n\n'
+            printf '  ./template_minimal_3d\n'
+            printf '  cd template_ui\n'
+            printf '  ./template_ui\n\n'
             printf 'template_all_in_one needs the Assets/ directory next to its executable.\n\n'
             printf 'On Windows, use the .exe files.\n'
           } > "$out/README.txt"
@@ -159,7 +161,9 @@ jobs:
             printf 'Ignit examples %s (%s).\n\n' "$version" "$target"
             printf 'Each example lives in its own directory. Run it from that directory:\n'
             printf '  cd template_minimal_3d\n'
-            printf '  ./template_minimal_3d\n\n'
+            printf '  ./template_minimal_3d\n'
+            printf '  cd template_ui\n'
+            printf '  ./template_ui\n\n'
             printf 'template_all_in_one needs the Assets/ directory next to its executable.\n\n'
             printf 'On Windows, use the .exe files.\n'
           } > "$out/README.txt"
