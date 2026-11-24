@@ -328,7 +328,7 @@ fn build_showcase(world: &mut World) {
                         .inset(UiEdges {
                             left: UiDimension::Length(880.0),
                             right: UiDimension::Auto,
-                            top: UiDimension::Length(470.0),
+                            top: UiDimension::Length(540.0),
                             bottom: UiDimension::Auto,
                         }),
                 )

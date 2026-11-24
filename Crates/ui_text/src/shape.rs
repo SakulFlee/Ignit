@@ -64,6 +64,7 @@ struct TextKey {
     ellipsis: bool,
     width_bits: u32,
     scale_bits: u32,
+    color_bits: [u32; 4],
 }
 
 pub struct TextEngine {
@@ -150,6 +151,7 @@ impl TextEngine {
 
     pub fn shape(&mut self, text: &str, style: &UiTextStyle, max_width: f32) -> Arc<ShapedText> {
         let width = max_width.max(1.0);
+        let color = resolve_color(&style.color);
         let key = TextKey {
             text: text.to_string(),
             size_bits: style.size.to_bits(),
@@ -160,6 +162,7 @@ impl TextEngine {
             ellipsis: style.ellipsis,
             width_bits: width.to_bits(),
             scale_bits: self.scale.to_bits(),
+            color_bits: color.map(f32::to_bits),
         };
         if let Some(shaped) = self.cache.get(&key) {
             self.cache_hits += 1;
