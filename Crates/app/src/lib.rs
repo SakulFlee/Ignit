@@ -32,6 +32,9 @@ mod performance_metadata;
 mod context;
 pub use context::*;
 
+mod gpu_errors;
+pub use gpu_errors::*;
+
 mod state;
 pub use state::*;
 
