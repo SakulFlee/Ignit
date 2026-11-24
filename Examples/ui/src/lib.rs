@@ -412,32 +412,33 @@ impl DemoSystem {
                     }
                 }
                 if (id.as_str() == "toggle" || id.as_str() == "checkbox")
-                    && let Ok(on) = value.parse::<bool>() {
-                        let target = if id.as_str() == "toggle" {
-                            "checkbox"
-                        } else {
-                            "toggle"
-                        };
-                        let entity = world
-                            .get_resource::<ignit::ui::UiForest>()
-                            .and_then(|forest| forest.find(&target.into()));
-                        if let Some(entity) = entity
-                            && let Some(store) = world.get_component_store_mut::<UiWidget>()
-                        {
-                            let store = store.get_mut_store();
-                            if let Some(widget) = store.get_component_mut(entity.index) {
-                                match &mut widget.spec {
-                                    UiWidgetSpec::Toggle { on: target_on } => {
-                                        *target_on = on;
-                                    }
-                                    UiWidgetSpec::Checkbox { checked } => {
-                                        *checked = on;
-                                    }
-                                    _ => {}
+                    && let Ok(on) = value.parse::<bool>()
+                {
+                    let target = if id.as_str() == "toggle" {
+                        "checkbox"
+                    } else {
+                        "toggle"
+                    };
+                    let entity = world
+                        .get_resource::<ignit::ui::UiForest>()
+                        .and_then(|forest| forest.find(&target.into()));
+                    if let Some(entity) = entity
+                        && let Some(store) = world.get_component_store_mut::<UiWidget>()
+                    {
+                        let store = store.get_mut_store();
+                        if let Some(widget) = store.get_component_mut(entity.index) {
+                            match &mut widget.spec {
+                                UiWidgetSpec::Toggle { on: target_on } => {
+                                    *target_on = on;
                                 }
+                                UiWidgetSpec::Checkbox { checked } => {
+                                    *checked = on;
+                                }
+                                _ => {}
                             }
                         }
                     }
+                }
                 continue;
             }
             let UiEvent::Action { action, id, .. } = event else {
