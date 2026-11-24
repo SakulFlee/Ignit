@@ -483,6 +483,50 @@ impl UiTheme {
         }
     }
 
+    pub fn light() -> Self {
+        let mut theme = Self::dark();
+        theme.name = "light".into();
+        theme.revision += 1;
+        theme.paint_revision += 1;
+        theme.colors.insert("bg".into(), [0.94, 0.95, 0.98, 1.0]);
+        theme.colors.insert("surface".into(), [1.0, 1.0, 1.0, 1.0]);
+        theme
+            .colors
+            .insert("surface_alt".into(), [0.88, 0.90, 0.95, 1.0]);
+        theme
+            .colors
+            .insert("border".into(), [0.55, 0.60, 0.70, 1.0]);
+        theme.colors.insert("text".into(), [0.08, 0.10, 0.14, 1.0]);
+        theme
+            .colors
+            .insert("text_muted".into(), [0.30, 0.35, 0.42, 1.0]);
+        theme
+            .colors
+            .insert("accent".into(), [0.10, 0.45, 0.80, 1.0]);
+        theme
+            .colors
+            .insert("accent_hover".into(), [0.16, 0.52, 0.88, 1.0]);
+        theme
+            .colors
+            .insert("danger".into(), [0.78, 0.18, 0.22, 1.0]);
+        if let Some(panel) = theme.classes.get_mut("panel") {
+            panel.style.shadow = Some(UiShadow {
+                color: UiColor::rgba([0.15, 0.18, 0.25, 0.22]),
+                ..Default::default()
+            });
+        }
+        theme
+    }
+
+    pub fn from_ron(source: &str) -> Result<Self, String> {
+        ron::from_str(source).map_err(|error| error.to_string())
+    }
+
+    pub fn to_ron(&self) -> Result<String, String> {
+        ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
+            .map_err(|error| error.to_string())
+    }
+
     pub fn color(&self, name: &str) -> Option<UiRgba> {
         self.colors.get(name).copied()
     }

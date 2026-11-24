@@ -897,7 +897,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 draw.commands.push(UiDrawCommand::Rect {
                     entity,
                     rect: UiRect::new(0.0, 0.0, 10_000.0, 10_000.0),
-                    color: [0.0, 0.0, 0.0, 0.35],
+                    color: [0.0, 0.0, 0.0, 0.55],
                     radius: [0.0; 4],
                     clip,
                 });

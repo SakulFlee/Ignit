@@ -54,7 +54,12 @@ impl Module for UiDemoModule {
         _queue: &ignit::wgpu::Queue,
     ) -> Vec<Box<dyn System>> {
         ignit::ui::init(ecs);
-        ecs.insert_resource(UiThemes::with_active(UiTheme::dark()));
+        let dark = UiTheme::dark();
+        let light = UiTheme::light();
+        let mut themes = UiThemes::with_active(dark.clone());
+        themes.named.insert("dark".into(), dark);
+        themes.named.insert("light".into(), light);
+        ecs.insert_resource(themes);
 
         let camera = ecs.spawn_entity();
         ecs.attach_component(
@@ -115,25 +120,35 @@ fn build_showcase(world: &mut World) {
                 .layout(UiLayout::row().height(44.0).gap(10.0))
                 .child(
                     UiDocumentNode::new("theme_button")
-                        .layout(UiLayout::default().size(170.0, 38.0))
-                        .text("Switch theme")
+                        .layout(
+                            UiLayout::row()
+                                .size(170.0, 38.0)
+                                .justify(ignit::ui::UiJustify::Center)
+                                .align_items(ignit::ui::UiAlign::Center),
+                        )
                         .widget(UiWidgetSpec::Button {
                             label: "Switch theme".into(),
                         })
                         .action(UiAction::new("theme"))
                         .focusable()
-                        .style(UiStyle::default().class("panel")),
+                        .style(UiStyle::default().class("panel"))
+                        .child(UiDocumentNode::new("theme_label").text("Switch theme")),
                 )
                 .child(
                     UiDocumentNode::new("modal_button")
-                        .layout(UiLayout::default().size(170.0, 38.0))
-                        .text("Toggle modal")
+                        .layout(
+                            UiLayout::row()
+                                .size(170.0, 38.0)
+                                .justify(ignit::ui::UiJustify::Center)
+                                .align_items(ignit::ui::UiAlign::Center),
+                        )
                         .widget(UiWidgetSpec::Button {
                             label: "Toggle modal".into(),
                         })
                         .action(UiAction::new("modal"))
                         .focusable()
-                        .style(UiStyle::default().class("panel")),
+                        .style(UiStyle::default().class("panel"))
+                        .child(UiDocumentNode::new("modal_label").text("Toggle modal")),
                 ),
         )
         .child(
@@ -334,7 +349,14 @@ fn build_showcase(world: &mut World) {
                         .width(420.0)
                         .height(220.0)
                         .padding(18.0)
-                        .gap(10.0),
+                        .gap(10.0)
+                        .absolute()
+                        .inset(UiEdges {
+                            left: UiDimension::Length(430.0),
+                            right: UiDimension::Auto,
+                            top: UiDimension::Length(250.0),
+                            bottom: UiDimension::Auto,
+                        }),
                 )
                 .widget(UiWidgetSpec::Modal { open: false })
                 .style(UiStyle::default().class("panel").visible(false))
@@ -389,6 +411,34 @@ impl DemoSystem {
                         }
                     }
                 }
+                if id.as_str() == "toggle" || id.as_str() == "checkbox" {
+                    if let Ok(on) = value.parse::<bool>() {
+                        let target = if id.as_str() == "toggle" {
+                            "checkbox"
+                        } else {
+                            "toggle"
+                        };
+                        let entity = world
+                            .get_resource::<ignit::ui::UiForest>()
+                            .and_then(|forest| forest.find(&target.into()));
+                        if let Some(entity) = entity
+                            && let Some(store) = world.get_component_store_mut::<UiWidget>()
+                        {
+                            let store = store.get_mut_store();
+                            if let Some(widget) = store.get_component_mut(entity.index) {
+                                match &mut widget.spec {
+                                    UiWidgetSpec::Toggle { on: target_on } => {
+                                        *target_on = on;
+                                    }
+                                    UiWidgetSpec::Checkbox { checked } => {
+                                        *checked = on;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
                 continue;
             }
             let UiEvent::Action { action, id, .. } = event else {
@@ -400,12 +450,9 @@ impl DemoSystem {
                 "theme" => {
                     self.dark = !self.dark;
                     if let Some(mut themes) = world.get_resource_mut::<UiThemes>() {
-                        if self.dark {
-                            themes.active.set_color("bg", [0.045, 0.052, 0.075, 1.0]);
-                            themes.active.set_color("surface", [0.085, 0.10, 0.14, 1.0]);
-                        } else {
-                            themes.active.set_color("bg", [0.86, 0.88, 0.93, 1.0]);
-                            themes.active.set_color("surface", [0.72, 0.76, 0.84, 1.0]);
+                        let target = if self.dark { "dark" } else { "light" };
+                        if let Some(next) = themes.named.get(target).cloned() {
+                            themes.active = next;
                         }
                     }
                 }
