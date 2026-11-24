@@ -262,22 +262,41 @@ fn build_showcase(world: &mut World) {
                 }),
         )
         .child(
-            UiDocumentNode::new("scroll")
-                .layout(UiLayout::default().width(520.0).height(160.0))
-                .scroll()
+            UiDocumentNode::new("scroll_panel")
+                .layout(
+                    UiLayout::column()
+                        .width(520.0)
+                        .height(220.0)
+                        .padding(8.0)
+                        .gap(6.0),
+                )
                 .style(UiStyle::default().class("panel"))
                 .child(
-                    UiDocumentNode::new("scroll_rows")
-                        .layout(UiLayout::column().gap(6.0).padding(8.0).shrink(0.0))
-                        .child((1..18).fold(
-                            UiDocumentNode::new("row_00").text("Row 00"),
-                            |parent, index| {
-                                parent.child(
-                                    UiDocumentNode::new(format!("row_{index:02}"))
-                                        .text(format!("Scrollable row {index:02}")),
-                                )
-                            },
-                        )),
+                    UiDocumentNode::new("scroll_header")
+                        .text("Scrollable list")
+                        .style(UiStyle::default().padding_text(UiTextStyle {
+                            size: 16.0,
+                            weight: 600,
+                            ..Default::default()
+                        })),
+                )
+                .child(
+                    UiDocumentNode::new("scroll")
+                        .layout(UiLayout::default().width_full().height(160.0))
+                        .scroll()
+                        .child(
+                            UiDocumentNode::new("scroll_rows")
+                                .layout(UiLayout::column().gap(6.0).padding(8.0).shrink(0.0))
+                                .child((1..18).fold(
+                                    UiDocumentNode::new("row_00").text("Row 00"),
+                                    |parent, index| {
+                                        parent.child(
+                                            UiDocumentNode::new(format!("row_{index:02}"))
+                                                .text(format!("Scrollable row {index:02}")),
+                                        )
+                                    },
+                                )),
+                        ),
                 ),
         )
         .child(
@@ -354,6 +373,7 @@ impl DemoSystem {
             let (action_name, id) = match event {
                 UiEvent::Action { action, id, .. } => (action.name, id),
                 UiEvent::Click { id, .. } => {
+                    info!("UI demo click: {id}");
                     let name = match id.as_str() {
                         "theme_button" => "theme".to_string(),
                         "modal_button" => "modal".to_string(),
@@ -421,5 +441,38 @@ mod tests {
         assert!(forest.find(&"row_00".into()).is_some());
         assert!(forest.find(&"row_17".into()).is_some());
         assert!(forest.find(&"ron_title".into()).is_some());
+    }
+}
+
+#[cfg(test)]
+mod action_tests {
+    use super::*;
+    use ignit::ecs::Events;
+
+    #[test]
+    fn theme_action_mutates_theme_tokens() {
+        let mut world = World::new();
+        ignit::ui::init(&mut world);
+        let mut system = DemoSystem::new();
+        let before = world
+            .get_resource::<UiThemes>()
+            .unwrap()
+            .active
+            .color("bg")
+            .unwrap();
+        if let Some(mut events) = world.get_resource_mut::<Events<UiEvent>>() {
+            events.send(UiEvent::Click {
+                entity: ignit::ecs::Entity::new(0, 0),
+                id: "theme_button".into(),
+            });
+        }
+        system.apply_events(&mut world);
+        let after = world
+            .get_resource::<UiThemes>()
+            .unwrap()
+            .active
+            .color("bg")
+            .unwrap();
+        assert_ne!(before, after);
     }
 }

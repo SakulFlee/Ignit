@@ -218,3 +218,18 @@ fn integrates_with_core_layout_measurement() {
         .unwrap();
     assert!(computed.rect.height > 0.0);
 }
+
+#[test]
+fn caret_after_spaces_remains_visible() {
+    let mut engine = TextEngine::new();
+    let shaped = engine.shape("a ", &style(16.0), 200.0);
+    let caret = engine.cursor_rect(&shaped, 2).expect("caret exists");
+    assert!(caret[0] > 0.0);
+    assert!(caret[3] > 0.0);
+
+    let empty_space = engine.shape(" ", &style(16.0), 200.0);
+    let caret = engine
+        .cursor_rect(&empty_space, 1)
+        .expect("caret after space");
+    assert!(caret[0] >= 0.0);
+}

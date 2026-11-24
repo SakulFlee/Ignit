@@ -230,8 +230,8 @@ impl UiRenderer {
         });
         let atlas_sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("ignit ui atlas sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
 
