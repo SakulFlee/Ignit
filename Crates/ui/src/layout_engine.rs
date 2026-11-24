@@ -226,9 +226,17 @@ impl UiLayoutEngine {
         self.last_layout_revision = theme_layout_revision(world);
         self.last_viewports = last_views;
 
-        for (_root_entity, root_node, order) in roots {
+        for (root_entity, root_node, order) in roots {
             let z_base = order.saturating_mul(10_000);
-            self.write_computed(world, root_node, (0.0, 0.0), None, z_base, true);
+            let origin = world
+                .get_component_store::<UiView>()
+                .and_then(|store| {
+                    store
+                        .get_component(root_entity.index)
+                        .map(|view| (view.offset.x, view.offset.y))
+                })
+                .unwrap_or((0.0, 0.0));
+            self.write_computed(world, root_node, origin, None, z_base, true);
         }
         clear_layout_dirty(world);
         true

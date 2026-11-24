@@ -2,6 +2,7 @@
 
 use ignit_ecs::{Entity, World};
 
+use crate::focus::UiFocusState;
 use crate::geometry::{UiPoint, UiRect};
 use crate::node::{UiComputed, UiNode};
 use crate::style::{UiImage, UiResolvedStyle, UiResolvedTextStyle, UiText};
@@ -111,6 +112,9 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
     let texts = world.get_component_store::<UiText>();
     let images = world.get_component_store::<UiImage>();
     let widgets = world.get_component_store::<UiWidget>();
+    let focused = world
+        .get_resource::<UiFocusState>()
+        .and_then(|state| state.focused);
 
     let mut entities: Vec<(i32, usize, Entity)> = world
         .entities()
@@ -188,7 +192,9 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
             {
                 match &widget.spec {
                     UiWidgetSpec::TextBox { .. } => {
-                        caret = Some(widget.cursor);
+                        if focused == Some(entity) {
+                            caret = Some(widget.cursor);
+                        }
                         text_rect.x -= widget.scroll_x;
                         let line_height = style.line_height.unwrap_or(style.size * 1.25);
                         text_rect.y += ((text_rect.height - line_height) * 0.5).max(0.0);

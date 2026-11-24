@@ -30,6 +30,15 @@ fn rect(world: &World, entity: Entity) -> UiComputed {
         .unwrap()
 }
 
+fn computed(world: &World, id: &str) -> UiComputed {
+    let entity = world
+        .get_resource::<ignit_ui::UiForest>()
+        .unwrap()
+        .find(&id.into())
+        .unwrap();
+    rect(world, entity)
+}
+
 #[test]
 fn toggle_and_checkbox_flip_on_click() {
     for widget in [
@@ -274,4 +283,33 @@ fn wheel_scrolls_a_scroll_container() {
         .copied()
         .unwrap();
     assert!(scroll.offset.y > 0.0);
+}
+
+#[test]
+fn root_offset_moves_layout_and_hit_testing() {
+    let mut world = World::new();
+    init(&mut world);
+    let mut root = UiDocumentNode::new("offset_root")
+        .layout(UiLayout::column().size(200.0, 100.0))
+        .child(
+            UiDocumentNode::new("offset_button")
+                .layout(UiLayout::default().size(100.0, 40.0))
+                .focusable(),
+        );
+    root.view = Some(UiView {
+        offset: UiPoint::new(300.0, 200.0),
+        ..UiView::new(200.0, 100.0)
+    });
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    let root_rect = computed(&world, "offset_root").rect;
+    assert_eq!(root_rect.x, 300.0);
+    assert_eq!(root_rect.y, 200.0);
+    let button = computed(&world, "offset_button").rect;
+    assert_eq!(button.x, 300.0);
+    assert_eq!(button.y, 200.0);
+    let hit = ignit_ui::hit_test(&world, UiPoint::new(button.x + 5.0, button.y + 5.0)).unwrap();
+    assert_eq!(hit.id.as_str(), "offset_button");
+    assert!(ignit_ui::hit_test(&world, UiPoint::new(5.0, 5.0)).is_none());
 }

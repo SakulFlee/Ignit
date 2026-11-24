@@ -778,12 +778,8 @@ impl UiRenderer {
             .as_ref()
             .and_then(|store| store.get_component(root.index));
         let scale = view.map(|view| view.scale).unwrap_or(1.0);
-        let view_offset = view.map(|view| view.offset).unwrap_or(UiPoint::ZERO);
         let extra = self.root_offsets.get(&root).copied().unwrap_or_default();
-        (
-            scale,
-            UiPoint::new(view_offset.x + extra.x, view_offset.y + extra.y),
-        )
+        (scale, extra)
     }
 }
 

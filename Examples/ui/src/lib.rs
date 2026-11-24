@@ -288,7 +288,7 @@ fn build_showcase(world: &mut World) {
                             UiDocumentNode::new("scroll_rows")
                                 .layout(UiLayout::column().gap(6.0).padding(8.0).shrink(0.0))
                                 .child((1..18).fold(
-                                    UiDocumentNode::new("row_00").text("Row 00"),
+                                    UiDocumentNode::new("row_00").text("Scrollable row 00"),
                                     |parent, index| {
                                         parent.child(
                                             UiDocumentNode::new(format!("row_{index:02}"))
