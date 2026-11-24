@@ -864,7 +864,7 @@ impl Renderer {
             glare_star_inner: 0.05,
             glare_star_outer: 0.0,
             glare_star_length: 10.0,
-            tonemap: Tonemap::new(device, surface_texture_format),
+            tonemap: Tonemap::new(device, surface_texture_format, scene_color_format),
             fxaa: Fxaa::new(device, queue, surface_texture_format, resolution),
             smaa: None,
             deferred_lighting,
@@ -917,7 +917,7 @@ impl Renderer {
         queue: &Queue,
     ) {
         self.surface_texture_format = surface_texture_format;
-        self.tonemap = Tonemap::new(device, surface_texture_format);
+        self.tonemap = Tonemap::new(device, surface_texture_format, self.scene_color_format);
         self.fxaa = Fxaa::new(device, queue, surface_texture_format, self.resolution);
         self.debug_view_renderer = DebugViewRenderer::new(device, surface_texture_format);
         self.smaa = None;
