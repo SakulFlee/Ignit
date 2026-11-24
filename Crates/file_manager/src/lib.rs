@@ -52,6 +52,12 @@ pub trait AssetSource: Send + Sync {
     fn list_dir(&self, dir: &str) -> Result<Vec<String>, FsError>;
     /// Whether the given asset path exists.
     fn path_exists(&self, path: &str) -> bool;
+    /// Last modification time of the asset, when the backend can report one.
+    ///
+    /// Mobile backends return `None`; hot reload is desktop-only in v1.7.
+    fn modified(&self, _path: &str) -> Option<std::time::SystemTime> {
+        None
+    }
 }
 
 /// Read-write application storage.
@@ -173,6 +179,11 @@ impl FileManager {
     /// Whether an asset exists.
     pub fn asset_exists(&self, path: &str) -> bool {
         self.assets.path_exists(path)
+    }
+
+    /// Last modification time of an asset, when the backend supports it.
+    pub fn asset_modified(&self, path: &str) -> Option<std::time::SystemTime> {
+        self.assets.modified(path)
     }
 
     /// Reads a stored file as bytes.

@@ -90,6 +90,15 @@ rfd = "0.18"
 rustc-hash = "2.0"
 semver = "1.0"
 serde = { version = "1.0.174", features = ["derive"] }
+ron = "0.12"
+taffy = { version = "0.15.1", default-features = false, features = [
+  "std",
+  "taffy_tree",
+  "flexbox",
+  "grid",
+  "block_layout",
+  "content_size",
+] }
 serde-wincode = "0.1"
 sha2 = "0.11"
 sipper = "0.2"

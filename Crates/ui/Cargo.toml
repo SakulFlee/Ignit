@@ -1,6 +1,6 @@
 [package]
 name = "ignit_ui"
-description = "ECS UI components, layout, hit testing, and events for Ignit"
+description = "ECS-native retained UI core: documents, layout, themes, focus, and input"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -9,9 +9,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ignit_2d = { path = "../2d", version = "1.6.3" }
+bitflags = { workspace = true }
 ignit_ecs = { path = "../ecs", version = "1.6.3" }
-ignit_text = { path = "../text", version = "1.6.3" }
-cgmath = { workspace = true }
-wgpu = { workspace = true }
+ignit_file_manager = { path = "../file_manager", version = "1.6.3" }
 log = { workspace = true }
+ron = { workspace = true }
+serde = { workspace = true }
+taffy = { workspace = true }
