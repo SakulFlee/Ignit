@@ -14,7 +14,7 @@ cosmic-text = { version = "0.19.0", default-features = false, features = [
   "std",
   "swash",
 ] }
-fontdb = { version = "0.23", features = ["fs"] }
+fontdb = { version = "0.24", features = ["fs"] }
 ignit_ecs = { path = "../ecs", version = "1.6.3" }
 ignit_text = { path = "../text", version = "1.6.3" }
 ignit_ui = { path = "../ui", version = "1.6.3" }
