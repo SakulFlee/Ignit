@@ -197,7 +197,30 @@ fn build_showcase(world: &mut World) {
                 .widget(UiWidgetSpec::Tabs {
                     tabs: vec!["Overview".into(), "Rendering".into(), "Console".into()],
                     active: 0,
+                    contents: vec![
+                        "tab_overview".into(),
+                        "tab_rendering".into(),
+                        "tab_console".into(),
+                    ],
                 }),
+        )
+        .child(
+            UiDocumentNode::new("tab_overview")
+                .layout(UiLayout::column().height(44.0).padding(8.0))
+                .style(UiStyle::default().class("panel"))
+                .child(UiDocumentNode::new("tab_overview_text").text("Overview content")),
+        )
+        .child(
+            UiDocumentNode::new("tab_rendering")
+                .layout(UiLayout::column().height(44.0).padding(8.0))
+                .style(UiStyle::default().class("panel").visible(false))
+                .child(UiDocumentNode::new("tab_rendering_text").text("Rendering content")),
+        )
+        .child(
+            UiDocumentNode::new("tab_console")
+                .layout(UiLayout::column().height(44.0).padding(8.0))
+                .style(UiStyle::default().class("panel").visible(false))
+                .child(UiDocumentNode::new("tab_console_text").text("Console content")),
         )
         .child(
             UiDocumentNode::new("collapsible_header")
@@ -329,10 +352,20 @@ impl System for DemoSystem {
             .map(|events| events.read().cloned().collect())
             .unwrap_or_default();
         for event in events {
-            let UiEvent::Action { action, .. } = event else {
-                continue;
+            let (action_name, id) = match event {
+                UiEvent::Action { action, id, .. } => (action.name, id),
+                UiEvent::Click { id, .. } => {
+                    let name = match id.as_str() {
+                        "theme_button" => "theme".to_string(),
+                        "modal_button" => "modal".to_string(),
+                        _ => continue,
+                    };
+                    (name, id)
+                }
+                _ => continue,
             };
-            match action.name.as_str() {
+            info!("UI demo action: {action_name} ({id})");
+            match action_name.as_str() {
                 "theme" => {
                     self.dark = !self.dark;
                     if let Some(mut themes) = world.get_resource_mut::<UiThemes>() {

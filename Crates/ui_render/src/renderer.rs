@@ -148,6 +148,7 @@ pub struct UiRenderer {
     screen_bind_group: BindGroup,
     texture_layout: BindGroupLayout,
     sampler: Sampler,
+    atlas_sampler: Sampler,
     page_textures: Vec<Texture>,
     page_bind_groups: Vec<BindGroup>,
     white_bind_group: BindGroup,
@@ -227,6 +228,12 @@ impl UiRenderer {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
+        let atlas_sampler = device.create_sampler(&SamplerDescriptor {
+            label: Some("ignit ui atlas sampler"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
 
         let atlas_texture = make_texture(
             device,
@@ -274,7 +281,7 @@ impl UiRenderer {
             device,
             &texture_layout,
             &atlas_view,
-            &sampler,
+            &atlas_sampler,
             "ignit ui atlas bind group",
         );
 
@@ -376,6 +383,7 @@ impl UiRenderer {
             screen_bind_group,
             texture_layout,
             sampler,
+            atlas_sampler,
             page_textures: vec![atlas_texture],
             page_bind_groups: vec![atlas_bind_group],
             white_bind_group,
@@ -434,7 +442,7 @@ impl UiRenderer {
                     device,
                     &self.texture_layout,
                     &view,
-                    &self.sampler,
+                    &self.atlas_sampler,
                     "ignit ui atlas page bind group",
                 );
                 self.page_textures.push(texture);

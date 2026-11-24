@@ -16,7 +16,7 @@ use crate::forest::UiForest;
 use crate::geometry::UiRect;
 use crate::id::UiId;
 use crate::input::UiInputState;
-use crate::layout::{UiDimension, UiLayout};
+use crate::layout::{UiDimension, UiLayout, UiPosition};
 use crate::node::{UiComputed, UiDirty};
 use crate::style::{UiResolvedStyle, UiResolvedTextStyle, UiStyle, UiText, UiTextWrap};
 
@@ -58,6 +58,8 @@ pub enum UiWidgetSpec {
     Tabs {
         tabs: Vec<String>,
         active: usize,
+        #[serde(default)]
+        contents: Vec<UiId>,
     },
     Collapsible {
         open: bool,
@@ -90,13 +92,27 @@ pub enum UiWidgetSpec {
 pub struct UiWidget {
     pub spec: UiWidgetSpec,
     pub dragging: bool,
+    pub drag_start: Option<(f32, f32)>,
+    pub drag_base: (f32, f32),
+    pub cursor: usize,
+    pub anchor: usize,
+    pub scroll_x: f32,
 }
 
 impl UiWidget {
     pub fn new(spec: UiWidgetSpec) -> Self {
+        let cursor = match &spec {
+            UiWidgetSpec::TextBox { value, .. } => value.len(),
+            _ => 0,
+        };
         Self {
             spec,
             dragging: false,
+            drag_start: None,
+            drag_base: (0.0, 0.0),
+            cursor,
+            anchor: cursor,
+            scroll_x: 0.0,
         }
     }
 }
@@ -183,31 +199,114 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
             }
             UiWidgetSpec::TextBox { value, .. } if focused == Some(entity) => {
                 let mut edited = value.clone();
+                let mut cursor = widget.cursor.min(edited.len());
+                let mut anchor = widget.anchor.min(edited.len());
+                let mut changed = false;
                 for key in &input.keys_pressed {
                     match key {
                         crate::input::UiKey::Character(character)
                             if !input.modifiers.ctrl && !input.modifiers.super_key =>
                         {
-                            edited.push(*character);
+                            delete_selection(&mut edited, &mut cursor, &mut anchor);
+                            edited.insert(cursor, *character);
+                            cursor += character.len_utf8();
+                            anchor = cursor;
+                            changed = true;
                         }
                         crate::input::UiKey::Space
                             if !input.modifiers.ctrl && !input.modifiers.super_key =>
                         {
-                            edited.push(' ');
+                            delete_selection(&mut edited, &mut cursor, &mut anchor);
+                            edited.insert(cursor, ' ');
+                            cursor += 1;
+                            anchor = cursor;
+                            changed = true;
                         }
                         crate::input::UiKey::Backspace => {
-                            edited.pop();
+                            if selection_range(cursor, anchor).is_some() {
+                                delete_selection(&mut edited, &mut cursor, &mut anchor);
+                            } else if cursor > 0 {
+                                let previous = prev_boundary(&edited, cursor);
+                                edited.replace_range(previous..cursor, "");
+                                cursor = previous;
+                                anchor = cursor;
+                            }
+                            changed = true;
                         }
-                        crate::input::UiKey::Delete => {}
-                        crate::input::UiKey::Enter => {}
+                        crate::input::UiKey::Delete => {
+                            if selection_range(cursor, anchor).is_some() {
+                                delete_selection(&mut edited, &mut cursor, &mut anchor);
+                            } else if cursor < edited.len() {
+                                let next = next_boundary(&edited, cursor);
+                                edited.replace_range(cursor..next, "");
+                            }
+                            changed = true;
+                        }
+                        crate::input::UiKey::ArrowLeft => {
+                            cursor = prev_boundary(&edited, cursor);
+                            if !input.modifiers.shift {
+                                anchor = cursor;
+                            }
+                        }
+                        crate::input::UiKey::ArrowRight => {
+                            cursor = next_boundary(&edited, cursor);
+                            if !input.modifiers.shift {
+                                anchor = cursor;
+                            }
+                        }
+                        crate::input::UiKey::Home => {
+                            cursor = 0;
+                            if !input.modifiers.shift {
+                                anchor = cursor;
+                            }
+                        }
+                        crate::input::UiKey::End => {
+                            cursor = edited.len();
+                            if !input.modifiers.shift {
+                                anchor = cursor;
+                            }
+                        }
+                        crate::input::UiKey::Character(character)
+                            if input.modifiers.ctrl && character.eq_ignore_ascii_case(&'a') =>
+                        {
+                            anchor = 0;
+                            cursor = edited.len();
+                        }
                         _ => {}
                     }
                 }
                 if !input.text.is_empty() {
-                    edited.push_str(&input.text);
+                    delete_selection(&mut edited, &mut cursor, &mut anchor);
+                    edited.insert_str(cursor, &input.text);
+                    cursor += input.text.len();
+                    anchor = cursor;
+                    changed = true;
                 }
-                if edited != *value {
+                widget.cursor = cursor;
+                widget.anchor = anchor;
+                if changed && edited != *value {
                     *value = edited.clone();
+                    let text_size = world
+                        .get_component_store::<UiResolvedStyle>()
+                        .and_then(|store| {
+                            store
+                                .get_component(entity.index)
+                                .and_then(|style| style.text.as_ref().map(|text| text.size))
+                        })
+                        .unwrap_or(14.0);
+                    let cursor_x = edited
+                        .get(..cursor.min(edited.len()))
+                        .unwrap_or(&edited)
+                        .chars()
+                        .count() as f32
+                        * text_size
+                        * 0.55;
+                    let visible_width = rect.content.width.max(1.0);
+                    if cursor_x - widget.scroll_x > visible_width - 4.0 {
+                        widget.scroll_x = cursor_x - visible_width + 4.0;
+                    } else if cursor_x < widget.scroll_x {
+                        widget.scroll_x = cursor_x;
+                    }
                     text_changes.push((entity, edited.clone()));
                     event = Some(UiEvent::ValueChanged {
                         entity,
@@ -241,14 +340,24 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
                     },
                 );
             }
-            UiWidgetSpec::Tabs { tabs, active } if clicks.contains(&id) => {
+            UiWidgetSpec::Tabs {
+                tabs,
+                active,
+                contents,
+            } if clicks.contains(&id) => {
                 if !tabs.is_empty() && rect.rect.width > 0.0 {
                     let width = rect.rect.width / tabs.len() as f32;
                     let index = ((input.pointer.x - rect.rect.x) / width).floor();
                     if index >= 0.0 && (index as usize) < tabs.len() {
                         *active = index as usize;
+                        sync_tab_contents(world, contents, *active);
                     }
                 }
+            }
+            UiWidgetSpec::Tabs {
+                active, contents, ..
+            } => {
+                sync_tab_contents(world, contents, *active);
             }
             UiWidgetSpec::Collapsible { open, content } if clicks.contains(&id) => {
                 *open = !*open;
@@ -256,8 +365,43 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
                     set_content_visible(world, content.clone(), *open);
                 }
             }
-            UiWidgetSpec::FloatingWindow { open, .. } if clicks.contains(&id) => {
-                *open = !*open;
+            UiWidgetSpec::FloatingWindow { .. } => {
+                let title_bar = 32.0;
+                if input.primary_pressed
+                    && rect.rect.contains(input.pointer)
+                    && input.pointer.y <= rect.rect.y + title_bar
+                {
+                    widget.dragging = true;
+                    widget.drag_start = Some((input.pointer.x, input.pointer.y));
+                    let layout = world
+                        .get_component_store::<UiLayout>()
+                        .and_then(|store| store.get_component(entity.index).cloned());
+                    widget.drag_base = (
+                        resolve_dimension(
+                            layout.as_ref().map(|layout| layout.inset.left),
+                            rect.rect.x,
+                        ),
+                        resolve_dimension(
+                            layout.as_ref().map(|layout| layout.inset.top),
+                            rect.rect.y,
+                        ),
+                    );
+                }
+                if widget.dragging
+                    && input.primary_down
+                    && let Some((start_x, start_y)) = widget.drag_start
+                {
+                    move_widget(
+                        world,
+                        entity,
+                        widget.drag_base.0 + input.pointer.x - start_x,
+                        widget.drag_base.1 + input.pointer.y - start_y,
+                    );
+                }
+                if input.primary_released {
+                    widget.dragging = false;
+                    widget.drag_start = None;
+                }
             }
             UiWidgetSpec::Modal { open } => {
                 set_entity_visible(world, entity, *open);
@@ -274,6 +418,11 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
             UiWidget {
                 spec,
                 dragging: widget.dragging,
+                drag_start: widget.drag_start,
+                drag_base: widget.drag_base,
+                cursor: widget.cursor,
+                anchor: widget.anchor,
+                scroll_x: widget.scroll_x,
             },
             event,
         ));
@@ -285,6 +434,11 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
             if let Some(current) = store.get_component_mut(entity.index) {
                 current.spec = widget.spec;
                 current.dragging = widget.dragging;
+                current.drag_start = widget.drag_start;
+                current.drag_base = widget.drag_base;
+                current.cursor = widget.cursor;
+                current.anchor = widget.anchor;
+                current.scroll_x = widget.scroll_x;
             }
         }
         if let Some(event) = event
@@ -307,6 +461,12 @@ fn set_content_visible(world: &mut World, id: UiId, visible: bool) {
         return;
     };
     set_entity_visible(world, entity, visible);
+}
+
+fn sync_tab_contents(world: &mut World, contents: &[UiId], active: usize) {
+    for (index, id) in contents.iter().enumerate() {
+        set_content_visible(world, id.clone(), index == active);
+    }
 }
 
 fn set_entity_visible(world: &mut World, entity: Entity, visible: bool) {
@@ -332,6 +492,29 @@ fn set_widget_height(world: &mut World, entity: Entity, height: f32) {
         return;
     };
     layout.height = UiDimension::Length(height);
+    layout.margin.bottom = UiDimension::Length(-(height - 38.0).max(0.0));
+    let _ = world.attach_component(&entity, layout);
+    mark_dirty(world, entity, UiDirty::LAYOUT | UiDirty::PAINT);
+}
+
+fn resolve_dimension(value: Option<UiDimension>, fallback: f32) -> f32 {
+    match value {
+        Some(UiDimension::Length(value)) => value,
+        Some(UiDimension::Percent(value)) => fallback * value / 100.0,
+        _ => fallback,
+    }
+}
+
+fn move_widget(world: &mut World, entity: Entity, x: f32, y: f32) {
+    let Some(mut layout) = world
+        .get_component_store::<UiLayout>()
+        .and_then(|store| store.get_component(entity.index).cloned())
+    else {
+        return;
+    };
+    layout.position = UiPosition::Absolute;
+    layout.inset.left = UiDimension::Length(x);
+    layout.inset.top = UiDimension::Length(y);
     let _ = world.attach_component(&entity, layout);
     mark_dirty(world, entity, UiDirty::LAYOUT | UiDirty::PAINT);
 }
@@ -362,13 +545,19 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
         }
         let style = styles
             .as_ref()
-            .and_then(|store| store.get_component(entity.index))
-            .cloned()
+            .and_then(|store| store.get_component(entity.index).cloned())
             .unwrap_or_default();
         let clip = rect.clip;
         match &widget.spec {
             UiWidgetSpec::Toggle { on } => {
-                let track = UiRect::new(rect.rect.x + 4.0, rect.rect.y + 6.0, 40.0, 22.0);
+                let track_w = 40.0;
+                let track_h = 22.0;
+                let track = UiRect::new(
+                    rect.rect.x + (rect.rect.width - track_w).max(0.0) * 0.5,
+                    rect.rect.y + (rect.rect.height - track_h).max(0.0) * 0.5,
+                    track_w,
+                    track_h,
+                );
                 let fill = if *on {
                     [0.20, 0.62, 0.44, 1.0]
                 } else {
@@ -391,7 +580,13 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 });
             }
             UiWidgetSpec::Checkbox { checked } => {
-                let box_rect = UiRect::new(rect.rect.x + 4.0, rect.rect.y + 6.0, 18.0, 18.0);
+                let box_size = 18.0;
+                let box_rect = UiRect::new(
+                    rect.rect.x + (rect.rect.width - box_size).max(0.0) * 0.5,
+                    rect.rect.y + (rect.rect.height - box_size).max(0.0) * 0.5,
+                    box_size,
+                    box_size,
+                );
                 draw.commands.push(UiDrawCommand::Rect {
                     entity,
                     rect: box_rect,
@@ -484,8 +679,16 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     clip,
                 });
             }
-            UiWidgetSpec::TextBox { .. } if focused == Some(entity) => {
-                let caret_x = rect.content.x + 2.0;
+            UiWidgetSpec::TextBox { value, .. } if focused == Some(entity) => {
+                let size = style.text.as_ref().map_or(14.0, |text| text.size);
+                let cursor_chars = value
+                    .get(..widget.cursor.min(value.len()))
+                    .unwrap_or(value)
+                    .chars()
+                    .count();
+                let caret_x = (rect.content.x + cursor_chars as f32 * size * 0.55
+                    - widget.scroll_x)
+                    .clamp(rect.content.x, rect.content.x + rect.content.width - 2.0);
                 draw.commands.push(UiDrawCommand::Line {
                     entity,
                     rect: UiRect::new(
@@ -574,7 +777,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     });
                 }
             }
-            UiWidgetSpec::Tabs { tabs, active } => {
+            UiWidgetSpec::Tabs { tabs, active, .. } => {
                 if tabs.is_empty() || rect.rect.width <= 0.0 {
                     continue;
                 }
@@ -714,4 +917,31 @@ fn mark_dirty(world: &mut World, entity: Entity, dirty: UiDirty) {
             | dirty;
         store.attach(entity.index, next);
     }
+}
+
+fn selection_range(cursor: usize, anchor: usize) -> Option<(usize, usize)> {
+    (cursor != anchor).then_some((cursor.min(anchor), cursor.max(anchor)))
+}
+
+fn delete_selection(text: &mut String, cursor: &mut usize, anchor: &mut usize) {
+    if let Some((start, end)) = selection_range(*cursor, *anchor) {
+        text.replace_range(start..end, "");
+        *cursor = start;
+        *anchor = start;
+    }
+}
+
+fn prev_boundary(text: &str, index: usize) -> usize {
+    text[..index.min(text.len())]
+        .char_indices()
+        .next_back()
+        .map_or(0, |(offset, _)| offset)
+}
+
+fn next_boundary(text: &str, index: usize) -> usize {
+    let index = index.min(text.len());
+    text[index..]
+        .char_indices()
+        .nth(1)
+        .map_or(text.len(), |(offset, _)| index + offset)
 }

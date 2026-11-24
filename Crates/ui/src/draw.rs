@@ -5,6 +5,7 @@ use ignit_ecs::{Entity, World};
 use crate::geometry::{UiPoint, UiRect};
 use crate::node::{UiComputed, UiNode};
 use crate::style::{UiImage, UiResolvedStyle, UiResolvedTextStyle, UiText};
+use crate::widgets::{UiWidget, UiWidgetSpec};
 
 #[derive(Clone, Debug)]
 pub enum UiDrawCommand {
@@ -79,6 +80,7 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
     let styles = world.get_component_store::<UiResolvedStyle>();
     let texts = world.get_component_store::<UiText>();
     let images = world.get_component_store::<UiImage>();
+    let widgets = world.get_component_store::<UiWidget>();
 
     let mut entities: Vec<(i32, usize, Entity)> = world
         .entities()
@@ -141,13 +143,24 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
             .and_then(|store| store.get_component(entity.index))
             && let Some(style) = &style.text
         {
-            let text_clip = Some(
-                clip.and_then(|clip| clip.intersect(computed.content))
-                    .unwrap_or(computed.content),
-            );
+            let text_clip = Some(match clip {
+                Some(clip) => clip.intersect(computed.content).unwrap_or(UiRect::ZERO),
+                None => computed.content,
+            });
+            if text_clip.is_some_and(|clip| clip.is_empty()) {
+                continue;
+            }
+            let mut text_rect = computed.content;
+            if let Some(widget) = widgets
+                .as_ref()
+                .and_then(|store| store.get_component(entity.index))
+                && matches!(&widget.spec, UiWidgetSpec::TextBox { .. })
+            {
+                text_rect.x -= widget.scroll_x;
+            }
             list.commands.push(UiDrawCommand::Text {
                 entity,
-                rect: computed.content,
+                rect: text_rect,
                 text: text.value.clone(),
                 style: style.clone(),
                 clip: text_clip,
