@@ -284,19 +284,17 @@ fn build_showcase(world: &mut World) {
                     UiDocumentNode::new("scroll")
                         .layout(UiLayout::default().width_full().height(160.0))
                         .scroll()
-                        .child(
-                            UiDocumentNode::new("scroll_rows")
-                                .layout(UiLayout::column().gap(6.0).padding(8.0).shrink(0.0))
-                                .child((1..18).fold(
-                                    UiDocumentNode::new("row_00").text("Scrollable row 00"),
-                                    |parent, index| {
-                                        parent.child(
-                                            UiDocumentNode::new(format!("row_{index:02}"))
-                                                .text(format!("Scrollable row {index:02}")),
-                                        )
-                                    },
-                                )),
-                        ),
+                        .child({
+                            let mut rows = UiDocumentNode::new("scroll_rows")
+                                .layout(UiLayout::column().gap(6.0).padding(8.0).shrink(0.0));
+                            for index in 0..18 {
+                                rows = rows.child(
+                                    UiDocumentNode::new(format!("row_{index:02}"))
+                                        .text(format!("Scrollable row {index:02}")),
+                                );
+                            }
+                            rows
+                        }),
                 ),
         )
         .child(
@@ -370,19 +368,33 @@ impl DemoSystem {
             .map(|events| events.read().cloned().collect())
             .unwrap_or_default();
         for event in events {
-            let (action_name, id) = match event {
-                UiEvent::Action { action, id, .. } => (action.name, id),
-                UiEvent::Click { id, .. } => {
-                    info!("UI demo click: {id}");
-                    let name = match id.as_str() {
-                        "theme_button" => "theme".to_string(),
-                        "modal_button" => "modal".to_string(),
-                        _ => continue,
-                    };
-                    (name, id)
+            if let UiEvent::Click { id, .. } = &event {
+                info!("UI demo click: {id}");
+            }
+            if let UiEvent::ValueChanged { id, value, .. } = &event {
+                if id.as_str() == "slider"
+                    && let Ok(slider_value) = value.parse::<f32>()
+                {
+                    let progress = world
+                        .get_resource::<ignit::ui::UiForest>()
+                        .and_then(|forest| forest.find(&"progress".into()));
+                    if let Some(progress) = progress
+                        && let Some(store) = world.get_component_store_mut::<UiWidget>()
+                    {
+                        let store = store.get_mut_store();
+                        if let Some(widget) = store.get_component_mut(progress.index)
+                            && let UiWidgetSpec::ProgressBar { value } = &mut widget.spec
+                        {
+                            *value = slider_value.clamp(0.0, 1.0);
+                        }
+                    }
                 }
-                _ => continue,
+                continue;
+            }
+            let UiEvent::Action { action, id, .. } = event else {
+                continue;
             };
+            let action_name = action.name;
             info!("UI demo action: {action_name} ({id})");
             match action_name.as_str() {
                 "theme" => {
@@ -474,5 +486,41 @@ mod action_tests {
             .color("bg")
             .unwrap();
         assert_ne!(before, after);
+    }
+}
+
+#[cfg(test)]
+mod interaction_tests {
+    use super::*;
+
+    #[test]
+    fn slider_value_updates_progress_bar() {
+        let mut world = World::new();
+        ignit::ui::init(&mut world);
+        build_showcase(&mut world);
+        let mut system = DemoSystem::new();
+        if let Some(mut events) = world.get_resource_mut::<ignit::ecs::Events<UiEvent>>() {
+            events.send(UiEvent::ValueChanged {
+                entity: ignit::ecs::Entity::new(0, 0),
+                id: "slider".into(),
+                value: "0.750".into(),
+            });
+        }
+        system.apply_events(&mut world);
+        let progress = world
+            .get_resource::<ignit::ui::UiForest>()
+            .unwrap()
+            .find(&"progress".into())
+            .unwrap();
+        let widget = world
+            .get_component_store::<UiWidget>()
+            .unwrap()
+            .get_component(progress.index)
+            .cloned()
+            .unwrap();
+        match widget.spec {
+            UiWidgetSpec::ProgressBar { value } => assert!((value - 0.75).abs() < f32::EPSILON),
+            _ => panic!("progress widget missing"),
+        }
     }
 }
