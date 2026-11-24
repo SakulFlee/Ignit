@@ -739,9 +739,15 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                         let y = rect.rect.y + 38.0 + index as f32 * 24.0;
                         if index == *selected || Some(index) == widget.hovered_option {
                             let color = if Some(index) == widget.hovered_option {
-                                [0.26, 0.40, 0.58, 1.0]
+                                with_alpha(
+                                    token_color(theme, "accent_hover", [0.34, 0.70, 0.98, 1.0]),
+                                    0.38,
+                                )
                             } else {
-                                [0.20, 0.32, 0.48, 1.0]
+                                with_alpha(
+                                    token_color(theme, "accent", [0.26, 0.62, 0.92, 1.0]),
+                                    0.28,
+                                )
                             };
                             draw.commands.push(UiDrawCommand::Rect {
                                 entity,
@@ -778,7 +784,10 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                         draw.commands.push(UiDrawCommand::Rect {
                             entity,
                             rect: UiRect::new(rect.content.x, y, rect.content.width, 20.0),
-                            color: [0.20, 0.32, 0.48, 1.0],
+                            color: with_alpha(
+                                token_color(theme, "accent", [0.26, 0.62, 0.92, 1.0]),
+                                0.28,
+                            ),
                             radius: [3.0; 4],
                             clip,
                         });
@@ -978,4 +987,9 @@ fn token_color(theme: Option<&UiThemes>, name: &str, fallback: [f32; 4]) -> [f32
     theme
         .and_then(|themes| themes.active.color(name))
         .unwrap_or(fallback)
+}
+
+fn with_alpha(mut color: [f32; 4], alpha: f32) -> [f32; 4] {
+    color[3] *= alpha;
+    color
 }
