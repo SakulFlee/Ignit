@@ -411,8 +411,8 @@ impl DemoSystem {
                         }
                     }
                 }
-                if id.as_str() == "toggle" || id.as_str() == "checkbox" {
-                    if let Ok(on) = value.parse::<bool>() {
+                if (id.as_str() == "toggle" || id.as_str() == "checkbox")
+                    && let Ok(on) = value.parse::<bool>() {
                         let target = if id.as_str() == "toggle" {
                             "checkbox"
                         } else {
@@ -438,7 +438,6 @@ impl DemoSystem {
                             }
                         }
                     }
-                }
                 continue;
             }
             let UiEvent::Action { action, id, .. } = event else {
