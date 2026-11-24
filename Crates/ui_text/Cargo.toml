@@ -1,0 +1,22 @@
+[package]
+name = "ignit_ui_text"
+description = "Cosmic-text shaping, alpha glyph atlas, and text editing for Ignit UI"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arboard = { workspace = true }
+cosmic-text = { version = "0.19.0", default-features = false, features = [
+  "std",
+  "swash",
+] }
+fontdb = { version = "0.23", features = ["fs"] }
+ignit_ecs = { path = "../ecs", version = "1.6.3" }
+ignit_text = { path = "../text", version = "1.6.3" }
+ignit_ui = { path = "../ui", version = "1.6.3" }
+log = { workspace = true }
+serde = { workspace = true }
