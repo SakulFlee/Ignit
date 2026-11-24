@@ -154,9 +154,19 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
             if let Some(widget) = widgets
                 .as_ref()
                 .and_then(|store| store.get_component(entity.index))
-                && matches!(&widget.spec, UiWidgetSpec::TextBox { .. })
             {
-                text_rect.x -= widget.scroll_x;
+                match &widget.spec {
+                    UiWidgetSpec::TextBox { .. } => {
+                        text_rect.x -= widget.scroll_x;
+                        let line_height = style.line_height.unwrap_or(style.size * 1.25);
+                        text_rect.y += ((text_rect.height - line_height) * 0.5).max(0.0);
+                    }
+                    UiWidgetSpec::Button { .. } | UiWidgetSpec::Collapsible { .. } => {
+                        let line_height = style.line_height.unwrap_or(style.size * 1.25);
+                        text_rect.y += ((text_rect.height - line_height) * 0.5).max(0.0);
+                    }
+                    _ => {}
+                }
             }
             list.commands.push(UiDrawCommand::Text {
                 entity,

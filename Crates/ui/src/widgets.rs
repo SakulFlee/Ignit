@@ -97,6 +97,7 @@ pub struct UiWidget {
     pub cursor: usize,
     pub anchor: usize,
     pub scroll_x: f32,
+    pub hovered_option: Option<usize>,
 }
 
 impl UiWidget {
@@ -113,6 +114,7 @@ impl UiWidget {
             cursor,
             anchor: cursor,
             scroll_x: 0.0,
+            hovered_option: None,
         }
     }
 }
@@ -340,6 +342,15 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
                     },
                 );
             }
+            UiWidgetSpec::Dropdown { options, open, .. } => {
+                widget.hovered_option = if *open {
+                    let option_index = ((input.pointer.y - (rect.rect.y + 38.0)) / 24.0).floor();
+                    (option_index >= 0.0 && (option_index as usize) < options.len())
+                        .then_some(option_index as usize)
+                } else {
+                    None
+                };
+            }
             UiWidgetSpec::Tabs {
                 tabs,
                 active,
@@ -423,6 +434,7 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
                 cursor: widget.cursor,
                 anchor: widget.anchor,
                 scroll_x: widget.scroll_x,
+                hovered_option: widget.hovered_option,
             },
             event,
         ));
@@ -439,6 +451,7 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
                 current.cursor = widget.cursor;
                 current.anchor = widget.anchor;
                 current.scroll_x = widget.scroll_x;
+                current.hovered_option = widget.hovered_option;
             }
         }
         if let Some(event) = event
@@ -681,6 +694,11 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
             }
             UiWidgetSpec::TextBox { value, .. } if focused == Some(entity) => {
                 let size = style.text.as_ref().map_or(14.0, |text| text.size);
+                let line_height = style
+                    .text
+                    .as_ref()
+                    .and_then(|text| text.line_height)
+                    .unwrap_or(size * 1.25);
                 let cursor_chars = value
                     .get(..widget.cursor.min(value.len()))
                     .unwrap_or(value)
@@ -689,14 +707,10 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 let caret_x = (rect.content.x + cursor_chars as f32 * size * 0.55
                     - widget.scroll_x)
                     .clamp(rect.content.x, rect.content.x + rect.content.width - 2.0);
+                let caret_y = rect.content.y + (rect.content.height - line_height).max(0.0) * 0.5;
                 draw.commands.push(UiDrawCommand::Line {
                     entity,
-                    rect: UiRect::new(
-                        caret_x,
-                        rect.content.y + 3.0,
-                        1.5,
-                        rect.content.height - 6.0,
-                    ),
+                    rect: UiRect::new(caret_x, caret_y, 1.5, line_height),
                     color: [0.92, 0.94, 1.0, 0.9],
                     clip,
                 });
@@ -737,11 +751,16 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 if *open {
                     for (index, option) in options.iter().enumerate() {
                         let y = rect.rect.y + 38.0 + index as f32 * 24.0;
-                        if index == *selected {
+                        if index == *selected || Some(index) == widget.hovered_option {
+                            let color = if Some(index) == widget.hovered_option {
+                                [0.26, 0.40, 0.58, 1.0]
+                            } else {
+                                [0.20, 0.32, 0.48, 1.0]
+                            };
                             draw.commands.push(UiDrawCommand::Rect {
                                 entity,
                                 rect: UiRect::new(rect.rect.x, y, rect.rect.width, 22.0),
-                                color: [0.20, 0.32, 0.48, 1.0],
+                                color,
                                 radius: [3.0; 4],
                                 clip,
                             });
@@ -825,7 +844,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                         entity,
                         rect: UiRect::new(
                             rect.rect.x + index as f32 * tab_width + 6.0,
-                            rect.content.y,
+                            rect.content.y + (rect.content.height - 22.0).max(0.0) * 0.5,
                             tab_width - 12.0,
                             rect.content.height,
                         ),

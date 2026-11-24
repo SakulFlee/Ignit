@@ -302,6 +302,18 @@ impl UiLayoutEngine {
             return;
         };
         let entity = context.entity;
+        let z_index = world
+            .get_component_store::<crate::widgets::UiWidget>()
+            .and_then(|store| {
+                store
+                    .get_component(entity.index)
+                    .map(|widget| match &widget.spec {
+                        crate::widgets::UiWidgetSpec::FloatingWindow { .. } => z_index + 1_000,
+                        crate::widgets::UiWidgetSpec::Modal { .. } => z_index + 2_000,
+                        _ => z_index,
+                    })
+            })
+            .unwrap_or(z_index);
         let abs = UiRect::new(
             origin.0 + layout.location.x,
             origin.1 + layout.location.y,

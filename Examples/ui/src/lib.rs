@@ -1,13 +1,14 @@
 use std::sync::{Arc, Mutex};
 
-use ignit::app::{App, AppSettings, Module};
+use ignit::app::{App, AppSettings, Module, UiSystem};
 use ignit::cgmath::{Point3, Rad};
-use ignit::ecs::{ComponentAccess, System, World};
+use ignit::ecs::{System, World};
 use ignit::ecs_bridge::{ActiveCamera, CameraDescriptor, Position, Rotation};
 use ignit::logging::{self, error, info};
 use ignit::ui::{
-    UiAction, UiBuilder, UiColor, UiDocument, UiDocumentNode, UiEdges, UiEvent, UiLayout,
-    UiLengthPercentage, UiStyle, UiTextStyle, UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec,
+    UiAction, UiBuilder, UiColor, UiDimension, UiDocument, UiDocumentNode, UiEdges, UiEvent,
+    UiLayout, UiLengthPercentage, UiStyle, UiTextStyle, UiTextWrap, UiTheme, UiThemes, UiView,
+    UiWidget, UiWidgetSpec,
 };
 use ignit::ui_render::UiRenderModule;
 use ignit::ui_text::TextEngine;
@@ -34,8 +35,8 @@ pub fn entrypoint(
     };
 
     match App::new()
-        .add_module(UiDemoModule)
         .add_module(UiRenderModule::new(text))
+        .add_module(UiDemoModule)
         .liftoff(event_loop, app_settings)
     {
         Ok(()) => info!("Cleanly exited!"),
@@ -76,6 +77,10 @@ impl Module for UiDemoModule {
         ecs.insert_resource(ActiveCamera(camera));
 
         build_showcase(ecs);
+        Vec::new()
+    }
+
+    fn ui_systems(&self, _ecs: &mut World) -> Vec<Box<dyn UiSystem>> {
         vec![Box::new(DemoSystem::new())]
     }
 }
@@ -177,7 +182,11 @@ fn build_showcase(world: &mut World) {
                             multiline: false,
                         })
                         .focusable()
-                        .style(UiStyle::default().class("panel")),
+                        .style(UiStyle::default().class("panel").padding_text(UiTextStyle {
+                            size: 16.0,
+                            wrap: UiTextWrap::NoWrap,
+                            ..Default::default()
+                        })),
                 )
                 .child(
                     UiDocumentNode::new("dropdown")
@@ -282,6 +291,13 @@ fn build_showcase(world: &mut World) {
                             right: UiLengthPercentage::Length(10.0),
                             top: UiLengthPercentage::Length(36.0),
                             bottom: UiLengthPercentage::Length(10.0),
+                        })
+                        .absolute()
+                        .inset(UiEdges {
+                            left: UiDimension::Length(880.0),
+                            right: UiDimension::Auto,
+                            top: UiDimension::Length(470.0),
+                            bottom: UiDimension::Auto,
                         }),
                 )
                 .widget(UiWidgetSpec::FloatingWindow {
@@ -321,32 +337,15 @@ fn build_showcase(world: &mut World) {
 }
 
 struct DemoSystem {
-    access: ComponentAccess,
     dark: bool,
 }
 
 impl DemoSystem {
     fn new() -> Self {
-        Self {
-            access: ComponentAccess::new()
-                .reads::<ignit::ecs::Events<UiEvent>>()
-                .writes::<UiThemes>()
-                .writes::<UiWidget>(),
-            dark: true,
-        }
-    }
-}
-
-impl System for DemoSystem {
-    fn name(&self) -> &str {
-        "ui_demo_actions"
+        Self { dark: true }
     }
 
-    fn access(&self) -> &ComponentAccess {
-        &self.access
-    }
-
-    fn run(&mut self, world: &World, _commands: &mut ignit::ecs::Commands) {
+    fn apply_events(&mut self, world: &mut World) {
         let events: Vec<UiEvent> = world
             .get_resource::<ignit::ecs::Events<UiEvent>>()
             .map(|events| events.read().cloned().collect())
@@ -396,6 +395,16 @@ impl System for DemoSystem {
                 _ => {}
             }
         }
+    }
+}
+
+impl UiSystem for DemoSystem {
+    fn name(&self) -> &str {
+        "ui_demo_actions"
+    }
+
+    fn run(&mut self, world: &mut World) {
+        self.apply_events(world);
     }
 }
 
