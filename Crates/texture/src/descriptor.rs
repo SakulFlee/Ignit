@@ -10,6 +10,8 @@ pub enum TextureDescriptor {
     /// ⚠️ This file has to be accessible @runtime!
     ///
     /// For supported formats check the [Image documentation](https://github.com/image-rs/image/blob/main/README.md#supported-image-formats).
+    /// Files ending in `.dds` are loaded as block-compressed BC1/BC3/BC5/BC7
+    /// textures instead.
     File {
         path: OsString,
         usages: TextureUsages,
