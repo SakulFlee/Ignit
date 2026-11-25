@@ -7,7 +7,7 @@ use ignit_ui::{
 };
 use log::LevelFilter;
 
-use crate::state::{DebugUiState, MAX_ROWS};
+use crate::state::DebugUiState;
 
 const ROWS: usize = 80;
 
