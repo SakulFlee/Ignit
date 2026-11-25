@@ -153,9 +153,18 @@ pub fn update(world: &mut World, measure: &mut dyn UiTextMeasure) -> UiStats {
     let mut capture = UiInputCapture::default();
     let hit = process_pointer(world, &mut input, &mut capture);
 
-    let focused = world
+    let mut focused = world
         .get_resource::<UiFocusState>()
         .and_then(|state| state.focused);
+    if focused.is_some_and(|entity| {
+        world
+            .get_component_store::<crate::node::UiComputed>()
+            .and_then(|store| store.get_component(entity.index).copied())
+            .is_none_or(|computed| !computed.visible)
+    }) {
+        focus::blur(world);
+        focused = None;
+    }
 
     if input.key_pressed(UiKey::Tab) {
         focus::focus_next(world, input.modifiers.shift);

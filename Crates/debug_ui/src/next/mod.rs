@@ -362,8 +362,10 @@ fn sane_ms(value: f64) -> Option<f32> {
 fn close_button(id: &str, action: &str) -> UiDocumentNode {
     UiDocumentNode::new(id)
         .layout(
-            UiLayout::default()
+            UiLayout::row()
                 .size(20.0, 20.0)
+                .justify(ignit_ui::UiJustify::Center)
+                .align_items(ignit_ui::UiAlign::Center)
                 .absolute()
                 .inset(ignit_ui::UiEdges {
                     left: ignit_ui::UiDimension::Auto,
@@ -372,11 +374,11 @@ fn close_button(id: &str, action: &str) -> UiDocumentNode {
                     bottom: ignit_ui::UiDimension::Auto,
                 }),
         )
-        .text("×")
         .widget(UiWidgetSpec::Button { label: "×".into() })
         .action(UiAction::new(action))
         .focusable()
         .style(UiStyle::default().class("panel"))
+        .child(UiDocumentNode::new(format!("{id}_label")).text("×"))
 }
 
 fn small_style(muted: bool) -> UiStyle {
@@ -578,6 +580,10 @@ fn set_panel_open(world: &mut World, panel: Entity, open: bool) {
     if changed {
         mark_dirty(world, panel, UiDirty::LAYOUT | UiDirty::PAINT);
     }
+    // Keep the style in sync as well: once a widget is display:none it no
+    // longer receives update_widgets work, so the open flag alone cannot
+    // bring a closed window back.
+    set_visible(world, panel, open);
 }
 
 fn set_visible(world: &mut World, root: Entity, visible: bool) {
