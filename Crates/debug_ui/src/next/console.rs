@@ -145,8 +145,8 @@ pub(super) fn refresh(world: &mut World) {
         };
         if let Some((level, target, message)) = lines.get(index) {
             let message = message.replace(['\n', '\r'], " ");
-            let preview: String = if message.chars().count() > 280 {
-                message.chars().take(277).collect::<String>() + "..."
+            let preview: String = if message.chars().count() > 180 {
+                message.chars().take(177).collect::<String>() + "..."
             } else {
                 message
             };
