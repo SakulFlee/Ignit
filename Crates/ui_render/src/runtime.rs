@@ -41,6 +41,9 @@ impl UiRenderModule {
 impl Module for UiRenderModule {
     fn setup(&self, ecs: &mut World, _device: &Device, _queue: &Queue) -> Vec<Box<dyn System>> {
         ignit_ui::init(ecs);
+        ecs.insert_resource(ignit_ui::UiClipboardResource::new(
+            ignit_ui_text::SystemClipboard::new(),
+        ));
         ecs.insert_resource(UiTextResource(Arc::clone(&self.text)));
         if ecs.get_resource::<InputCapture>().is_none() {
             ecs.insert_resource(InputCapture::default());

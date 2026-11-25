@@ -9,6 +9,7 @@
 //! main scene encoder.
 
 pub mod builder;
+pub mod clipboard;
 pub mod document;
 pub mod draw;
 pub mod events;
@@ -26,6 +27,7 @@ pub mod style_pass;
 pub mod widgets;
 
 pub use builder::{UiBuilder, UiHandle};
+pub use clipboard::{UiClipboard, UiClipboardResource, UiMemoryClipboard};
 pub use document::{
     UI_DOCUMENT_VERSION, UiDocument, UiDocumentEntry, UiDocumentNode, UiDocumentRegistry,
     load_document, reload_changed_documents, reload_document, reload_document_from_source,
@@ -81,6 +83,9 @@ pub fn init(world: &mut World) {
     }
     if world.get_resource::<UiInputCapture>().is_none() {
         world.insert_resource(UiInputCapture::default());
+    }
+    if world.get_resource::<UiClipboardResource>().is_none() {
+        world.insert_resource(UiClipboardResource::default());
     }
     if world.get_resource::<UiFocusState>().is_none() {
         world.insert_resource(UiFocusState::default());
@@ -204,7 +209,7 @@ pub fn update(world: &mut World, measure: &mut dyn UiTextMeasure) -> UiStats {
         capture.pointer = true;
     }
 
-    widgets::update_widgets(world, &input);
+    widgets::update_widgets(world, &input, measure);
     input.end_frame();
     world.insert_resource(input);
     world.insert_resource(capture);

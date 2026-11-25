@@ -1,15 +1,10 @@
 //! Single-line/multi-line text editing model.
 
+pub use ignit_ui::UiClipboard;
+
 use ignit_ui::{UiKey, UiModifiers};
 
 use crate::shape::ShapedText;
-
-/// Clipboard abstraction so tests and headless builds can run without a
-/// display server.
-pub trait UiClipboard {
-    fn get_text(&mut self) -> Option<String>;
-    fn set_text(&mut self, text: String);
-}
 
 /// `arboard`-backed clipboard. Construction may fail without a display; the
 /// editor still works with copy/cut/paste as no-ops.

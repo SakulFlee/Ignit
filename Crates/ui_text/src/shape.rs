@@ -339,6 +339,31 @@ impl TextEngine {
         Some([x, y, 1.5, height])
     }
 
+    /// Highlight rectangle for a single-line selection, in shaped coordinates.
+    pub fn selection_rect(
+        &mut self,
+        shaped: &ShapedText,
+        start: usize,
+        end: usize,
+    ) -> Option<[f32; 4]> {
+        let (start, end) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        if start == end {
+            return None;
+        }
+        let (x0, _) = self.cursor_position(shaped, start)?;
+        let (x1, _) = self.cursor_position(shaped, end)?;
+        let line = shaped
+            .lines
+            .iter()
+            .find(|line| start >= line.start && start <= line.end)
+            .or_else(|| shaped.lines.first())?;
+        Some([x0.min(x1), line.y, (x1 - x0).abs().max(1.0), line.height])
+    }
+
     pub fn stats(&self) -> TextStats {
         TextStats {
             cache_hits: self.cache_hits,
@@ -362,6 +387,18 @@ impl UiTextMeasure for TextEngine {
         let width = max_width.unwrap_or(100_000.0);
         let shaped = self.shape(text, style, width);
         UiSize::new(shaped.width.ceil(), shaped.height.ceil())
+    }
+
+    fn cursor_index(
+        &mut self,
+        text: &str,
+        style: &UiTextStyle,
+        max_width: f32,
+        x: f32,
+        y: f32,
+    ) -> usize {
+        let shaped = self.shape(text, style, max_width.max(1.0));
+        self.hit_to_cursor(&shaped, x, y)
     }
 }
 

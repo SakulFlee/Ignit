@@ -116,6 +116,21 @@ fn editing_operations_and_selection() {
 }
 
 #[test]
+fn selection_rect_matches_the_shaped_run() {
+    let mut engine = TextEngine::new();
+    let shaped = engine.shape("hello world", &style(16.0), 300.0);
+    let rect = engine
+        .selection_rect(&shaped, 1, 6)
+        .expect("selection rectangle");
+    assert!(rect[2] > 0.0);
+    assert_eq!(rect[1], shaped.lines[0].y);
+    assert_eq!(rect[3], shaped.lines[0].height);
+
+    let hit = engine.hit_to_cursor(&shaped, rect[0] + rect[2] * 0.5, rect[1] + 2.0);
+    assert!((1..=6).contains(&hit), "hit was {hit}");
+}
+
+#[test]
 fn clipboard_copy_cut_paste() {
     struct MockClipboard {
         text: Option<String>,
