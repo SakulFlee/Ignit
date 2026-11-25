@@ -461,21 +461,36 @@ fn toolbar() -> UiDocumentNode {
                 .layout(UiLayout::default().width(84.0))
                 .text("Debug UI"),
         );
-    for (id, label, action) in [
-        ("debug_toolbar_perf", "Performance", "debug_toggle_perf"),
-        ("debug_toolbar_console", "Console", "debug_toggle_console"),
-        ("debug_toolbar_hide", "Hide", "debug_hide_all"),
+    for (id, label, action, width) in [
+        (
+            "debug_toolbar_perf",
+            "Performance",
+            "debug_toggle_perf",
+            116.0,
+        ),
+        (
+            "debug_toolbar_console",
+            "Console",
+            "debug_toggle_console",
+            92.0,
+        ),
+        ("debug_toolbar_hide", "Hide", "debug_hide_all", 64.0),
     ] {
         row = row.child(
             UiDocumentNode::new(id)
-                .layout(UiLayout::default().size(96.0, 22.0))
-                .text(label)
+                .layout(
+                    UiLayout::row()
+                        .size(width, 22.0)
+                        .justify(ignit_ui::UiJustify::Center)
+                        .align_items(ignit_ui::UiAlign::Center),
+                )
                 .widget(UiWidgetSpec::Button {
                     label: label.into(),
                 })
                 .action(UiAction::new(action))
                 .focusable()
-                .style(UiStyle::default().class("panel")),
+                .style(UiStyle::default().class("panel"))
+                .child(UiDocumentNode::new(format!("{id}_label")).text(label)),
         );
     }
     row
