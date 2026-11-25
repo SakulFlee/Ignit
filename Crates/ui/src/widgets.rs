@@ -220,6 +220,20 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                 let mut anchor = widget.anchor.min(edited.len());
                 let mut changed = false;
                 let edit_style = edit_text_style(world, entity);
+                let content_width = rect.content.width.max(1.0);
+                let text_width = measure.measure(&edited, &edit_style, None).width;
+                let max_scroll = (text_width - content_width).max(0.0);
+
+                if widget.text_drag && input.primary_down {
+                    let over_right = input.pointer.x - (rect.content.x + content_width);
+                    let over_left = input.pointer.x - rect.content.x;
+                    if over_right > 0.0 {
+                        widget.scroll_x += (over_right * 0.25).max(1.0);
+                    } else if over_left < 0.0 {
+                        widget.scroll_x += (over_left * 0.25).min(-1.0);
+                    }
+                    widget.scroll_x = widget.scroll_x.clamp(0.0, max_scroll);
+                }
 
                 let pointer_x = input.pointer.x - rect.content.x + widget.scroll_x;
                 let pointer_y = input.pointer.y - rect.content.y;
@@ -227,7 +241,7 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                     let next = measure.cursor_index(
                         &edited,
                         &edit_style,
-                        rect.content.width.max(1.0),
+                        content_width,
                         pointer_x,
                         pointer_y,
                     );
@@ -240,7 +254,7 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                     cursor = measure.cursor_index(
                         &edited,
                         &edit_style,
-                        rect.content.width.max(1.0),
+                        content_width,
                         pointer_x,
                         pointer_y,
                     );
@@ -288,6 +302,22 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                                 edited.replace_range(cursor..next, "");
                             }
                             changed = true;
+                        }
+                        crate::input::UiKey::ArrowLeft
+                            if input.modifiers.ctrl || input.modifiers.super_key =>
+                        {
+                            cursor = prev_word_boundary(&edited, cursor);
+                            if !input.modifiers.shift {
+                                anchor = cursor;
+                            }
+                        }
+                        crate::input::UiKey::ArrowRight
+                            if input.modifiers.ctrl || input.modifiers.super_key =>
+                        {
+                            cursor = next_word_boundary(&edited, cursor);
+                            if !input.modifiers.shift {
+                                anchor = cursor;
+                            }
                         }
                         crate::input::UiKey::ArrowLeft => {
                             cursor = prev_boundary(&edited, cursor);
@@ -373,29 +403,25 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                 }
                 widget.cursor = cursor;
                 widget.anchor = anchor;
+                let cursor_x = measure
+                    .measure(
+                        edited.get(..cursor.min(edited.len())).unwrap_or(&edited),
+                        &edit_style,
+                        None,
+                    )
+                    .width;
+                if cursor_x - widget.scroll_x > content_width - 4.0 {
+                    widget.scroll_x = cursor_x - content_width + 4.0;
+                } else if cursor_x < widget.scroll_x {
+                    widget.scroll_x = cursor_x;
+                }
+                let text_width = measure.measure(&edited, &edit_style, None).width;
+                widget.scroll_x = widget
+                    .scroll_x
+                    .clamp(0.0, (text_width - content_width).max(0.0))
+                    .round();
                 if changed && edited != *value {
                     *value = edited.clone();
-                    let text_size = world
-                        .get_component_store::<UiResolvedStyle>()
-                        .and_then(|store| {
-                            store
-                                .get_component(entity.index)
-                                .and_then(|style| style.text.as_ref().map(|text| text.size))
-                        })
-                        .unwrap_or(14.0);
-                    let cursor_x = edited
-                        .get(..cursor.min(edited.len()))
-                        .unwrap_or(&edited)
-                        .chars()
-                        .count() as f32
-                        * text_size
-                        * 0.55;
-                    let visible_width = rect.content.width.max(1.0);
-                    if cursor_x - widget.scroll_x > visible_width - 4.0 {
-                        widget.scroll_x = cursor_x - visible_width + 4.0;
-                    } else if cursor_x < widget.scroll_x {
-                        widget.scroll_x = cursor_x;
-                    }
                     text_changes.push((entity, edited.clone()));
                     event = Some(UiEvent::ValueChanged {
                         entity,
@@ -1147,6 +1173,46 @@ fn next_boundary(text: &str, index: usize) -> usize {
         .char_indices()
         .nth(1)
         .map_or(text.len(), |(offset, _)| index + offset)
+}
+
+fn prev_word_boundary(text: &str, cursor: usize) -> usize {
+    let mut index = cursor.min(text.len());
+    while index > 0 {
+        let prev = prev_boundary(text, index);
+        if text[prev..index].chars().all(char::is_whitespace) {
+            index = prev;
+        } else {
+            break;
+        }
+    }
+    while index > 0 {
+        let prev = prev_boundary(text, index);
+        if text[prev..index].chars().all(char::is_whitespace) {
+            break;
+        }
+        index = prev;
+    }
+    index
+}
+
+fn next_word_boundary(text: &str, cursor: usize) -> usize {
+    let mut index = cursor.min(text.len());
+    while index < text.len() {
+        let next = next_boundary(text, index);
+        if text[index..next].chars().all(char::is_whitespace) {
+            index = next;
+        } else {
+            break;
+        }
+    }
+    while index < text.len() {
+        let next = next_boundary(text, index);
+        if text[index..next].chars().all(char::is_whitespace) {
+            break;
+        }
+        index = next;
+    }
+    index
 }
 
 fn token_color(theme: Option<&UiThemes>, name: &str, fallback: [f32; 4]) -> [f32; 4] {

@@ -269,6 +269,155 @@ fn text_box_backspace_deletes_a_character() {
 }
 
 #[test]
+fn text_box_arrows_home_end_and_word_selection() {
+    let mut world = World::new();
+    init(&mut world);
+    let entity = build(
+        &mut world,
+        "text_keys",
+        UiWidgetSpec::TextBox {
+            value: "hello world".into(),
+            placeholder: String::new(),
+            multiline: false,
+        },
+    );
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    ignit_ui::focus_entity(&mut world, entity);
+
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::ArrowLeft, ignit_ui::UiKey::ArrowLeft],
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let widget = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!(widget.cursor, 9);
+    assert_eq!(
+        world.get_resource::<UiFocusState>().unwrap().focused,
+        Some(entity)
+    );
+
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::Home],
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let widget = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!(widget.cursor, 0);
+
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::End],
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let widget = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!(widget.cursor, 11);
+
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::ArrowLeft],
+        modifiers: ignit_ui::UiModifiers {
+            ctrl: true,
+            shift: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let widget = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!((widget.anchor, widget.cursor), (11, 6));
+}
+
+#[test]
+fn text_box_drag_beyond_the_edge_scrolls() {
+    let mut world = World::new();
+    init(&mut world);
+    let value = "abcdefghij".repeat(10);
+    let entity = build(
+        &mut world,
+        "text_scroll_select",
+        UiWidgetSpec::TextBox {
+            value: value.clone(),
+            placeholder: String::new(),
+            multiline: false,
+        },
+    );
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    ignit_ui::focus_entity(&mut world, entity);
+    let rect = rect(&world, entity);
+    let y = rect.content.y + 10.0;
+
+    world.insert_resource(UiInputState {
+        pointer: UiPoint::new(rect.content.x + 231.0, y),
+        primary_down: true,
+        primary_pressed: true,
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let pressed_anchor = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .unwrap()
+        .anchor;
+    assert!(pressed_anchor > 0);
+    for _ in 0..40 {
+        world.insert_resource(UiInputState {
+            pointer: UiPoint::new(rect.content.x + 450.0, y),
+            primary_down: true,
+            ..Default::default()
+        });
+        update(&mut world, &mut text);
+    }
+    let widget = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert!(widget.scroll_x > 0.0, "scroll was {}", widget.scroll_x);
+    assert_eq!(widget.cursor, value.len());
+    assert_eq!(widget.anchor, pressed_anchor);
+
+    for _ in 0..40 {
+        world.insert_resource(UiInputState {
+            pointer: UiPoint::new(rect.content.x - 200.0, y),
+            primary_down: true,
+            ..Default::default()
+        });
+        update(&mut world, &mut text);
+    }
+    let widget = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!(widget.scroll_x, 0.0);
+    assert_eq!(widget.cursor, 0);
+}
+
+#[test]
 fn text_box_mouse_selection_copy_and_paste() {
     let mut world = World::new();
     init(&mut world);

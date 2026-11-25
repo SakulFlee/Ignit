@@ -116,6 +116,21 @@ fn editing_operations_and_selection() {
 }
 
 #[test]
+fn nowrap_text_shapes_past_the_viewport_width() {
+    let mut engine = TextEngine::new();
+    let mut style = style(16.0);
+    style.wrap = ignit_ui::UiTextWrap::NoWrap;
+    let shaped = engine.shape(
+        "a long single line that should not be cut at the viewport",
+        &style,
+        80.0,
+    );
+    assert!(shaped.width > 80.0);
+    let last = shaped.glyphs.last().expect("glyphs");
+    assert!(last.rect[0] > 80.0, "last glyph at {}", last.rect[0]);
+}
+
+#[test]
 fn selection_rect_matches_the_shaped_run() {
     let mut engine = TextEngine::new();
     let shaped = engine.shape("hello world", &style(16.0), 300.0);

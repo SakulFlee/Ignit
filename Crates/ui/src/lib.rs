@@ -158,15 +158,29 @@ pub fn update(world: &mut World, measure: &mut dyn UiTextMeasure) -> UiStats {
         focus::focus_next(world, input.modifiers.shift);
         capture.keyboard = true;
     }
-    for (key, direction) in [
-        (UiKey::ArrowLeft, UiDirection::Left),
-        (UiKey::ArrowRight, UiDirection::Right),
-        (UiKey::ArrowUp, UiDirection::Up),
-        (UiKey::ArrowDown, UiDirection::Down),
-    ] {
-        if input.key_pressed(key) {
-            focus::focus_direction(world, direction);
-            capture.keyboard = true;
+    // Arrows belong to a focused text field; only use them for spatial focus
+    // navigation when no editable field owns the keyboard.
+    let editing = focused.is_some_and(|entity| {
+        world
+            .get_component_store::<widgets::UiWidget>()
+            .and_then(|store| {
+                store
+                    .get_component(entity.index)
+                    .map(|widget| matches!(widget.spec, widgets::UiWidgetSpec::TextBox { .. }))
+            })
+            .unwrap_or(false)
+    });
+    if !editing {
+        for (key, direction) in [
+            (UiKey::ArrowLeft, UiDirection::Left),
+            (UiKey::ArrowRight, UiDirection::Right),
+            (UiKey::ArrowUp, UiDirection::Up),
+            (UiKey::ArrowDown, UiDirection::Down),
+        ] {
+            if input.key_pressed(key) {
+                focus::focus_direction(world, direction);
+                capture.keyboard = true;
+            }
         }
     }
     if input.key_pressed(UiKey::Escape) {
