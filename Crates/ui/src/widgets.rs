@@ -314,13 +314,15 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                             }
                         }
                         crate::input::UiKey::Character(character)
-                            if input.modifiers.ctrl && character.eq_ignore_ascii_case(&'a') =>
+                            if (input.modifiers.ctrl || input.modifiers.super_key)
+                                && character.eq_ignore_ascii_case(&'a') =>
                         {
                             anchor = 0;
                             cursor = edited.len();
                         }
                         crate::input::UiKey::Character(character)
-                            if input.modifiers.ctrl && character.eq_ignore_ascii_case(&'c') =>
+                            if (input.modifiers.ctrl || input.modifiers.super_key)
+                                && character.eq_ignore_ascii_case(&'c') =>
                         {
                             if let Some((start, end)) = selection_range(cursor, anchor)
                                 && let Some(clipboard) = world.get_resource::<UiClipboardResource>()
@@ -329,7 +331,8 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                             }
                         }
                         crate::input::UiKey::Character(character)
-                            if input.modifiers.ctrl && character.eq_ignore_ascii_case(&'x') =>
+                            if (input.modifiers.ctrl || input.modifiers.super_key)
+                                && character.eq_ignore_ascii_case(&'x') =>
                         {
                             if let Some((start, end)) = selection_range(cursor, anchor) {
                                 if let Some(clipboard) = world.get_resource::<UiClipboardResource>()
@@ -341,7 +344,8 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                             }
                         }
                         crate::input::UiKey::Character(character)
-                            if input.modifiers.ctrl && character.eq_ignore_ascii_case(&'v') =>
+                            if (input.modifiers.ctrl || input.modifiers.super_key)
+                                && character.eq_ignore_ascii_case(&'v') =>
                         {
                             let pasted = world
                                 .get_resource::<UiClipboardResource>()
