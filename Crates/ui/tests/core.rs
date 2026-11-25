@@ -76,6 +76,25 @@ fn builder_lays_out_nested_panels() {
 }
 
 #[test]
+fn percentage_layout_uses_parent_fractions() {
+    let mut world = World::new();
+    init(&mut world);
+    let mut root = UiDocumentNode::new("percent_root")
+        .layout(UiLayout::column().size(400.0, 300.0))
+        .child(
+            UiDocumentNode::new("percent_child")
+                .layout(UiLayout::default().width_percent(50.0).height_percent(25.0)),
+        );
+    root.view = Some(UiView::new(400.0, 300.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let mut measure = UiFallbackTextMeasure;
+    update(&mut world, &mut measure);
+    let child = computed(&world, "percent_child");
+    assert_eq!(child.rect.width, 200.0);
+    assert_eq!(child.rect.height, 75.0);
+}
+
+#[test]
 fn layout_is_skipped_when_nothing_is_dirty() {
     let mut world = World::new();
     init(&mut world);

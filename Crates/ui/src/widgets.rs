@@ -1085,14 +1085,15 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     values.iter().copied().fold(0.0, f32::max).max(0.001)
                 };
                 let step = rect.content.width / values.len() as f32;
+                let bar = (step - 1.0).clamp(1.0, 3.0);
                 for (index, value) in values.iter().enumerate() {
                     let height = (value / max).clamp(0.0, 1.0) * rect.content.height;
                     draw.commands.push(UiDrawCommand::Rect {
                         entity,
                         rect: UiRect::new(
-                            rect.content.x + index as f32 * step,
+                            rect.content.x + index as f32 * step + (step - bar).max(0.0) * 0.5,
                             rect.content.y + rect.content.height - height,
-                            step.max(1.0),
+                            bar,
                             height,
                         ),
                         color: token_color(theme, "accent", [0.30, 0.70, 0.96, 1.0]),

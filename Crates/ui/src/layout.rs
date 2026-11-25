@@ -454,7 +454,7 @@ fn dimension(value: UiDimension) -> Dimension {
     match value {
         UiDimension::Auto => Dimension::auto(),
         UiDimension::Length(value) => Dimension::length(value),
-        UiDimension::Percent(value) => Dimension::percent(value),
+        UiDimension::Percent(value) => Dimension::percent(value / 100.0),
     }
 }
 
@@ -462,7 +462,7 @@ fn dimension_auto(value: UiDimension) -> LengthPercentageAuto {
     match value {
         UiDimension::Auto => auto(),
         UiDimension::Length(value) => length(value),
-        UiDimension::Percent(value) => percent(value),
+        UiDimension::Percent(value) => percent(value / 100.0),
     }
 }
 
@@ -470,7 +470,7 @@ fn length_percentage(value: UiLengthPercentage) -> LengthPercentage {
     match value {
         UiLengthPercentage::Zero => length(0.0),
         UiLengthPercentage::Length(value) => length(value),
-        UiLengthPercentage::Percent(value) => percent(value),
+        UiLengthPercentage::Percent(value) => percent(value / 100.0),
     }
 }
 
@@ -526,8 +526,8 @@ fn track_sizing(value: &UiTrack) -> TrackSizingFunction {
             max: MaxTrackSizingFunction::length(*value),
         },
         UiTrack::Percent(value) => TrackSizingFunction {
-            min: MinTrackSizingFunction::percent(*value),
-            max: MaxTrackSizingFunction::percent(*value),
+            min: MinTrackSizingFunction::percent(*value / 100.0),
+            max: MaxTrackSizingFunction::percent(*value / 100.0),
         },
         UiTrack::Fr(value) => TrackSizingFunction {
             min: MinTrackSizingFunction::auto(),
@@ -544,7 +544,7 @@ fn min_track(value: &UiTrack) -> MinTrackSizingFunction {
     match value {
         UiTrack::Auto | UiTrack::Fr(_) => MinTrackSizingFunction::auto(),
         UiTrack::Length(value) => MinTrackSizingFunction::length(*value),
-        UiTrack::Percent(value) => MinTrackSizingFunction::percent(*value),
+        UiTrack::Percent(value) => MinTrackSizingFunction::percent(*value / 100.0),
         UiTrack::MinMax(min, _) => min_track(min),
     }
 }
@@ -553,7 +553,7 @@ fn max_track(value: &UiTrack) -> MaxTrackSizingFunction {
     match value {
         UiTrack::Auto => MaxTrackSizingFunction::auto(),
         UiTrack::Length(value) => MaxTrackSizingFunction::length(*value),
-        UiTrack::Percent(value) => MaxTrackSizingFunction::percent(*value),
+        UiTrack::Percent(value) => MaxTrackSizingFunction::percent(*value / 100.0),
         UiTrack::Fr(value) => MaxTrackSizingFunction::fr(*value),
         UiTrack::MinMax(_, max) => max_track(max),
     }

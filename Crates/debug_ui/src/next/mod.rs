@@ -211,23 +211,63 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
         .child(UiDocumentNode::new("debug_perf_frame").text("Frame: -- ms"))
         .child(
             UiDocumentNode::new("debug_perf_graph")
-                .layout(UiLayout::default().width_full().height(90.0))
+                .layout(UiLayout::default().width_full().height(90.0).shrink(0.0))
                 .widget(UiWidgetSpec::Sparkline {
                     values: Vec::new(),
                     max: 1.0,
                 }),
         )
         .child(
-            UiDocumentNode::new("debug_perf_stages")
-                .text("Stage timings")
-                .style(UiStyle::default().class("muted")),
+            UiDocumentNode::new("debug_perf_stage_header")
+                .layout(
+                    UiLayout::row()
+                        .width_full()
+                        .height(16.0)
+                        .gap(4.0)
+                        .shrink(0.0),
+                )
+                .child(
+                    UiDocumentNode::new("debug_perf_stage_header_name")
+                        .layout(UiLayout::default().width_percent(38.0))
+                        .text("Stage")
+                        .style(small_style(true)),
+                )
+                .child(
+                    UiDocumentNode::new("debug_perf_stage_header_values")
+                        .layout(UiLayout {
+                            flex_grow: 1.0,
+                            ..Default::default()
+                        })
+                        .text("last      avg      max")
+                        .style(small_style(true)),
+                ),
         );
 
     for index in 0..ignit_ecs_bridge::TIMING_STAGES.len() {
         content = content.child(
-            UiDocumentNode::new(format!("debug_perf_stage_{index}"))
-                .text("--")
-                .style(UiStyle::default().class("muted")),
+            UiDocumentNode::new(format!("debug_perf_stage_row_{index}"))
+                .layout(
+                    UiLayout::row()
+                        .width_full()
+                        .height(16.0)
+                        .gap(4.0)
+                        .shrink(0.0),
+                )
+                .child(
+                    UiDocumentNode::new(format!("debug_perf_stage_name_{index}"))
+                        .layout(UiLayout::default().width_percent(38.0))
+                        .text("--")
+                        .style(small_style(true)),
+                )
+                .child(
+                    UiDocumentNode::new(format!("debug_perf_stage_{index}"))
+                        .layout(UiLayout {
+                            flex_grow: 1.0,
+                            ..Default::default()
+                        })
+                        .text("--")
+                        .style(small_style(false)),
+                ),
         );
     }
 
@@ -323,6 +363,19 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
     Some((root, panel))
 }
 
+fn small_style(muted: bool) -> UiStyle {
+    UiStyle::default().padding_text(ignit_ui::UiTextStyle {
+        size: 11.0,
+        color: if muted {
+            ignit_ui::UiColor::token("text_muted")
+        } else {
+            ignit_ui::UiColor::token("text")
+        },
+        wrap: ignit_ui::UiTextWrap::NoWrap,
+        ..Default::default()
+    })
+}
+
 fn refresh_performance(world: &mut World) {
     let fps = world.get_resource::<FpsStats>().map_or(0.0, |stats| {
         if stats.fps > 0 {
@@ -342,6 +395,12 @@ fn refresh_performance(world: &mut World) {
         format!("FPS: {fps:.1}  ({frame_ms:.2} ms)"),
     );
 
+    set_text(
+        world,
+        "debug_perf_frame",
+        format!("Frame: {frame_ms:.2} ms"),
+    );
+
     let (values, max, rows) = world.get_resource::<FrameTimings>().map_or_else(
         || (Vec::new(), 1.0, Vec::new()),
         |timings| {
@@ -357,10 +416,24 @@ fn refresh_performance(world: &mut World) {
             let rows = timings
                 .samples()
                 .iter()
-                .map(|sample| {
-                    format!(
-                        "{}: {:.2} ms  avg {:.2}  max {:.2}",
-                        sample.name, sample.last_ms, sample.avg_ms, sample.max_ms
+                .enumerate()
+                .map(|(index, sample)| {
+                    let gpu = index >= ignit_ecs_bridge::GPU_STAGE_START;
+                    let (good, warn) = if gpu { (2.0, 4.0) } else { (1.0, 2.0) };
+                    let color = if sample.last_ms <= good {
+                        [0.5, 0.9, 0.6, 1.0]
+                    } else if sample.last_ms <= warn {
+                        [1.0, 0.8, 0.4, 1.0]
+                    } else {
+                        [1.0, 0.5, 0.45, 1.0]
+                    };
+                    (
+                        sample.name.to_string(),
+                        format!(
+                            "{:>6.2}  {:>6.2}  {:>6.2}",
+                            sample.last_ms, sample.avg_ms, sample.max_ms
+                        ),
+                        color,
                     )
                 })
                 .collect();
@@ -368,8 +441,10 @@ fn refresh_performance(world: &mut World) {
         },
     );
     set_sparkline(world, "debug_perf_graph", values, max);
-    for (index, row) in rows.into_iter().enumerate() {
-        set_text(world, &format!("debug_perf_stage_{index}"), row);
+    for (index, (name, value, color)) in rows.into_iter().enumerate() {
+        set_text(world, &format!("debug_perf_stage_name_{index}"), name);
+        set_text(world, &format!("debug_perf_stage_{index}"), value);
+        set_text_color(world, &format!("debug_perf_stage_{index}"), color);
     }
 
     let config = world
@@ -425,6 +500,27 @@ fn set_toggle(world: &mut World, id: &str, on: bool) {
     if changed {
         mark_dirty(world, entity, UiDirty::PAINT);
     }
+}
+
+fn set_text_color(world: &mut World, id: &str, color: [f32; 4]) {
+    let Some(entity) = world
+        .get_resource::<ignit_ui::UiForest>()
+        .and_then(|forest| forest.find(&id.into()))
+    else {
+        return;
+    };
+    let current = world
+        .get_component_store::<UiStyle>()
+        .and_then(|store| store.get_component(entity.index).cloned());
+    let mut style = current.unwrap_or_default();
+    style.text = Some(ignit_ui::UiTextStyle {
+        size: 11.0,
+        color: ignit_ui::UiColor::Rgba(color),
+        wrap: ignit_ui::UiTextWrap::NoWrap,
+        ..style.text.unwrap_or_default()
+    });
+    let _ = world.attach_component(&entity, style);
+    mark_dirty(world, entity, UiDirty::PAINT | UiDirty::TEXT);
 }
 
 fn set_sparkline(world: &mut World, id: &str, values: Vec<f32>, max: f32) {
@@ -512,6 +608,49 @@ mod tests {
             .cloned()
             .unwrap();
         assert_eq!(style.visible, Some(false));
+    }
+
+    #[test]
+    fn performance_content_scrolls() {
+        let mut world = World::new();
+        let (root, _) = build_document(&mut world).expect("document");
+        set_visible(&mut world, root, true);
+        let mut text = ignit_ui::UiFallbackTextMeasure;
+        ignit_ui::update(&mut world, &mut text);
+        let scroll = world
+            .get_resource::<ignit_ui::UiForest>()
+            .and_then(|forest| forest.find(&"debug_next_perf_scroll".into()))
+            .expect("scroll entity");
+        let computed = world
+            .get_component_store::<ignit_ui::UiComputed>()
+            .and_then(|store| store.get_component(scroll.index).copied())
+            .expect("computed");
+        let state = world
+            .get_component_store::<ignit_ui::UiScroll>()
+            .and_then(|store| store.get_component(scroll.index).copied())
+            .expect("scroll state");
+        assert!(
+            state.content_size.height > state.viewport_size.height,
+            "content {:?} viewport {:?}",
+            state.content_size,
+            state.viewport_size
+        );
+
+        world.insert_resource(ignit_ui::UiInputState {
+            pointer: ignit_ui::UiPoint::new(
+                computed.rect.x + computed.rect.width * 0.5,
+                computed.rect.y + computed.rect.height * 0.5,
+            ),
+            wheel: ignit_ui::UiPoint::new(0.0, 60.0),
+            ..Default::default()
+        });
+        ignit_ui::update(&mut world, &mut text);
+        ignit_ui::update(&mut world, &mut text);
+        let state = world
+            .get_component_store::<ignit_ui::UiScroll>()
+            .and_then(|store| store.get_component(scroll.index).copied())
+            .expect("scroll state");
+        assert!(state.offset.y > 0.0, "offset {:?}", state.offset);
     }
 
     #[test]
