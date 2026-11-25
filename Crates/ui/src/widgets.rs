@@ -689,10 +689,10 @@ fn move_widget(world: &mut World, entity: Entity, x: f32, y: f32) {
 
 fn raise_floating(world: &mut World, entity: Entity, widget: &mut UiWidget) {
     let next = if let Some(mut order) = world.get_resource_mut::<UiWindowOrder>() {
-        order.next = order.next.saturating_add(1000);
+        order.next = order.next.saturating_add(10_000);
         order.next
     } else {
-        widget.raise.saturating_add(1000)
+        widget.raise.saturating_add(10_000)
     };
     if widget.raise != next {
         widget.raise = next;

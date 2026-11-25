@@ -369,7 +369,9 @@ impl UiLayoutEngine {
                     .get_component(entity.index)
                     .map(|widget| match &widget.spec {
                         crate::widgets::UiWidgetSpec::FloatingWindow { .. } => {
-                            z_index + 100_000 + widget.raise
+                            // Keep every child of one window inside a large z band
+                            // so another window's rows cannot interleave with it.
+                            z_index.saturating_mul(1000) + 100_000 + widget.raise
                         }
                         crate::widgets::UiWidgetSpec::Modal { .. } => z_index + 1_000_000,
                         _ => z_index,
