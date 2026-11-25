@@ -131,6 +131,21 @@ fn nowrap_text_shapes_past_the_viewport_width() {
 }
 
 #[test]
+fn long_words_wrap_at_glyph_boundaries() {
+    let mut engine = TextEngine::new();
+    let shaped = engine.shape("Supercalifragilisticexpialidocious", &style(16.0), 100.0);
+    assert!(shaped.lines.len() > 1, "long word did not wrap");
+    assert!(
+        shaped.width <= 101.0,
+        "shaped width {} exceeds the field",
+        shaped.width
+    );
+    for line in &shaped.lines {
+        assert!(line.width <= 101.0, "line width {}", line.width);
+    }
+}
+
+#[test]
 fn wrapped_lines_use_global_byte_offsets() {
     let mut engine = TextEngine::new();
     let shaped = engine.shape(

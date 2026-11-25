@@ -187,7 +187,9 @@ impl TextEngine {
         buffer.set_size(Some(width), None);
         buffer.set_wrap(match style.wrap {
             UiTextWrap::NoWrap => Wrap::None,
-            UiTextWrap::Word => Wrap::Word,
+            // Break overlong words at glyph boundaries instead of letting them
+            // run past the field or container.
+            UiTextWrap::Word => Wrap::WordOrGlyph,
             UiTextWrap::Glyph => Wrap::Glyph,
         });
         if style.ellipsis {
