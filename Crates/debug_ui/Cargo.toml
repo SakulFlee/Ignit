@@ -11,6 +11,7 @@ description = "Debug overlay UI for the Ignit game engine (performance, ECS insp
 [dependencies]
 cgmath = { workspace = true }
 log = { workspace = true }
+wgpu = { workspace = true }
 winit = { workspace = true }
 
 ignit_app = { path = "../app", version = "1.6.3" }
@@ -23,6 +24,8 @@ ignit_ecs_bridge = { path = "../ecs_bridge", version = "1.6.3" }
 ignit_iced = { path = "../iced", version = "1.6.3" }
 ignit_material_shader = { path = "../material_shader", version = "1.6.3" }
 ignit_renderer = { path = "../renderer", version = "1.6.3" }
+ignit_ui = { path = "../ui", version = "1.6.3" }
+ignit_ui_render = { path = "../ui_render", version = "1.6.3" }
 
 # Iced sub-crates, matching ignit_iced so the types line up.
 iced_core = { workspace = true }

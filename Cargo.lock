@@ -2224,8 +2224,11 @@ dependencies = [
  "ignit_math",
  "ignit_mesh",
  "ignit_renderer",
+ "ignit_ui",
+ "ignit_ui_render",
  "ignit_world_environment",
  "log",
+ "wgpu",
 ]
 
 [[package]]

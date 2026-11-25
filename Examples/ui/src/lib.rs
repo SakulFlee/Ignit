@@ -37,6 +37,7 @@ pub fn entrypoint(
     match App::new()
         .add_module(UiRenderModule::new(text))
         .add_module(UiDemoModule)
+        .add_module(ignit::debug_ui::DebugUiNextModule::new())
         .liftoff(event_loop, app_settings)
     {
         Ok(()) => info!("Cleanly exited!"),
