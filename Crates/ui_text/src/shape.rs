@@ -187,7 +187,9 @@ impl TextEngine {
         buffer.set_size(Some(width), None);
         buffer.set_wrap(match style.wrap {
             UiTextWrap::NoWrap => Wrap::None,
-            UiTextWrap::Word => Wrap::Word,
+            // Break overlong words at glyph boundaries instead of letting them
+            // run past the field or container.
+            UiTextWrap::Word => Wrap::WordOrGlyph,
             UiTextWrap::Glyph => Wrap::Glyph,
         });
         if style.ellipsis {
@@ -202,6 +204,12 @@ impl TextEngine {
 
         let color = resolve_color(&style.color);
         let scale = self.scale.max(0.5);
+        let mut logical_offsets = Vec::with_capacity(buffer.lines.len());
+        let mut offset = 0;
+        for line in &buffer.lines {
+            logical_offsets.push(offset);
+            offset += line.text().len() + 1;
+        }
         let mut shaped = ShapedText::default();
         for run in buffer.layout_runs() {
             let mut line_start = usize::MAX;
@@ -230,28 +238,32 @@ impl TextEngine {
                         0.0,
                     ]
                 };
+                let line_offset = logical_offsets.get(run.line_i).copied().unwrap_or(0);
                 shaped.glyphs.push(ShapedGlyph {
                     cache_key: physical.cache_key,
                     rect: glyph_rect,
                     color,
-                    start: glyph.start,
-                    end: glyph.end,
+                    start: line_offset + glyph.start,
+                    end: line_offset + glyph.end,
                     advance: glyph.w,
                 });
-                line_start = line_start.min(glyph.start);
-                line_end = line_end.max(glyph.end);
+                line_start = line_start.min(line_offset + glyph.start);
+                line_end = line_end.max(line_offset + glyph.end);
                 shaped.width = shaped.width.max(glyph.x + glyph.w);
             }
-            if line_start != usize::MAX {
-                shaped.lines.push(ShapedLine {
-                    y: run.line_top,
-                    height: run.line_height,
-                    width: run.line_w,
-                    start: line_start,
-                    end: line_end,
-                });
-                shaped.height += run.line_height;
-            }
+            let offset = logical_offsets.get(run.line_i).copied().unwrap_or(0);
+            shaped.lines.push(ShapedLine {
+                y: run.line_top,
+                height: run.line_height,
+                width: run.line_w,
+                start: if line_start == usize::MAX {
+                    offset
+                } else {
+                    line_start
+                },
+                end: line_end.max(offset),
+            });
+            shaped.height += run.line_height;
         }
         shaped
     }
@@ -312,19 +324,18 @@ impl TextEngine {
     }
 
     pub fn cursor_position(&mut self, shaped: &ShapedText, cursor: usize) -> Option<(f32, f32)> {
-        let glyph = shaped
-            .glyphs
-            .iter()
-            .find(|glyph| cursor >= glyph.start && cursor <= glyph.end)
-            .or_else(|| shaped.glyphs.last())?;
         let line = shaped
             .lines
             .iter()
             .find(|line| cursor >= line.start && cursor <= line.end)?;
-        let x = if cursor >= glyph.end {
-            glyph.rect[0] + glyph.advance
-        } else {
-            glyph.rect[0]
+        let glyph = shaped
+            .glyphs
+            .iter()
+            .find(|glyph| cursor >= glyph.start && cursor <= glyph.end);
+        let x = match glyph {
+            Some(glyph) if cursor >= glyph.end => glyph.rect[0] + glyph.advance,
+            Some(glyph) => glyph.rect[0],
+            None => 0.0,
         };
         Some((x, line.y))
     }
@@ -339,29 +350,53 @@ impl TextEngine {
         Some([x, y, 1.5, height])
     }
 
-    /// Highlight rectangle for a single-line selection, in shaped coordinates.
-    pub fn selection_rect(
+    /// Highlight rectangles for a selection, one per visual line.
+    pub fn selection_rects(
         &mut self,
         shaped: &ShapedText,
         start: usize,
         end: usize,
-    ) -> Option<[f32; 4]> {
+    ) -> Vec<[f32; 4]> {
         let (start, end) = if start <= end {
             (start, end)
         } else {
             (end, start)
         };
         if start == end {
-            return None;
+            return Vec::new();
         }
-        let (x0, _) = self.cursor_position(shaped, start)?;
-        let (x1, _) = self.cursor_position(shaped, end)?;
-        let line = shaped
-            .lines
-            .iter()
-            .find(|line| start >= line.start && start <= line.end)
-            .or_else(|| shaped.lines.first())?;
-        Some([x0.min(x1), line.y, (x1 - x0).abs().max(1.0), line.height])
+        let mut rects = Vec::new();
+        for line in &shaped.lines {
+            let line_start = start.max(line.start);
+            let line_end = end.min(line.end);
+            if line_start > line_end {
+                continue;
+            }
+            let x0 = if line_start <= line.start {
+                0.0
+            } else {
+                self.cursor_position(shaped, line_start)
+                    .map_or(0.0, |(x, _)| x)
+            };
+            let x1 = if line_end >= line.end {
+                line.width
+            } else {
+                self.cursor_position(shaped, line_end)
+                    .map_or(line.width, |(x, _)| x)
+            };
+            rects.push([x0.min(x1), line.y, (x1 - x0).abs().max(1.0), line.height]);
+        }
+        rects
+    }
+
+    /// First highlight rectangle for a selection, in shaped coordinates.
+    pub fn selection_rect(
+        &mut self,
+        shaped: &ShapedText,
+        start: usize,
+        end: usize,
+    ) -> Option<[f32; 4]> {
+        self.selection_rects(shaped, start, end).into_iter().next()
     }
 
     pub fn stats(&self) -> TextStats {
@@ -399,6 +434,62 @@ impl UiTextMeasure for TextEngine {
     ) -> usize {
         let shaped = self.shape(text, style, max_width.max(1.0));
         self.hit_to_cursor(&shaped, x, y)
+    }
+
+    fn line_bounds(
+        &mut self,
+        text: &str,
+        style: &UiTextStyle,
+        max_width: f32,
+        cursor: usize,
+    ) -> (usize, usize) {
+        let shaped = self.shape(text, style, max_width.max(1.0));
+        let line = shaped
+            .lines
+            .iter()
+            .find(|line| cursor >= line.start && cursor <= line.end)
+            .or_else(|| shaped.lines.last());
+        line.map_or((0, text.len()), |line| (line.start, line.end))
+    }
+
+    fn vertical_cursor(
+        &mut self,
+        text: &str,
+        style: &UiTextStyle,
+        max_width: f32,
+        cursor: usize,
+        up: bool,
+        goal_x: f32,
+    ) -> usize {
+        let shaped = self.shape(text, style, max_width.max(1.0));
+        let Some(index) = shaped
+            .lines
+            .iter()
+            .position(|line| cursor >= line.start && cursor <= line.end)
+        else {
+            return cursor;
+        };
+        let target = if up {
+            index.checked_sub(1)
+        } else {
+            (index + 1 < shaped.lines.len()).then_some(index + 1)
+        };
+        let Some(target) = target else {
+            return cursor;
+        };
+        let line = &shaped.lines[target];
+        self.hit_to_cursor(&shaped, goal_x, line.y + line.height * 0.5)
+    }
+
+    fn cursor_rect(
+        &mut self,
+        text: &str,
+        style: &UiTextStyle,
+        max_width: f32,
+        cursor: usize,
+    ) -> Option<[f32; 4]> {
+        let shaped = self.shape(text, style, max_width.max(1.0));
+        TextEngine::cursor_rect(self, &shaped, cursor)
     }
 }
 

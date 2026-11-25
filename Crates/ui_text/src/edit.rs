@@ -237,7 +237,7 @@ impl TextEditState {
             UiKey::End => self.end(select),
             UiKey::Enter => return true,
             UiKey::Escape | UiKey::Tab => {}
-            UiKey::ArrowUp | UiKey::ArrowDown => {}
+            UiKey::ArrowUp | UiKey::ArrowDown | UiKey::PageUp | UiKey::PageDown => {}
             UiKey::Character(_) | UiKey::Space => {}
         }
         false

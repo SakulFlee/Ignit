@@ -250,6 +250,30 @@ fn build_showcase(world: &mut World) {
                         })),
                 )
                 .child(
+                    UiDocumentNode::new("textarea")
+                        .layout(
+                            UiLayout::default()
+                                .width(250.0)
+                                .height(96.0)
+                                .padding_edges(UiEdges {
+                                    left: UiLengthPercentage::Length(10.0),
+                                    right: UiLengthPercentage::Length(10.0),
+                                    top: UiLengthPercentage::Length(6.0),
+                                    bottom: UiLengthPercentage::Length(6.0),
+                                }),
+                        )
+                        .widget(UiWidgetSpec::TextBox {
+                            value: "Multi-line text area.\nArrow keys move between lines.\nHome/End stay on the line.".into(),
+                            placeholder: "Write something".into(),
+                            multiline: true,
+                        })
+                        .focusable()
+                        .style(UiStyle::default().class("panel").padding_text(UiTextStyle {
+                            size: 15.0,
+                            ..Default::default()
+                        })),
+                )
+                .child(
                     UiDocumentNode::new("dropdown")
                         .layout(UiLayout::default().width(180.0).height(38.0))
                         .widget(UiWidgetSpec::Dropdown {

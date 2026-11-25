@@ -102,6 +102,9 @@ pub struct UiWidget {
     pub cursor: usize,
     pub anchor: usize,
     pub scroll_x: f32,
+    pub scroll_y: f32,
+    /// Column target while moving between visual lines.
+    pub goal_x: Option<f32>,
     pub hovered_option: Option<usize>,
     pub text_drag: bool,
     pub resizing: bool,
@@ -132,6 +135,8 @@ impl UiWidget {
             cursor,
             anchor: cursor,
             scroll_x: 0.0,
+            scroll_y: 0.0,
+            goal_x: None,
             hovered_option: None,
             text_drag: false,
             resizing: false,
@@ -231,8 +236,17 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                 let mut changed = false;
                 let edit_style = edit_text_style(world, entity);
                 let content_width = rect.content.width.max(1.0);
+                let content_height = rect.content.height.max(1.0);
                 let text_width = measure.measure(&edited, &edit_style, None).width;
-                let max_scroll = (text_width - content_width).max(0.0);
+                let text_height = measure
+                    .measure(&edited, &edit_style, Some(content_width))
+                    .height;
+                let max_scroll_x = if !*multiline || edit_style.wrap == UiTextWrap::NoWrap {
+                    (text_width - content_width).max(0.0)
+                } else {
+                    0.0
+                };
+                let max_scroll_y = (text_height - content_height).max(0.0);
 
                 if widget.text_drag && input.primary_down {
                     let over_right = input.pointer.x - (rect.content.x + content_width);
@@ -242,11 +256,19 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                     } else if over_left < 0.0 {
                         widget.scroll_x += (over_left * 0.25).min(-1.0);
                     }
-                    widget.scroll_x = widget.scroll_x.clamp(0.0, max_scroll);
+                    let over_bottom = input.pointer.y - (rect.content.y + content_height);
+                    let over_top = input.pointer.y - rect.content.y;
+                    if over_bottom > 0.0 {
+                        widget.scroll_y += (over_bottom * 0.25).max(1.0);
+                    } else if over_top < 0.0 {
+                        widget.scroll_y += (over_top * 0.25).min(-1.0);
+                    }
+                    widget.scroll_x = widget.scroll_x.clamp(0.0, max_scroll_x);
+                    widget.scroll_y = widget.scroll_y.clamp(0.0, max_scroll_y);
                 }
 
                 let pointer_x = input.pointer.x - rect.content.x + widget.scroll_x;
-                let pointer_y = input.pointer.y - rect.content.y;
+                let pointer_y = input.pointer.y - rect.content.y + widget.scroll_y;
                 if input.primary_pressed && rect.rect.contains(input.pointer) {
                     let next = measure.cursor_index(
                         &edited,
@@ -260,6 +282,7 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                         anchor = next;
                     }
                     widget.text_drag = true;
+                    widget.goal_x = None;
                 } else if widget.text_drag && input.primary_down {
                     cursor = measure.cursor_index(
                         &edited,
@@ -313,10 +336,18 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                             }
                             changed = true;
                         }
+                        crate::input::UiKey::Enter if *multiline => {
+                            delete_selection(&mut edited, &mut cursor, &mut anchor);
+                            edited.insert(cursor, '\n');
+                            cursor += 1;
+                            anchor = cursor;
+                            changed = true;
+                        }
                         crate::input::UiKey::ArrowLeft
                             if input.modifiers.ctrl || input.modifiers.super_key =>
                         {
                             cursor = prev_word_boundary(&edited, cursor);
+                            widget.goal_x = None;
                             if !input.modifiers.shift {
                                 anchor = cursor;
                             }
@@ -325,30 +356,129 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                             if input.modifiers.ctrl || input.modifiers.super_key =>
                         {
                             cursor = next_word_boundary(&edited, cursor);
+                            widget.goal_x = None;
                             if !input.modifiers.shift {
                                 anchor = cursor;
                             }
                         }
                         crate::input::UiKey::ArrowLeft => {
                             cursor = prev_boundary(&edited, cursor);
+                            widget.goal_x = None;
                             if !input.modifiers.shift {
                                 anchor = cursor;
                             }
                         }
                         crate::input::UiKey::ArrowRight => {
                             cursor = next_boundary(&edited, cursor);
+                            widget.goal_x = None;
+                            if !input.modifiers.shift {
+                                anchor = cursor;
+                            }
+                        }
+                        crate::input::UiKey::ArrowUp => {
+                            let goal = widget.goal_x.unwrap_or_else(|| {
+                                measure
+                                    .cursor_rect(&edited, &edit_style, content_width, cursor)
+                                    .map_or(0.0, |rect| rect[0])
+                            });
+                            cursor = measure.vertical_cursor(
+                                &edited,
+                                &edit_style,
+                                content_width,
+                                cursor,
+                                true,
+                                goal,
+                            );
+                            widget.goal_x = Some(goal);
+                            if !input.modifiers.shift {
+                                anchor = cursor;
+                            }
+                        }
+                        crate::input::UiKey::ArrowDown => {
+                            let goal = widget.goal_x.unwrap_or_else(|| {
+                                measure
+                                    .cursor_rect(&edited, &edit_style, content_width, cursor)
+                                    .map_or(0.0, |rect| rect[0])
+                            });
+                            cursor = measure.vertical_cursor(
+                                &edited,
+                                &edit_style,
+                                content_width,
+                                cursor,
+                                false,
+                                goal,
+                            );
+                            widget.goal_x = Some(goal);
                             if !input.modifiers.shift {
                                 anchor = cursor;
                             }
                         }
                         crate::input::UiKey::Home => {
-                            cursor = 0;
+                            let (start, _) =
+                                measure.line_bounds(&edited, &edit_style, content_width, cursor);
+                            cursor = start;
+                            widget.goal_x = None;
                             if !input.modifiers.shift {
                                 anchor = cursor;
                             }
                         }
                         crate::input::UiKey::End => {
-                            cursor = edited.len();
+                            let (_, end) =
+                                measure.line_bounds(&edited, &edit_style, content_width, cursor);
+                            cursor = end;
+                            widget.goal_x = None;
+                            if !input.modifiers.shift {
+                                anchor = cursor;
+                            }
+                        }
+                        crate::input::UiKey::PageUp => {
+                            let goal = widget.goal_x.unwrap_or_else(|| {
+                                measure
+                                    .cursor_rect(&edited, &edit_style, content_width, cursor)
+                                    .map_or(0.0, |rect| rect[0])
+                            });
+                            let line_height = edit_style
+                                .line_height
+                                .unwrap_or(edit_style.size * 1.25)
+                                .max(1.0);
+                            let page = (content_height / line_height).floor().max(1.0) as usize;
+                            for _ in 0..page {
+                                cursor = measure.vertical_cursor(
+                                    &edited,
+                                    &edit_style,
+                                    content_width,
+                                    cursor,
+                                    true,
+                                    goal,
+                                );
+                            }
+                            widget.goal_x = Some(goal);
+                            if !input.modifiers.shift {
+                                anchor = cursor;
+                            }
+                        }
+                        crate::input::UiKey::PageDown => {
+                            let goal = widget.goal_x.unwrap_or_else(|| {
+                                measure
+                                    .cursor_rect(&edited, &edit_style, content_width, cursor)
+                                    .map_or(0.0, |rect| rect[0])
+                            });
+                            let line_height = edit_style
+                                .line_height
+                                .unwrap_or(edit_style.size * 1.25)
+                                .max(1.0);
+                            let page = (content_height / line_height).floor().max(1.0) as usize;
+                            for _ in 0..page {
+                                cursor = measure.vertical_cursor(
+                                    &edited,
+                                    &edit_style,
+                                    content_width,
+                                    cursor,
+                                    false,
+                                    goal,
+                                );
+                            }
+                            widget.goal_x = Some(goal);
                             if !input.modifiers.shift {
                                 anchor = cursor;
                             }
@@ -359,6 +489,7 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                         {
                             anchor = 0;
                             cursor = edited.len();
+                            widget.goal_x = None;
                         }
                         crate::input::UiKey::Character(character)
                             if (input.modifiers.ctrl || input.modifiers.super_key)
@@ -411,24 +542,38 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                     anchor = cursor;
                     changed = true;
                 }
+                if changed {
+                    widget.goal_x = None;
+                }
                 widget.cursor = cursor;
                 widget.anchor = anchor;
-                let cursor_x = measure
-                    .measure(
-                        edited.get(..cursor.min(edited.len())).unwrap_or(&edited),
-                        &edit_style,
-                        None,
-                    )
-                    .width;
-                if cursor_x - widget.scroll_x > content_width - 4.0 {
-                    widget.scroll_x = cursor_x - content_width + 4.0;
-                } else if cursor_x < widget.scroll_x {
-                    widget.scroll_x = cursor_x;
+                if let Some(caret) =
+                    measure.cursor_rect(&edited, &edit_style, content_width, cursor)
+                {
+                    if caret[0] - widget.scroll_x > content_width - 4.0 {
+                        widget.scroll_x = caret[0] - content_width + 4.0;
+                    } else if caret[0] < widget.scroll_x {
+                        widget.scroll_x = caret[0];
+                    }
+                    if caret[1] + caret[3] - widget.scroll_y > content_height - 4.0 {
+                        widget.scroll_y = caret[1] + caret[3] - content_height + 4.0;
+                    } else if caret[1] < widget.scroll_y {
+                        widget.scroll_y = caret[1];
+                    }
                 }
                 let text_width = measure.measure(&edited, &edit_style, None).width;
-                widget.scroll_x = widget
-                    .scroll_x
-                    .clamp(0.0, (text_width - content_width).max(0.0))
+                let text_height = measure
+                    .measure(&edited, &edit_style, Some(content_width))
+                    .height;
+                let max_scroll_x = if !*multiline || edit_style.wrap == UiTextWrap::NoWrap {
+                    (text_width - content_width).max(0.0)
+                } else {
+                    0.0
+                };
+                widget.scroll_x = widget.scroll_x.clamp(0.0, max_scroll_x).round();
+                widget.scroll_y = widget
+                    .scroll_y
+                    .clamp(0.0, (text_height - content_height).max(0.0))
                     .round();
                 if changed && edited != *value {
                     *value = edited.clone();
@@ -578,6 +723,8 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                 cursor: widget.cursor,
                 anchor: widget.anchor,
                 scroll_x: widget.scroll_x,
+                scroll_y: widget.scroll_y,
+                goal_x: widget.goal_x,
                 hovered_option: widget.hovered_option,
                 text_drag: widget.text_drag,
                 resizing: widget.resizing,
@@ -600,6 +747,8 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                 current.cursor = widget.cursor;
                 current.anchor = widget.anchor;
                 current.scroll_x = widget.scroll_x;
+                current.scroll_y = widget.scroll_y;
+                current.goal_x = widget.goal_x;
                 current.hovered_option = widget.hovered_option;
                 current.text_drag = widget.text_drag;
                 current.resizing = widget.resizing;

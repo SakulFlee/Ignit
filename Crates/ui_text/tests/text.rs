@@ -131,6 +131,64 @@ fn nowrap_text_shapes_past_the_viewport_width() {
 }
 
 #[test]
+fn long_words_wrap_at_glyph_boundaries() {
+    let mut engine = TextEngine::new();
+    let shaped = engine.shape("Supercalifragilisticexpialidocious", &style(16.0), 100.0);
+    assert!(shaped.lines.len() > 1, "long word did not wrap");
+    assert!(
+        shaped.width <= 101.0,
+        "shaped width {} exceeds the field",
+        shaped.width
+    );
+    for line in &shaped.lines {
+        assert!(line.width <= 101.0, "line width {}", line.width);
+    }
+}
+
+#[test]
+fn wrapped_lines_use_global_byte_offsets() {
+    let mut engine = TextEngine::new();
+    let shaped = engine.shape(
+        "alpha beta gamma delta epsilon zeta eta theta",
+        &style(16.0),
+        100.0,
+    );
+    assert!(shaped.lines.len() > 1);
+    for pair in shaped.lines.windows(2) {
+        assert!(pair[1].start >= pair[0].end);
+    }
+    assert!(
+        shaped
+            .glyphs
+            .windows(2)
+            .all(|pair| pair[0].start <= pair[1].start)
+    );
+}
+
+#[test]
+fn caret_sits_on_empty_lines() {
+    let mut engine = TextEngine::new();
+    let shaped = engine.shape("a\n\nb", &style(16.0), 200.0);
+    assert_eq!(shaped.lines.len(), 3);
+    let empty = &shaped.lines[1];
+    let caret = engine
+        .cursor_rect(&shaped, empty.start)
+        .expect("caret rect");
+    assert_eq!(caret[1], empty.y);
+    assert_eq!(caret[3], empty.height);
+}
+
+#[test]
+fn selection_rects_cover_each_visual_line() {
+    let mut engine = TextEngine::new();
+    let shaped = engine.shape("ab\ncd", &style(16.0), 200.0);
+    assert!(shaped.lines.len() >= 2);
+    let rects = engine.selection_rects(&shaped, 0, 5);
+    assert!(rects.len() >= 2, "rects: {rects:?}");
+    assert!(rects[0][1] < rects[1][1]);
+}
+
+#[test]
 fn selection_rect_matches_the_shaped_run() {
     let mut engine = TextEngine::new();
     let shaped = engine.shape("hello world", &style(16.0), 300.0);
