@@ -98,8 +98,14 @@ notifications.post(
 ```
 
 Cards use the `surface`, `border`, `text`, and severity tokens (`info`,
-`success`, `warning`, `danger`). Placement defaults to the top-right corner and
-can be changed with `UiNotificationPlacement`.
+`success`, `warning`, `danger`). `UiNotificationPlacement` covers the four
+cardinals and four intercardinals; the default is the top-right corner.
+`next()` cycles through them for settings UI.
+
+`max_visible` (default 6) bounds the painted stack and `max_queued` (default
+32) bounds the total queue. Hidden overflow entries wait without aging; a
+card's duration starts once it is actually painted, so nothing expires
+unread just because it was below the stack.
 
 ## Notes
 

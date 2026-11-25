@@ -34,11 +34,35 @@ fn notifications_expire_after_their_duration() {
     let mut notifications = UiNotifications::default();
     notifications.post(UiNotification::info("Saved", "Scene stored").duration(2.0));
     assert_eq!(notifications.visible().count(), 1);
+    // The first advance starts the visible timer.
+    notifications.advance(0.0);
 
     notifications.advance(1.9);
     assert_eq!(notifications.visible().count(), 1);
     notifications.advance(0.2);
     assert_eq!(notifications.visible().count(), 0);
+    assert!(notifications.is_empty());
+}
+
+#[test]
+fn hidden_notifications_do_not_age_until_visible() {
+    let mut notifications = UiNotifications::default();
+    notifications.max_visible = 1;
+    notifications.post(UiNotification::info("First", "Visible").duration(2.0));
+    notifications.post(UiNotification::info("Second", "Hidden").duration(2.0));
+    notifications.advance(0.0);
+
+    // Newest is painted first; the older card waits underneath.
+    notifications.advance(1.9);
+    assert_eq!(notifications.visible().next().unwrap().title, "Second");
+    notifications.advance(0.2);
+    assert_eq!(notifications.visible().next().unwrap().title, "First");
+    assert_eq!(notifications.len(), 1);
+
+    // The older card only starts aging once it was promoted.
+    notifications.advance(1.9);
+    assert_eq!(notifications.visible().count(), 1);
+    notifications.advance(0.2);
     assert!(notifications.is_empty());
 }
 
@@ -142,14 +166,14 @@ fn light_theme_toast_text_uses_dark_tokens() {
 }
 
 #[test]
-fn top_center_placement_is_centered() {
+fn top_placement_is_centered() {
     let mut world = World::new();
     setup(&mut world);
     let mut measure = ignit_ui::UiFallbackTextMeasure;
     update(&mut world, &mut measure);
     {
         let mut notifications = world.get_resource_mut::<UiNotifications>().unwrap();
-        notifications.placement = UiNotificationPlacement::TopCenter;
+        notifications.placement = UiNotificationPlacement::Top;
         notifications.width = 300.0;
         notifications.post(UiNotification::info("Centered", "Card"));
     }
@@ -170,6 +194,68 @@ fn top_center_placement_is_centered() {
         "toast x was {}",
         shadows[0].x
     );
+}
+
+#[test]
+fn placement_supports_cardinal_and_intercardinal_anchors() {
+    let mut world = World::new();
+    setup(&mut world);
+    let mut measure = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut measure);
+    world
+        .get_resource_mut::<UiNotifications>()
+        .unwrap()
+        .post(UiNotification::info("Anchored", "Card"));
+
+    let cases = [
+        UiNotificationPlacement::TopLeft,
+        UiNotificationPlacement::Top,
+        UiNotificationPlacement::TopRight,
+        UiNotificationPlacement::Right,
+        UiNotificationPlacement::BottomRight,
+        UiNotificationPlacement::Bottom,
+        UiNotificationPlacement::BottomLeft,
+        UiNotificationPlacement::Left,
+    ];
+    for placement in cases {
+        if let Some(mut notifications) = world.get_resource_mut::<UiNotifications>() {
+            notifications.placement = placement;
+        }
+        update(&mut world, &mut measure);
+        let draw = world.get_resource::<ignit_ui::UiDrawList>().unwrap();
+        let rect = draw
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                UiDrawCommand::Shadow { rect, .. } if (rect.width - 340.0).abs() < 0.5 => {
+                    Some(*rect)
+                }
+                _ => None,
+            })
+            .expect("toast shadow");
+        let x = match placement {
+            UiNotificationPlacement::TopLeft
+            | UiNotificationPlacement::BottomLeft
+            | UiNotificationPlacement::Left => 16.0,
+            UiNotificationPlacement::Top | UiNotificationPlacement::Bottom => 230.0,
+            UiNotificationPlacement::TopRight
+            | UiNotificationPlacement::BottomRight
+            | UiNotificationPlacement::Right => 444.0,
+        };
+        let y = match placement {
+            UiNotificationPlacement::TopLeft
+            | UiNotificationPlacement::Top
+            | UiNotificationPlacement::TopRight => 16.0,
+            UiNotificationPlacement::BottomLeft
+            | UiNotificationPlacement::Bottom
+            | UiNotificationPlacement::BottomRight => 600.0 - 16.0 - rect.height,
+            UiNotificationPlacement::Left | UiNotificationPlacement::Right => {
+                (600.0 - rect.height) * 0.5
+            }
+        };
+        assert!((rect.x - x).abs() < 0.5, "{placement:?} x was {}", rect.x);
+        assert!((rect.y - y).abs() < 0.5, "{placement:?} y was {}", rect.y);
+    }
 }
 
 #[test]
@@ -258,7 +344,7 @@ fn showcase_roots_receive_a_toast() {
     let mut measure = ignit_ui::UiFallbackTextMeasure;
     update(&mut world, &mut measure);
     if let Some(mut notifications) = world.get_resource_mut::<UiNotifications>() {
-        notifications.placement = UiNotificationPlacement::TopCenter;
+        notifications.placement = UiNotificationPlacement::Top;
         notifications.post(UiNotification::info("Demo notice #1", "Toast body").duration(6.0));
     }
     update(&mut world, &mut measure);

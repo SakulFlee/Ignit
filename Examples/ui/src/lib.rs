@@ -57,8 +57,7 @@ impl Module for UiDemoModule {
         ignit::ui::init(ecs);
         install_themes(ecs);
         if let Some(mut notifications) = ecs.get_resource_mut::<UiNotifications>() {
-            notifications.placement = UiNotificationPlacement::TopCenter;
-            notifications.max_visible = 3;
+            notifications.max_visible = 6;
         }
 
         let camera = ecs.spawn_entity();
@@ -174,6 +173,22 @@ fn build_showcase(world: &mut World) {
                         .focusable()
                         .style(UiStyle::default().class("panel"))
                         .child(UiDocumentNode::new("notify_label").text("Notify")),
+                )
+                .child(
+                    UiDocumentNode::new("notify_placement_button")
+                        .layout(
+                            UiLayout::row()
+                                .size(170.0, 38.0)
+                                .justify(ignit::ui::UiJustify::Center)
+                                .align_items(ignit::ui::UiAlign::Center),
+                        )
+                        .widget(UiWidgetSpec::Button {
+                            label: "Toast corner".into(),
+                        })
+                        .action(UiAction::new("toast_corner"))
+                        .focusable()
+                        .style(UiStyle::default().class("panel"))
+                        .child(UiDocumentNode::new("toast_corner_label").text("Toast corner")),
                 ),
         )
         .child(
@@ -499,6 +514,12 @@ impl DemoSystem {
                         if let Some(next) = themes.named.get(target).cloned() {
                             themes.active = next;
                         }
+                    }
+                }
+                "toast_corner" => {
+                    if let Some(mut notifications) = world.get_resource_mut::<UiNotifications>() {
+                        notifications.placement = notifications.placement.next();
+                        info!("UI demo toast placement: {:?}", notifications.placement);
                     }
                 }
                 "notify" => {

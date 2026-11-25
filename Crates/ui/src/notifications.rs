@@ -51,24 +51,63 @@ impl UiNotificationSeverity {
     }
 }
 
-/// The part of the viewport the notification stack is anchored to.
+/// Viewport anchor for the notification stack. Covers the four cardinals and
+/// four intercardinals.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UiNotificationPlacement {
     TopLeft,
-    TopCenter,
+    Top,
     #[default]
     TopRight,
-    BottomLeft,
-    BottomCenter,
+    Right,
     BottomRight,
+    Bottom,
+    BottomLeft,
+    Left,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HorizontalAnchor {
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum VerticalAnchor {
+    Top,
+    Center,
+    Bottom,
 }
 
 impl UiNotificationPlacement {
-    fn is_bottom(self) -> bool {
-        matches!(
-            self,
-            Self::BottomLeft | Self::BottomCenter | Self::BottomRight
-        )
+    fn anchors(self) -> (HorizontalAnchor, VerticalAnchor) {
+        use HorizontalAnchor::{Center as HCenter, Left as HLeft, Right as HRight};
+        use VerticalAnchor::{Bottom as VBottom, Center as VCenter, Top as VTop};
+        match self {
+            Self::TopLeft => (HLeft, VTop),
+            Self::Top => (HCenter, VTop),
+            Self::TopRight => (HRight, VTop),
+            Self::Right => (HRight, VCenter),
+            Self::BottomRight => (HRight, VBottom),
+            Self::Bottom => (HCenter, VBottom),
+            Self::BottomLeft => (HLeft, VBottom),
+            Self::Left => (HLeft, VCenter),
+        }
+    }
+
+    /// Cycles through the eight anchors; useful for settings UI.
+    pub fn next(self) -> Self {
+        match self {
+            Self::TopLeft => Self::Top,
+            Self::Top => Self::TopRight,
+            Self::TopRight => Self::Right,
+            Self::Right => Self::BottomRight,
+            Self::BottomRight => Self::Bottom,
+            Self::Bottom => Self::BottomLeft,
+            Self::BottomLeft => Self::Left,
+            Self::Left => Self::TopLeft,
+        }
     }
 }
 
@@ -84,7 +123,9 @@ pub struct UiNotification {
     pub duration: f32,
     /// How many times this keyed notification has been posted.
     pub repeat: u32,
-    pub(crate) created_at: f64,
+    /// When the card first became visible. Hidden overflow entries keep `None`
+    /// so their duration only starts once they are painted.
+    pub(crate) shown_at: Option<f64>,
 }
 
 impl UiNotification {
@@ -100,7 +141,7 @@ impl UiNotification {
             message: message.into(),
             duration: 5.0,
             repeat: 1,
-            created_at: 0.0,
+            shown_at: None,
         }
     }
 
@@ -137,8 +178,11 @@ impl UiNotification {
         self
     }
 
-    fn is_visible_at(&self, time: f64) -> bool {
-        self.duration <= 0.0 || time - self.created_at < self.duration as f64
+    fn is_expired(&self, time: f64) -> bool {
+        self.duration > 0.0
+            && self
+                .shown_at
+                .is_some_and(|shown| time - shown >= self.duration as f64)
     }
 }
 
@@ -149,6 +193,9 @@ pub struct UiNotifications {
     time: f64,
     /// Maximum number of cards painted at once.
     pub max_visible: usize,
+    /// Maximum number of queued cards. Overflow beyond this drops the oldest
+    /// entry; hidden cards otherwise wait for a free slot without aging.
+    pub max_queued: usize,
     /// Maximum card width in logical pixels.
     pub width: f32,
     /// Distance between the stack and the viewport edge.
@@ -163,9 +210,10 @@ pub struct UiNotifications {
 impl Default for UiNotifications {
     fn default() -> Self {
         Self {
-            entries: Vec::with_capacity(8),
+            entries: Vec::with_capacity(16),
             time: 0.0,
-            max_visible: 4,
+            max_visible: 6,
+            max_queued: 32,
             width: 340.0,
             margin: 16.0,
             gap: 8.0,
@@ -198,11 +246,11 @@ impl UiNotifications {
             existing.message = notification.message;
             existing.duration = notification.duration;
             existing.repeat = existing.repeat.saturating_add(1);
-            existing.created_at = self.time;
+            // Refresh the timer; the next advance decides whether the card is
+            // currently visible and restarts it, or leaves it queued.
+            existing.shown_at = None;
             return;
         }
-        let mut notification = notification;
-        notification.created_at = self.time;
         self.entries.push(notification);
         self.evict();
     }
@@ -218,11 +266,14 @@ impl UiNotifications {
         self.post(UiNotification::new(severity, title, message).duration(duration));
     }
 
-    /// Advances the clock and drops expired entries.
+    /// Advances the clock, starts the duration of newly visible cards, and
+    /// drops cards whose visible duration has elapsed. Hidden overflow cards
+    /// are kept without aging until a slot frees up.
     pub fn advance(&mut self, delta_seconds: f64) {
         if delta_seconds > 0.0 {
             self.time += delta_seconds;
         }
+        self.mark_visible();
         self.prune();
     }
 
@@ -241,8 +292,17 @@ impl UiNotifications {
         self.entries
             .iter()
             .rev()
-            .filter(|entry| entry.is_visible_at(self.time))
+            .filter(|entry| !entry.is_expired(self.time))
             .take(self.max_visible)
+    }
+
+    /// Number of queued cards that do not currently have a visible slot.
+    pub fn hidden_count(&self) -> usize {
+        self.entries
+            .iter()
+            .filter(|entry| !entry.is_expired(self.time))
+            .count()
+            .saturating_sub(self.max_visible)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -272,13 +332,31 @@ impl UiNotifications {
         }
     }
 
+    /// Starts the timer for cards that currently occupy a visible slot.
+    fn mark_visible(&mut self) {
+        let time = self.time;
+        let mut slots = self.max_visible;
+        for entry in self.entries.iter_mut().rev() {
+            if slots == 0 {
+                break;
+            }
+            if entry.is_expired(time) {
+                continue;
+            }
+            if entry.shown_at.is_none() {
+                entry.shown_at = Some(time);
+            }
+            slots -= 1;
+        }
+    }
+
     fn prune(&mut self) {
         let time = self.time;
-        self.entries.retain(|entry| entry.is_visible_at(time));
+        self.entries.retain(|entry| !entry.is_expired(time));
     }
 
     fn evict(&mut self) {
-        let limit = self.max_visible.max(1).saturating_mul(2);
+        let limit = self.max_queued.max(1);
         while self.entries.len() > limit {
             self.entries.remove(0);
         }
@@ -338,16 +416,11 @@ pub fn append_notification_commands(
     let text_x_offset = stripe + 12.0;
     let text_width = (width - text_x_offset - pad).max(1.0);
 
-    let x = match notifications.placement {
-        UiNotificationPlacement::TopLeft | UiNotificationPlacement::BottomLeft => {
-            view.offset.x + margin
-        }
-        UiNotificationPlacement::TopCenter | UiNotificationPlacement::BottomCenter => {
-            view.offset.x + ((view.size.width - width) * 0.5).max(0.0)
-        }
-        UiNotificationPlacement::TopRight | UiNotificationPlacement::BottomRight => {
-            view.offset.x + (view.size.width - width - margin).max(0.0)
-        }
+    let (horizontal, vertical) = notifications.placement.anchors();
+    let x = match horizontal {
+        HorizontalAnchor::Left => view.offset.x + margin,
+        HorizontalAnchor::Center => view.offset.x + ((view.size.width - width) * 0.5).max(0.0),
+        HorizontalAnchor::Right => view.offset.x + (view.size.width - width - margin).max(0.0),
     };
 
     let mut cards = Vec::new();
@@ -389,10 +462,14 @@ pub fn append_notification_commands(
         total -= gap;
     }
 
-    let mut y = if notifications.placement.is_bottom() {
-        view.offset.y + (view.size.height - margin - total).max(0.0)
-    } else {
-        view.offset.y + margin
+    // Bottom-anchored stacks put the newest card closest to the edge.
+    if vertical == VerticalAnchor::Bottom {
+        cards.reverse();
+    }
+    let mut y = match vertical {
+        VerticalAnchor::Top => view.offset.y + margin,
+        VerticalAnchor::Center => view.offset.y + ((view.size.height - total) * 0.5).max(0.0),
+        VerticalAnchor::Bottom => view.offset.y + (view.size.height - margin - total).max(0.0),
     };
 
     for (notification, title, title_height, message_height, height) in cards {
