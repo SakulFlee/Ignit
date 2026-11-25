@@ -126,13 +126,14 @@ pub(super) fn refresh(world: &mut World) {
 
     let mut lines = Vec::with_capacity(ROWS);
     ignit_core::logging::with_log_buffer(|buffer| {
-        for line in buffer
+        let mut recent: Vec<_> = buffer
             .rev()
             .filter(|line| line.level <= min_level)
             .take(ROWS)
-        {
-            lines.push((line.level, line.target.clone(), line.message.clone()));
-        }
+            .map(|line| (line.level, line.target.clone(), line.message.clone()))
+            .collect();
+        recent.reverse();
+        lines = recent;
     });
 
     for index in 0..ROWS {
@@ -145,12 +146,7 @@ pub(super) fn refresh(world: &mut World) {
         };
         if let Some((level, target, message)) = lines.get(index) {
             let message = message.replace(['\n', '\r'], " ");
-            let preview: String = if message.chars().count() > 180 {
-                message.chars().take(177).collect::<String>() + "..."
-            } else {
-                message
-            };
-            super::set_text(world, &id, format!("[{level}] {target}: {preview}"));
+            super::set_text(world, &id, format!("[{level}] {target}: {message}"));
             set_row_style(world, entity, Some(level_color(*level)));
         } else {
             set_row_style(world, entity, None);
@@ -187,18 +183,16 @@ pub(super) fn refresh(world: &mut World) {
 
 fn set_row_style(world: &mut World, entity: Entity, color: Option<UiColor>) {
     let style = match color {
-        Some(UiColor::Rgba(color)) => UiStyle::default()
-            .background(UiColor::Rgba([color[0], color[1], color[2], 0.12]))
-            .padding_text(UiTextStyle {
-                size: 10.0,
-                color: UiColor::Rgba(color),
-                wrap: ignit_ui::UiTextWrap::NoWrap,
-                ..Default::default()
-            }),
+        Some(UiColor::Rgba(color)) => UiStyle::default().padding_text(UiTextStyle {
+            size: 10.0,
+            color: UiColor::Rgba(color),
+            wrap: ignit_ui::UiTextWrap::Word,
+            ..Default::default()
+        }),
         Some(color) => UiStyle::default().padding_text(UiTextStyle {
             size: 10.0,
             color,
-            wrap: ignit_ui::UiTextWrap::NoWrap,
+            wrap: ignit_ui::UiTextWrap::Word,
             ..Default::default()
         }),
         None => UiStyle {
