@@ -107,6 +107,15 @@ pub struct UiWidget {
     pub resizing: bool,
     pub resize_start: Option<(f32, f32)>,
     pub resize_base: (f32, f32),
+    /// Monotonic raise offset for floating-window stacking.
+    pub raise: i32,
+}
+
+/// Allocates stable raise offsets so a clicked floating window stays above
+/// windows raised earlier.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct UiWindowOrder {
+    pub next: i32,
 }
 
 impl UiWidget {
@@ -128,6 +137,7 @@ impl UiWidget {
             resizing: false,
             resize_start: None,
             resize_base: (0.0, 0.0),
+            raise: 0,
         }
     }
 }
@@ -495,6 +505,7 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                 let on_grip = input.pointer.x >= rect.rect.x + rect.rect.width - grip
                     && input.pointer.y >= rect.rect.y + rect.rect.height - grip;
                 if input.primary_pressed && rect.rect.contains(input.pointer) {
+                    raise_floating(world, entity, &mut widget);
                     if on_grip {
                         widget.resizing = true;
                         widget.resize_start = Some((input.pointer.x, input.pointer.y));
@@ -572,6 +583,7 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                 resizing: widget.resizing,
                 resize_start: widget.resize_start,
                 resize_base: widget.resize_base,
+                raise: widget.raise,
             },
             event,
         ));
@@ -593,6 +605,7 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                 current.resizing = widget.resizing;
                 current.resize_start = widget.resize_start;
                 current.resize_base = widget.resize_base;
+                current.raise = widget.raise;
             }
         }
         if let Some(event) = event
@@ -671,6 +684,19 @@ fn move_widget(world: &mut World, entity: Entity, x: f32, y: f32) {
     layout.inset.top = UiDimension::Length(y);
     let _ = world.attach_component(&entity, layout);
     mark_dirty(world, entity, UiDirty::LAYOUT | UiDirty::PAINT);
+}
+
+fn raise_floating(world: &mut World, entity: Entity, widget: &mut UiWidget) {
+    let next = if let Some(mut order) = world.get_resource_mut::<UiWindowOrder>() {
+        order.next = order.next.saturating_add(1000);
+        order.next
+    } else {
+        widget.raise.saturating_add(1000)
+    };
+    if widget.raise != next {
+        widget.raise = next;
+        mark_dirty(world, entity, UiDirty::LAYOUT);
+    }
 }
 
 fn resize_widget(world: &mut World, entity: Entity, width: f32, height: f32) {

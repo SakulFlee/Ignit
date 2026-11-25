@@ -511,6 +511,60 @@ fn text_box_mouse_selection_copy_and_paste() {
 }
 
 #[test]
+fn clicking_a_floating_window_raises_it() {
+    let mut world = World::new();
+    init(&mut world);
+    let mut root = UiDocumentNode::new("raise_root").layout(UiLayout::column().size(700.0, 500.0));
+    for (id, left, top) in [("lower", 10.0, 10.0), ("upper", 120.0, 120.0)] {
+        root = root.child(
+            UiDocumentNode::new(id)
+                .layout(
+                    UiLayout::column()
+                        .width(300.0)
+                        .height(200.0)
+                        .absolute()
+                        .inset(ignit_ui::UiEdges {
+                            left: ignit_ui::UiDimension::Length(left),
+                            right: ignit_ui::UiDimension::Auto,
+                            top: ignit_ui::UiDimension::Length(top),
+                            bottom: ignit_ui::UiDimension::Auto,
+                        }),
+                )
+                .widget(UiWidgetSpec::FloatingWindow {
+                    title: id.into(),
+                    open: true,
+                }),
+        );
+    }
+    root.view = Some(UiView::new(700.0, 500.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+
+    let lower = computed(&world, "lower");
+    let upper = computed(&world, "upper");
+    assert!(upper.z_index > lower.z_index);
+
+    world.insert_resource(UiInputState {
+        pointer: UiPoint::new(lower.rect.x + 20.0, lower.rect.y + 10.0),
+        primary_down: true,
+        primary_pressed: true,
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    update(&mut world, &mut text);
+
+    let lower = computed(&world, "lower");
+    let upper = computed(&world, "upper");
+    assert!(
+        lower.z_index > upper.z_index,
+        "lower {} vs upper {}",
+        lower.z_index,
+        upper.z_index
+    );
+}
+
+#[test]
 fn floating_window_resizes_from_the_grip() {
     let mut world = World::new();
     init(&mut world);
