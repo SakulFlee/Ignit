@@ -20,6 +20,7 @@ pub mod input;
 pub mod layout;
 pub mod layout_engine;
 pub mod node;
+pub mod notifications;
 pub mod style;
 pub mod style_pass;
 pub mod widgets;
@@ -50,6 +51,10 @@ pub use layout_engine::{
 pub use node::{
     UiAction, UiActionKind, UiComputed, UiDirty, UiFocusable, UiInteraction, UiNode, UiRoot,
     UiScroll, UiScrollContainer, UiThemeScope, UiView,
+};
+pub use notifications::{
+    UiNotification, UiNotificationPlacement, UiNotificationSeverity, UiNotifications,
+    append_notification_commands,
 };
 pub use style::{
     UiBorder, UiColor, UiCorners, UiCursorIcon, UiImage, UiImageStyle, UiResolvedBorder,
@@ -91,6 +96,9 @@ pub fn init(world: &mut World) {
     }
     if world.get_resource::<UiDrawList>().is_none() {
         world.insert_resource(UiDrawList::default());
+    }
+    if world.get_resource::<UiNotifications>().is_none() {
+        world.insert_resource(UiNotifications::default());
     }
     if world.get_resource::<UiStats>().is_none() {
         world.insert_resource(UiStats::default());
@@ -209,6 +217,9 @@ pub fn update(world: &mut World, measure: &mut dyn UiTextMeasure) -> UiStats {
     draw::build_draw_list(world, &mut draw);
     widgets::append_widget_commands(world, &mut draw);
     draw.sort_by_z(world);
+    // Screen-space toasts paint above every root, so they are appended after
+    // the z sort instead of taking part in it.
+    notifications::append_notification_commands(world, measure, &mut draw);
     let draw_ms = draw_start.elapsed().as_secs_f32() * 1000.0;
     let commands = draw.command_count();
     world.insert_resource(draw);

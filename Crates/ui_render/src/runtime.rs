@@ -5,10 +5,12 @@ use std::sync::{Arc, Mutex};
 use ignit_app::{Module, UiSystem};
 use ignit_ecs::{System, World};
 use ignit_ecs_bridge::{
-    CursorIcon, DeviceResource, InputCapture, QueueResource, SurfaceFormatResource, WindowEvent,
-    WindowEventQueue, WindowScaleFactor,
+    CursorIcon, DeltaTime, DeviceResource, InputCapture, QueueResource, SurfaceFormatResource,
+    WindowEvent, WindowEventQueue, WindowScaleFactor,
 };
-use ignit_ui::{UiInputCapture, UiInputState, UiKey, UiModifiers, UiPoint, UiView};
+use ignit_ui::{
+    UiInputCapture, UiInputState, UiKey, UiModifiers, UiNotifications, UiPoint, UiView,
+};
 use ignit_ui_text::TextEngine;
 use wgpu::{Device, Queue, TextureFormat};
 use winit::event::{ElementState, MouseScrollDelta, TouchPhase};
@@ -92,6 +94,13 @@ impl UiSystem for UiUpdateSystem {
 
     fn run(&mut self, world: &mut World) {
         apply_window_events(world, &mut self.touch);
+        let delta = world
+            .get_resource::<DeltaTime>()
+            .map(|time| time.0)
+            .unwrap_or(0.0);
+        if let Some(mut notifications) = world.get_resource_mut::<UiNotifications>() {
+            notifications.advance(delta);
+        }
         let mut text = self.text.lock().expect("ui text mutex poisoned");
         ignit_ui::update(world, &mut *text);
         publish_capture(world, self.touch);
@@ -324,5 +333,42 @@ mod tests {
         assert!(capture.text);
         assert_eq!(capture.cursor, Some(CursorIcon::Text));
         assert!(capture.captures_touch(7));
+    }
+}
+
+#[cfg(test)]
+mod notification_tests {
+    use super::*;
+    use ignit_ui::{UiBuilder, UiDocumentNode, UiLayout, UiNotification, UiNotifications, UiView};
+
+    #[test]
+    fn ui_update_system_paints_notifications() {
+        let mut world = World::new();
+        ignit_ui::init(&mut world);
+        let mut root = UiDocumentNode::new("toast_root")
+            .layout(UiLayout::column().size(800.0, 600.0))
+            .child(UiDocumentNode::new("underlay").text("Underlay"));
+        root.view = Some(UiView::new(800.0, 600.0));
+        UiBuilder::new().root(root).build(&mut world).unwrap();
+
+        let text = Arc::new(Mutex::new(TextEngine::new()));
+        world.insert_resource(UiTextResource(Arc::clone(&text)));
+        world.insert_resource(DeltaTime(0.016));
+        let mut system = UiUpdateSystem::new(text);
+        system.run(&mut world);
+
+        world
+            .get_resource_mut::<UiNotifications>()
+            .unwrap()
+            .post(UiNotification::info("Runtime toast", "Body").duration(6.0));
+        system.run(&mut world);
+
+        let draw = world.get_resource::<ignit_ui::UiDrawList>().unwrap();
+        assert!(
+            draw.commands
+                .iter()
+                .any(|command| matches!(command, ignit_ui::UiDrawCommand::Text { text, .. } if text == "Runtime toast")),
+            "notification was not painted"
+        );
     }
 }

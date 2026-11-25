@@ -7,8 +7,8 @@ use ignit::ecs_bridge::{ActiveCamera, CameraDescriptor, Position, Rotation};
 use ignit::logging::{self, error, info};
 use ignit::ui::{
     UiAction, UiBuilder, UiColor, UiDimension, UiDocument, UiDocumentNode, UiEdges, UiEvent,
-    UiLayout, UiLengthPercentage, UiStyle, UiTextStyle, UiTextWrap, UiTheme, UiThemes, UiView,
-    UiWidget, UiWidgetSpec,
+    UiLayout, UiLengthPercentage, UiNotification, UiNotificationSeverity, UiNotifications, UiStyle,
+    UiTextStyle, UiTextWrap, UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec,
 };
 use ignit::ui_render::UiRenderModule;
 use ignit::ui_text::TextEngine;
@@ -55,6 +55,9 @@ impl Module for UiDemoModule {
     ) -> Vec<Box<dyn System>> {
         ignit::ui::init(ecs);
         install_themes(ecs);
+        if let Some(mut notifications) = ecs.get_resource_mut::<UiNotifications>() {
+            notifications.max_visible = 6;
+        }
 
         let camera = ecs.spawn_entity();
         ecs.attach_component(
@@ -153,6 +156,38 @@ fn build_showcase(world: &mut World) {
                         .focusable()
                         .style(UiStyle::default().class("panel"))
                         .child(UiDocumentNode::new("modal_label").text("Toggle modal")),
+                )
+                .child(
+                    UiDocumentNode::new("notify_button")
+                        .layout(
+                            UiLayout::row()
+                                .size(150.0, 38.0)
+                                .justify(ignit::ui::UiJustify::Center)
+                                .align_items(ignit::ui::UiAlign::Center),
+                        )
+                        .widget(UiWidgetSpec::Button {
+                            label: "Notify".into(),
+                        })
+                        .action(UiAction::new("notify"))
+                        .focusable()
+                        .style(UiStyle::default().class("panel"))
+                        .child(UiDocumentNode::new("notify_label").text("Notify")),
+                )
+                .child(
+                    UiDocumentNode::new("notify_placement_button")
+                        .layout(
+                            UiLayout::row()
+                                .size(170.0, 38.0)
+                                .justify(ignit::ui::UiJustify::Center)
+                                .align_items(ignit::ui::UiAlign::Center),
+                        )
+                        .widget(UiWidgetSpec::Button {
+                            label: "Toast corner".into(),
+                        })
+                        .action(UiAction::new("toast_corner"))
+                        .focusable()
+                        .style(UiStyle::default().class("panel"))
+                        .child(UiDocumentNode::new("toast_corner_label").text("Toast corner")),
                 ),
         )
         .child(
@@ -397,11 +432,15 @@ fn build_showcase(world: &mut World) {
 
 struct DemoSystem {
     dark: bool,
+    notices: u32,
 }
 
 impl DemoSystem {
     fn new() -> Self {
-        Self { dark: true }
+        Self {
+            dark: true,
+            notices: 0,
+        }
     }
 
     fn apply_events(&mut self, world: &mut World) {
@@ -474,6 +513,30 @@ impl DemoSystem {
                         if let Some(next) = themes.named.get(target).cloned() {
                             themes.active = next;
                         }
+                    }
+                }
+                "toast_corner" => {
+                    if let Some(mut notifications) = world.get_resource_mut::<UiNotifications>() {
+                        notifications.placement = notifications.placement.next();
+                        info!("UI demo toast placement: {:?}", notifications.placement);
+                    }
+                }
+                "notify" => {
+                    self.notices = self.notices.wrapping_add(1);
+                    let severity = match self.notices % 5 {
+                        1 => UiNotificationSeverity::Info,
+                        2 => UiNotificationSeverity::Success,
+                        3 => UiNotificationSeverity::Warning,
+                        4 => UiNotificationSeverity::Critical,
+                        _ => UiNotificationSeverity::Debug,
+                    };
+                    if let Some(mut notifications) = world.get_resource_mut::<UiNotifications>() {
+                        let notification = UiNotification::new(
+                            severity,
+                            format!("Demo notice #{}", self.notices),
+                            "Toasts are drawn above every root and never capture input.",
+                        );
+                        notifications.post(notification.duration(6.0));
                     }
                 }
                 "modal" => {
