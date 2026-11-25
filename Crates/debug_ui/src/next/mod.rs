@@ -182,6 +182,21 @@ fn handle_events(world: &mut World, panel: Entity) {
                 );
                 let _ = panel;
             }
+            UiEvent::Action { action, .. } if action.name == "debug_toggle_perf" => {
+                crate::handle_debug_message_world(
+                    DebugMessage::TogglePanel(PanelId::Performance),
+                    world,
+                );
+            }
+            UiEvent::Action { action, .. } if action.name == "debug_toggle_console" => {
+                crate::handle_debug_message_world(
+                    DebugMessage::TogglePanel(PanelId::Console),
+                    world,
+                );
+            }
+            UiEvent::Action { action, .. } if action.name == "debug_hide_all" => {
+                crate::handle_debug_message_world(DebugMessage::HideDebugUi, world);
+            }
             UiEvent::Action { action, .. } if action.name == "debug_console_clear" => {
                 crate::handle_debug_message_world(DebugMessage::ClearLog, world);
             }
@@ -352,6 +367,7 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
     let mut root = UiDocumentNode::new(ROOT_ID)
         .layout(UiLayout::column().width_full().height_full())
         .style(UiStyle::default().visible(false))
+        .child(toolbar())
         .child(panel)
         .child(console::build());
     root.view = Some(UiView::new(1280.0, 720.0));
@@ -414,6 +430,49 @@ fn small_style(muted: bool) -> UiStyle {
         wrap: ignit_ui::UiTextWrap::NoWrap,
         ..Default::default()
     })
+}
+
+fn toolbar() -> UiDocumentNode {
+    let mut row = UiDocumentNode::new("debug_next_toolbar")
+        .layout(
+            UiLayout::row()
+                .width_full()
+                .height(28.0)
+                .padding(4.0)
+                .gap(4.0)
+                .align_items(ignit_ui::UiAlign::Center),
+        )
+        .style(
+            UiStyle::default()
+                .background(ignit_ui::UiColor::Rgba([0.07, 0.08, 0.12, 0.96]))
+                .padding_text(ignit_ui::UiTextStyle {
+                    size: 11.0,
+                    ..Default::default()
+                }),
+        )
+        .child(
+            UiDocumentNode::new("debug_toolbar_label")
+                .layout(UiLayout::default().width(64.0))
+                .text("Debug UI"),
+        );
+    for (id, label, action) in [
+        ("debug_toolbar_perf", "Performance", "debug_toggle_perf"),
+        ("debug_toolbar_console", "Console", "debug_toggle_console"),
+        ("debug_toolbar_hide", "Hide", "debug_hide_all"),
+    ] {
+        row = row.child(
+            UiDocumentNode::new(id)
+                .layout(UiLayout::default().size(96.0, 22.0))
+                .text(label)
+                .widget(UiWidgetSpec::Button {
+                    label: label.into(),
+                })
+                .action(UiAction::new(action))
+                .focusable()
+                .style(UiStyle::default().class("panel")),
+        );
+    }
+    row
 }
 
 fn refresh_performance(world: &mut World) {
