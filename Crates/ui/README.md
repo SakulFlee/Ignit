@@ -128,8 +128,8 @@ promoted, so nothing expires unread just because it was queued.
 - `TextBox` supports keyboard and mouse selection, highlighted ranges, and
   Ctrl+C/X/V through `UiClipboardResource`. The core defaults to an in-memory
   clipboard; `ignit_ui_render` installs the system clipboard.
-- `FloatingWindow` drags from the title bar and resizes from the bottom-right
-  grip.
+- `FloatingWindow` drags from the title bar, resizes from the bottom-right
+  grip, and rises above other floating windows when clicked.
 - Widgets emit semantic `UiEvent::ValueChanged`/`Action` values; no stored
   callbacks.
 - `Examples/ui` showcases the code-authored and RON-authored screens.

@@ -368,7 +368,9 @@ impl UiLayoutEngine {
                 store
                     .get_component(entity.index)
                     .map(|widget| match &widget.spec {
-                        crate::widgets::UiWidgetSpec::FloatingWindow { .. } => z_index + 100_000,
+                        crate::widgets::UiWidgetSpec::FloatingWindow { .. } => {
+                            z_index + 100_000 + widget.raise
+                        }
                         crate::widgets::UiWidgetSpec::Modal { .. } => z_index + 1_000_000,
                         _ => z_index,
                     })

@@ -64,7 +64,7 @@ pub use style::{
     UiState, UiStateStyles, UiStyle, UiStyleClass, UiStylePatch, UiText, UiTextStyle, UiTextWrap,
     UiTheme, UiThemes,
 };
-pub use widgets::{UiWidget, UiWidgetSpec, append_widget_commands, update_widgets};
+pub use widgets::{UiWidget, UiWidgetSpec, UiWindowOrder, append_widget_commands, update_widgets};
 
 use std::time::Instant;
 
@@ -86,6 +86,9 @@ pub fn init(world: &mut World) {
     }
     if world.get_resource::<UiClipboardResource>().is_none() {
         world.insert_resource(UiClipboardResource::default());
+    }
+    if world.get_resource::<UiWindowOrder>().is_none() {
+        world.insert_resource(UiWindowOrder::default());
     }
     if world.get_resource::<UiFocusState>().is_none() {
         world.insert_resource(UiFocusState::default());
