@@ -459,6 +459,10 @@ pub(crate) fn handle_debug_message_world(message: DebugMessage, world: &mut Worl
         return;
     }
 
+    if matches!(message, DebugMessage::ClearLog) {
+        ignit_core::logging::clear_log_buffer();
+    }
+
     if let DebugMessage::SelectEntity(entity) = &message
         && let Some(mut selected) = world.get_resource_mut::<DebugSelectedEntity>()
     {

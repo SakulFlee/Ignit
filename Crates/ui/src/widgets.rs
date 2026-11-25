@@ -499,7 +499,8 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                     set_content_visible(world, content.clone(), *open);
                 }
             }
-            UiWidgetSpec::FloatingWindow { .. } => {
+            UiWidgetSpec::FloatingWindow { open, .. } => {
+                set_entity_visible(world, entity, *open);
                 let title_bar = 32.0;
                 let grip = 18.0;
                 let on_grip = input.pointer.x >= rect.rect.x + rect.rect.width - grip

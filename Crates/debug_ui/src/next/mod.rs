@@ -22,7 +22,7 @@ use winit::keyboard::KeyCode;
 
 use crate::state::{DebugMessage, DebugUiState, PanelId};
 
-const REFRESH: Duration = Duration::from_millis(100);
+const REFRESH: Duration = Duration::from_millis(33);
 const PANEL_ID: &str = "debug_next_perf_window";
 const ROOT_ID: &str = "debug_next_root";
 
@@ -363,6 +363,13 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
     Some((root, panel))
 }
 
+/// Timestamps occasionally arrive as garbage after a GPU timestamp reset.
+/// Keep the table readable instead of printing huge or non-finite values.
+fn sane_ms(value: f64) -> Option<f32> {
+    let value = value as f32;
+    (value.is_finite() && value.abs() <= 10_000.0).then_some(value.max(0.0))
+}
+
 fn small_style(muted: bool) -> UiStyle {
     UiStyle::default().padding_text(ignit_ui::UiTextStyle {
         size: 11.0,
@@ -408,6 +415,7 @@ fn refresh_performance(world: &mut World) {
                 .cdt_history()
                 .iter()
                 .rev()
+                .filter(|value| value.is_finite() && value.abs() < 10_000.0)
                 .take(120)
                 .copied()
                 .collect();
@@ -420,21 +428,24 @@ fn refresh_performance(world: &mut World) {
                 .map(|(index, sample)| {
                     let gpu = index >= ignit_ecs_bridge::GPU_STAGE_START;
                     let (good, warn) = if gpu { (2.0, 4.0) } else { (1.0, 2.0) };
-                    let color = if sample.last_ms <= good {
-                        [0.5, 0.9, 0.6, 1.0]
-                    } else if sample.last_ms <= warn {
-                        [1.0, 0.8, 0.4, 1.0]
-                    } else {
-                        [1.0, 0.5, 0.45, 1.0]
-                    };
-                    (
-                        sample.name.to_string(),
-                        format!(
-                            "{:>6.2}  {:>6.2}  {:>6.2}",
-                            sample.last_ms, sample.avg_ms, sample.max_ms
+                    let (value, color) = match (
+                        sane_ms(sample.last_ms),
+                        sane_ms(sample.avg_ms),
+                        sane_ms(sample.max_ms),
+                    ) {
+                        (Some(last), Some(avg), Some(max)) => (
+                            format!("{last:>6.2}  {avg:>6.2}  {max:>6.2}"),
+                            if last <= good {
+                                [0.5, 0.9, 0.6, 1.0]
+                            } else if last <= warn {
+                                [1.0, 0.8, 0.4, 1.0]
+                            } else {
+                                [1.0, 0.5, 0.45, 1.0]
+                            },
                         ),
-                        color,
-                    )
+                        _ => ("     --      --      --".to_string(), [1.0, 0.5, 0.45, 1.0]),
+                    };
+                    (sample.name.to_string(), value, color)
                 })
                 .collect();
             (values, max, rows)
