@@ -65,6 +65,10 @@ pub(super) fn build() -> UiDocumentNode {
         })
         .style(UiStyle::default().class("panel"))
         .child(content)
+        .child(super::close_button(
+            "debug_console_close",
+            "debug_console_hide",
+        ))
 }
 
 fn header() -> UiDocumentNode {
@@ -98,17 +102,6 @@ fn header() -> UiDocumentNode {
                 label: "Clear".into(),
             })
             .action(ignit_ui::UiAction::new("debug_console_clear"))
-            .focusable()
-            .style(UiStyle::default().class("panel")),
-    )
-    .child(
-        UiDocumentNode::new("debug_console_hide")
-            .layout(UiLayout::default().size(58.0, 24.0))
-            .text("Hide")
-            .widget(UiWidgetSpec::Button {
-                label: "Hide".into(),
-            })
-            .action(ignit_ui::UiAction::new("debug_console_hide"))
             .focusable()
             .style(UiStyle::default().class("panel")),
     )
