@@ -13,30 +13,38 @@ const WINDOW_ID: &str = "debug_next_console_window";
 const ROW_PREFIX: &str = "debug_console_row_";
 
 pub(super) fn build() -> UiDocumentNode {
-    let mut content = UiDocumentNode::new("debug_console_scroll").layout(
-        UiLayout::column()
-            .width_full()
-            .height_full()
-            .padding_edges(UiEdges {
-                left: UiLengthPercentage::Length(10.0),
-                right: UiLengthPercentage::Length(10.0),
-                top: UiLengthPercentage::Length(34.0),
-                bottom: UiLengthPercentage::Length(10.0),
-            })
-            .gap(4.0),
-    );
-    content = content.scroll().child(header());
-
+    let mut rows = UiDocumentNode::new("debug_console_scroll").layout(UiLayout {
+        flex_grow: 1.0,
+        min_height: UiDimension::Length(0.0),
+        ..UiLayout::column().width_full().gap(4.0)
+    });
+    rows = rows.scroll();
     for index in 0..MAX_ROWS {
-        content = content.child(
+        rows = rows.child(
             UiDocumentNode::new(format!("{ROW_PREFIX}{index}"))
-                .layout(UiLayout::default().width_full())
+                .layout(UiLayout::default().width_full().shrink(0.0))
                 .style(UiStyle {
                     visible: Some(false),
                     ..UiStyle::default()
                 }),
         );
     }
+
+    let content = UiDocumentNode::new("debug_console_body")
+        .layout(
+            UiLayout::column()
+                .width_full()
+                .height_full()
+                .padding_edges(UiEdges {
+                    left: UiLengthPercentage::Length(10.0),
+                    right: UiLengthPercentage::Length(10.0),
+                    top: UiLengthPercentage::Length(34.0),
+                    bottom: UiLengthPercentage::Length(10.0),
+                })
+                .gap(4.0),
+        )
+        .child(header())
+        .child(rows);
 
     UiDocumentNode::new(WINDOW_ID)
         .layout(
@@ -108,11 +116,11 @@ fn header() -> UiDocumentNode {
 
 pub(super) fn levels() -> [(&'static str, LevelFilter); 5] {
     [
-        ("Off", LevelFilter::Off),
         ("Error", LevelFilter::Error),
         ("Warn", LevelFilter::Warn),
         ("Info", LevelFilter::Info),
         ("Debug", LevelFilter::Debug),
+        ("Trace", LevelFilter::Trace),
     ]
 }
 
@@ -141,7 +149,13 @@ pub(super) fn refresh(world: &mut World) {
             continue;
         };
         if let Some((level, target, message)) = lines.get(index) {
-            super::set_text(world, &id, format!("[{level}] {target}: {message}"));
+            let message = message.replace(['\n', '\r'], " ");
+            let preview: String = if message.chars().count() > 280 {
+                message.chars().take(277).collect::<String>() + "..."
+            } else {
+                message
+            };
+            super::set_text(world, &id, format!("[{level}] {target}: {preview}"));
             set_row_style(world, entity, Some(level_color(*level)));
         } else {
             set_row_style(world, entity, None);
