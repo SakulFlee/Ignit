@@ -483,23 +483,27 @@ fn token_color(theme: Option<&UiTheme>, name: &str, fallback: UiRgba) -> UiRgba 
         .unwrap_or(fallback)
 }
 
-/// Largest visible root, used as the screen-space anchor. Viewport order is
-/// only a tie-breaker so small overlay roots cannot capture the toast stack.
+/// Primary visible root, used as the screen-space anchor.
+///
+/// The runtime resizes every root view to the window size, so area and order
+/// cannot tell a full-viewport root from an offset overlay root. Prefer the
+/// first visible root without an offset and fall back to the first visible
+/// root when every root is offset.
 fn overlay_view(world: &World) -> Option<(Entity, UiView)> {
     let forest = world.get_resource::<UiForest>()?;
     let views = world.get_component_store::<UiView>()?;
-    forest
-        .roots()
-        .iter()
-        .filter_map(|root| {
-            views
-                .get_component(root.index)
-                .filter(|view| view.visible)
-                .map(|view| (*root, *view))
-        })
-        .max_by(|(_, left), (_, right)| {
-            (left.size.width * left.size.height)
-                .total_cmp(&(right.size.width * right.size.height))
-                .then_with(|| left.order.cmp(&right.order))
-        })
+    let mut fallback = None;
+    for root in forest.roots() {
+        let Some(view) = views.get_component(root.index).copied() else {
+            continue;
+        };
+        if !view.visible {
+            continue;
+        }
+        fallback.get_or_insert((*root, view));
+        if view.offset == UiPoint::ZERO {
+            return Some((*root, view));
+        }
+    }
+    fallback
 }

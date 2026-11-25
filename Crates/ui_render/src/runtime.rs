@@ -335,3 +335,40 @@ mod tests {
         assert!(capture.captures_touch(7));
     }
 }
+
+#[cfg(test)]
+mod notification_tests {
+    use super::*;
+    use ignit_ui::{UiBuilder, UiDocumentNode, UiLayout, UiNotification, UiNotifications, UiView};
+
+    #[test]
+    fn ui_update_system_paints_notifications() {
+        let mut world = World::new();
+        ignit_ui::init(&mut world);
+        let mut root = UiDocumentNode::new("toast_root")
+            .layout(UiLayout::column().size(800.0, 600.0))
+            .child(UiDocumentNode::new("underlay").text("Underlay"));
+        root.view = Some(UiView::new(800.0, 600.0));
+        UiBuilder::new().root(root).build(&mut world).unwrap();
+
+        let text = Arc::new(Mutex::new(TextEngine::new()));
+        world.insert_resource(UiTextResource(Arc::clone(&text)));
+        world.insert_resource(DeltaTime(0.016));
+        let mut system = UiUpdateSystem::new(text);
+        system.run(&mut world);
+
+        world
+            .get_resource_mut::<UiNotifications>()
+            .unwrap()
+            .post(UiNotification::info("Runtime toast", "Body").duration(6.0));
+        system.run(&mut world);
+
+        let draw = world.get_resource::<ignit_ui::UiDrawList>().unwrap();
+        assert!(
+            draw.commands
+                .iter()
+                .any(|command| matches!(command, ignit_ui::UiDrawCommand::Text { text, .. } if text == "Runtime toast")),
+            "notification was not painted"
+        );
+    }
+}

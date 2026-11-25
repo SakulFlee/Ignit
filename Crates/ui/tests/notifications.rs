@@ -173,12 +173,15 @@ fn top_center_placement_is_centered() {
 }
 
 #[test]
-fn toasts_anchor_to_the_largest_viewport() {
+fn toasts_anchor_to_the_primary_viewport() {
     let mut world = World::new();
     setup(&mut world);
-    let mut overlay = UiDocumentNode::new("small_overlay");
+    // The runtime resizes every root to the window size, including offset
+    // overlay roots, so the anchor must not be chosen by area or order.
+    let mut overlay = UiDocumentNode::new("offset_overlay");
     overlay.view = Some(UiView {
-        size: ignit_ui::UiSize::new(200.0, 100.0),
+        size: ignit_ui::UiSize::new(800.0, 600.0),
+        offset: UiPoint::new(600.0, 400.0),
         order: 20,
         ..UiView::default()
     });
@@ -189,7 +192,7 @@ fn toasts_anchor_to_the_largest_viewport() {
     world
         .get_resource_mut::<UiNotifications>()
         .unwrap()
-        .post(UiNotification::info("Anchored", "Largest root"));
+        .post(UiNotification::info("Anchored", "Primary root"));
     update(&mut world, &mut measure);
 
     let draw = world.get_resource::<ignit_ui::UiDrawList>().unwrap();
@@ -220,4 +223,63 @@ fn default_text_style_keeps_wrapping() {
     // Guards the resolved style used by the toast painter.
     let resolved = ignit_ui::UiResolvedTextStyle::from(&UiTextStyle::default());
     assert_eq!(resolved.wrap, ignit_ui::UiTextWrap::Word);
+}
+
+#[test]
+fn showcase_roots_receive_a_toast() {
+    let mut world = World::new();
+    init(&mut world);
+    let mut root = UiDocumentNode::new("demo_root")
+        .layout(
+            UiLayout::column()
+                .size(1280.0, 720.0)
+                .padding(24.0)
+                .gap(12.0),
+        )
+        .child(UiDocumentNode::new("title").text("Ignit UI widgets"));
+    root.view = Some(UiView::new(1280.0, 720.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let ron = include_str!("../../../Examples/ui/Assets/Scenes/ui_demo.ron");
+    let document = ignit_ui::UiDocument::from_ron(ron).expect("demo document");
+    ignit_ui::spawn_document(&mut world, &document, Some("ui_demo")).unwrap();
+    let ron_root = world
+        .get_resource::<ignit_ui::UiForest>()
+        .unwrap()
+        .find(&"ron_root".into())
+        .unwrap();
+    if let Some(views) = world.get_component_store_mut::<UiView>()
+        && let Some(view) = views.get_mut_store().get_component_mut(ron_root.index)
+    {
+        // The runtime resizes every root view to the window, even offset
+        // overlay roots. Mirror that here.
+        view.size = ignit_ui::UiSize::new(1280.0, 720.0);
+    }
+
+    let mut measure = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut measure);
+    if let Some(mut notifications) = world.get_resource_mut::<UiNotifications>() {
+        notifications.placement = UiNotificationPlacement::TopCenter;
+        notifications.post(UiNotification::info("Demo notice #1", "Toast body").duration(6.0));
+    }
+    update(&mut world, &mut measure);
+
+    let draw = world.get_resource::<ignit_ui::UiDrawList>().unwrap();
+    let texts: Vec<&str> = draw
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            UiDrawCommand::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(texts.contains(&"Demo notice #1"), "texts: {texts:?}");
+    let shadow = draw
+        .commands
+        .iter()
+        .find_map(|command| match command {
+            UiDrawCommand::Shadow { rect, .. } if (rect.width - 340.0).abs() < 0.5 => Some(*rect),
+            _ => None,
+        })
+        .expect("toast shadow");
+    assert!((shadow.x - 470.0).abs() < 0.5, "toast x was {}", shadow.x);
 }
