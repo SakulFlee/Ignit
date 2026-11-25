@@ -9,6 +9,8 @@ use log::LevelFilter;
 
 use crate::state::{DebugUiState, MAX_ROWS};
 
+const ROWS: usize = 80;
+
 const WINDOW_ID: &str = "debug_next_console_window";
 const ROW_PREFIX: &str = "debug_console_row_";
 
@@ -19,7 +21,7 @@ pub(super) fn build() -> UiDocumentNode {
         ..UiLayout::column().width_full().gap(4.0)
     });
     rows = rows.scroll();
-    for index in 0..MAX_ROWS {
+    for index in 0..ROWS {
         rows = rows.child(
             UiDocumentNode::new(format!("{ROW_PREFIX}{index}"))
                 .layout(UiLayout::default().width_full().shrink(0.0))
@@ -122,18 +124,18 @@ pub(super) fn refresh(world: &mut World) {
         .get_resource::<DebugUiState>()
         .map_or(LevelFilter::Info, |state| state.min_level);
 
-    let mut lines = Vec::with_capacity(MAX_ROWS);
+    let mut lines = Vec::with_capacity(ROWS);
     ignit_core::logging::with_log_buffer(|buffer| {
         for line in buffer
             .rev()
             .filter(|line| line.level <= min_level)
-            .take(MAX_ROWS)
+            .take(ROWS)
         {
             lines.push((line.level, line.target.clone(), line.message.clone()));
         }
     });
 
-    for index in 0..MAX_ROWS {
+    for index in 0..ROWS {
         let id = format!("{ROW_PREFIX}{index}");
         let Some(entity) = world
             .get_resource::<ignit_ui::UiForest>()
@@ -179,14 +181,24 @@ pub(super) fn refresh(world: &mut World) {
                 ignit_ui::UiDirty::LAYOUT | ignit_ui::UiDirty::PAINT,
             );
         }
+        super::set_visible(world, entity, open);
     }
 }
 
 fn set_row_style(world: &mut World, entity: Entity, color: Option<UiColor>) {
     let style = match color {
+        Some(UiColor::Rgba(color)) => UiStyle::default()
+            .background(UiColor::Rgba([color[0], color[1], color[2], 0.12]))
+            .padding_text(UiTextStyle {
+                size: 10.0,
+                color: UiColor::Rgba(color),
+                wrap: ignit_ui::UiTextWrap::NoWrap,
+                ..Default::default()
+            }),
         Some(color) => UiStyle::default().padding_text(UiTextStyle {
-            size: 11.0,
+            size: 10.0,
             color,
+            wrap: ignit_ui::UiTextWrap::NoWrap,
             ..Default::default()
         }),
         None => UiStyle {
