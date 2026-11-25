@@ -20,6 +20,11 @@ use crate::layout_engine::UiTextMeasure;
 use crate::node::UiView;
 use crate::style::{UiResolvedTextStyle, UiRgba, UiTextStyle, UiTextWrap, UiTheme, UiThemes};
 
+const HEADER_HEIGHT: f32 = 24.0;
+const SLIDE_DISTANCE: f32 = 28.0;
+const FADE_OUT_SECONDS: f32 = 0.25;
+const FADE_SECONDS: f32 = 0.18;
+
 /// Visual severity of a notification.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UiNotificationSeverity {
@@ -27,17 +32,30 @@ pub enum UiNotificationSeverity {
     Info,
     Success,
     Warning,
-    Error,
+    Critical,
+    Debug,
 }
 
 impl UiNotificationSeverity {
-    /// Theme token used for the severity stripe.
+    /// Theme token used for the header bar.
     pub fn token(self) -> &'static str {
         match self {
             Self::Info => "info",
             Self::Success => "success",
             Self::Warning => "warning",
-            Self::Error => "danger",
+            Self::Critical => "danger",
+            Self::Debug => "debug",
+        }
+    }
+
+    /// Uppercase label painted in the header bar.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Info => "INFO",
+            Self::Success => "SUCCESS",
+            Self::Warning => "WARNING",
+            Self::Critical => "CRITICAL",
+            Self::Debug => "DEBUG",
         }
     }
 
@@ -46,7 +64,8 @@ impl UiNotificationSeverity {
             Self::Info => [0.26, 0.62, 0.92, 1.0],
             Self::Success => [0.30, 0.70, 0.50, 1.0],
             Self::Warning => [0.92, 0.70, 0.22, 1.0],
-            Self::Error => [0.92, 0.32, 0.36, 1.0],
+            Self::Critical => [0.92, 0.32, 0.36, 1.0],
+            Self::Debug => [0.52, 0.55, 0.64, 1.0],
         }
     }
 }
@@ -157,8 +176,12 @@ impl UiNotification {
         Self::new(UiNotificationSeverity::Warning, title, message)
     }
 
-    pub fn error(title: impl Into<String>, message: impl Into<String>) -> Self {
-        Self::new(UiNotificationSeverity::Error, title, message)
+    pub fn critical(title: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(UiNotificationSeverity::Critical, title, message)
+    }
+
+    pub fn debug(title: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::new(UiNotificationSeverity::Debug, title, message)
     }
 
     /// Collapses repeated posts of the same key into one card.
@@ -384,6 +407,12 @@ pub fn append_notification_commands(
     let gap = notifications.gap.max(0.0);
     let max_height = (view.size.height - margin * 2.0).max(0.0);
 
+    let header_base = UiTextStyle {
+        size: 11.0,
+        weight: 700,
+        wrap: UiTextWrap::NoWrap,
+        ..Default::default()
+    };
     let title_base = UiTextStyle {
         size: 15.0,
         weight: 600,
@@ -395,6 +424,7 @@ pub fn append_notification_commands(
         wrap: UiTextWrap::Word,
         ..Default::default()
     };
+    let header_style = resolve_text(theme, &header_base);
     let title_style = resolve_text(theme, &title_base);
     let message_style = resolve_text(theme, &message_base);
     let background = token_color(theme, "surface", [0.09, 0.10, 0.14, 1.0]);
@@ -409,9 +439,8 @@ pub fn append_notification_commands(
         .unwrap_or([0.0, 0.0, 0.0, 0.28]);
 
     let pad = 12.0;
-    let stripe = 4.0;
-    let text_x_offset = stripe + 12.0;
-    let text_width = (width - text_x_offset - pad).max(1.0);
+    let text_pad = 12.0;
+    let text_width = (width - text_pad * 2.0).max(1.0);
 
     let (horizontal, vertical) = notifications.placement.anchors();
     let x = match horizontal {
@@ -423,15 +452,18 @@ pub fn append_notification_commands(
     let mut cards = Vec::new();
     let mut total = 0.0;
     for notification in notifications.visible() {
-        let mut title = notification.title.clone();
+        let mut label = notification.severity.label().to_string();
         if notification.repeat > 1 {
-            title.push_str(&format!("  \u{00d7}{}", notification.repeat));
+            label.push_str(&format!("  \u{00d7}{}", notification.repeat));
         }
-        let title_height = if title.is_empty() {
+        let label_height = measure
+            .measure(&label, &header_base, Some(text_width))
+            .height;
+        let title_height = if notification.title.is_empty() {
             0.0
         } else {
             measure
-                .measure(&title, &title_base, Some(text_width))
+                .measure(&notification.title, &title_base, Some(text_width))
                 .height
         };
         let message_height = if notification.message.is_empty() {
@@ -448,11 +480,18 @@ pub fn append_notification_commands(
             }
             text_height += message_height;
         }
-        let height = (pad * 2.0 + text_height).max(pad * 2.0);
+        let height = HEADER_HEIGHT + 10.0 + text_height + pad;
         if total + height > max_height && !cards.is_empty() {
             break;
         }
-        cards.push((notification, title, title_height, message_height, height));
+        cards.push((
+            notification,
+            label,
+            label_height,
+            title_height,
+            message_height,
+            height,
+        ));
         total += height + gap;
     }
     if total > 0.0 {
@@ -469,17 +508,44 @@ pub fn append_notification_commands(
         VerticalAnchor::Bottom => view.offset.y + (view.size.height - margin - total).max(0.0),
     };
 
-    for (notification, title, title_height, message_height, height) in cards {
-        let rect = UiRect::new(x, y, width, height);
+    for (notification, label, label_height, title_height, message_height, height) in cards {
+        let age = notification.visible_time as f32;
+        let progress = if age <= 0.0 {
+            1.0
+        } else {
+            (age / FADE_SECONDS).clamp(0.0, 1.0)
+        };
+        let eased = 1.0 - (1.0 - progress).powi(3);
+        let mut alpha = eased;
+        if notification.duration > 0.0 {
+            let remaining = notification.duration - age;
+            if remaining < FADE_OUT_SECONDS {
+                alpha *= (remaining / FADE_OUT_SECONDS).clamp(0.0, 1.0);
+            }
+        }
+        let slide = 1.0 - eased;
+        let slide_x = match horizontal {
+            HorizontalAnchor::Left => -SLIDE_DISTANCE * slide,
+            HorizontalAnchor::Right => SLIDE_DISTANCE * slide,
+            HorizontalAnchor::Center => 0.0,
+        };
+        let slide_y = match vertical {
+            VerticalAnchor::Top => -SLIDE_DISTANCE * 0.6 * slide,
+            VerticalAnchor::Bottom => SLIDE_DISTANCE * 0.6 * slide,
+            VerticalAnchor::Center => 0.0,
+        };
+
+        let rect = UiRect::new(x + slide_x, y + slide_y, width, height);
         let color = token_color(
             theme,
             notification.severity.token(),
             notification.severity.fallback(),
         );
+        let header_text = contrasting_text(color);
         draw.commands.push(UiDrawCommand::Shadow {
             entity,
             rect,
-            color: shadow,
+            color: with_alpha(shadow, alpha),
             offset: UiPoint::new(0.0, 4.0),
             blur: 12.0,
             spread: 0.0,
@@ -489,34 +555,52 @@ pub fn append_notification_commands(
         draw.commands.push(UiDrawCommand::Rect {
             entity,
             rect,
-            color: background,
+            color: with_alpha(background, alpha),
             radius: [8.0; 4],
+            clip: None,
+        });
+        draw.commands.push(UiDrawCommand::Rect {
+            entity,
+            rect: UiRect::new(rect.x, rect.y, rect.width, HEADER_HEIGHT),
+            color: with_alpha(color, alpha),
+            radius: [8.0, 8.0, 0.0, 0.0],
             clip: None,
         });
         draw.commands.push(UiDrawCommand::Border {
             entity,
             rect,
             width: 1.0,
-            color: border,
+            color: with_alpha(border, alpha),
             radius: [8.0; 4],
             clip: None,
         });
-        draw.commands.push(UiDrawCommand::Rect {
+
+        let label_y = rect.y + (HEADER_HEIGHT - label_height) * 0.5;
+        draw.commands.push(UiDrawCommand::Text {
             entity,
-            rect: UiRect::new(rect.x, rect.y, stripe, rect.height),
-            color,
-            radius: [8.0, 0.0, 0.0, 8.0],
+            rect: UiRect::new(rect.x + text_pad, label_y, text_width, label_height),
+            text: label,
+            style: {
+                let mut style = header_style.clone();
+                style.color = with_alpha(header_text, alpha);
+                style
+            },
             clip: None,
+            caret: None,
         });
 
-        let text_x = rect.x + text_x_offset;
-        let mut text_y = rect.y + pad;
+        let text_x = rect.x + text_pad;
+        let mut text_y = rect.y + HEADER_HEIGHT + 10.0;
         if title_height > 0.0 {
             draw.commands.push(UiDrawCommand::Text {
                 entity,
                 rect: UiRect::new(text_x, text_y, text_width, title_height),
-                text: title,
-                style: title_style.clone(),
+                text: notification.title.clone(),
+                style: {
+                    let mut style = title_style.clone();
+                    style.color = with_alpha(style.color, alpha);
+                    style
+                },
                 clip: None,
                 caret: None,
             });
@@ -530,13 +614,41 @@ pub fn append_notification_commands(
                 entity,
                 rect: UiRect::new(text_x, text_y, text_width, message_height),
                 text: notification.message.clone(),
-                style: message_style.clone(),
+                style: {
+                    let mut style = message_style.clone();
+                    style.color = with_alpha(style.color, alpha);
+                    style
+                },
                 clip: None,
                 caret: None,
             });
         }
 
         y += height + gap;
+    }
+}
+
+fn with_alpha(mut color: UiRgba, alpha: f32) -> UiRgba {
+    color[3] *= alpha.clamp(0.0, 1.0);
+    color
+}
+
+/// Picks near-black or white for text on a colored header bar.
+fn contrasting_text(background: UiRgba) -> UiRgba {
+    fn linear(channel: f32) -> f32 {
+        if channel <= 0.04045 {
+            channel / 12.92
+        } else {
+            ((channel + 0.055) / 1.055).powf(2.4)
+        }
+    }
+    let luminance = 0.2126 * linear(background[0])
+        + 0.7152 * linear(background[1])
+        + 0.0722 * linear(background[2]);
+    if luminance > 0.45 {
+        [0.04, 0.05, 0.07, 1.0]
+    } else {
+        [1.0, 1.0, 1.0, 1.0]
     }
 }
 

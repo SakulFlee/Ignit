@@ -97,10 +97,12 @@ notifications.post(
 );
 ```
 
-Cards use the `surface`, `border`, `text`, and severity tokens (`info`,
-`success`, `warning`, `danger`). `UiNotificationPlacement` covers the four
-cardinals and four intercardinals; the default is the top-right corner.
-`next()` cycles through them for settings UI.
+Cards have a colored header bar labelled `INFO`, `SUCCESS`, `WARNING`,
+`CRITICAL`, or `DEBUG`, using the severity tokens (`info`, `success`,
+`warning`, `danger`, `debug`) with auto-contrast text and a short slide/fade-in.
+`UiNotificationPlacement` covers the four cardinals and four intercardinals;
+the default is the top-right corner. `next()` cycles through them for settings
+UI.
 
 `max_visible` (default 6) bounds the painted stack and `max_queued` (default
 32) bounds the total queue. Durations accumulate only while a card has a

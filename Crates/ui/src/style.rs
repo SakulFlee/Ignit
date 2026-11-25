@@ -395,6 +395,7 @@ impl UiTheme {
         colors.insert("success".into(), [0.30, 0.70, 0.50, 1.0]);
         colors.insert("warning".into(), [0.92, 0.70, 0.22, 1.0]);
         colors.insert("danger".into(), [0.92, 0.32, 0.36, 1.0]);
+        colors.insert("debug".into(), [0.52, 0.55, 0.64, 1.0]);
 
         let mut spacing = HashMap::new();
         spacing.insert("xs".into(), 4.0);
@@ -519,6 +520,7 @@ impl UiTheme {
         theme
             .colors
             .insert("danger".into(), [0.78, 0.18, 0.22, 1.0]);
+        theme.colors.insert("debug".into(), [0.36, 0.38, 0.44, 1.0]);
         for (name, style) in &mut theme.typography {
             style.color = if name == "caption" {
                 UiColor::rgba([0.30, 0.35, 0.42, 1.0])

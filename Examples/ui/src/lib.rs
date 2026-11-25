@@ -523,11 +523,12 @@ impl DemoSystem {
                 }
                 "notify" => {
                     self.notices = self.notices.wrapping_add(1);
-                    let severity = match self.notices % 4 {
+                    let severity = match self.notices % 5 {
                         1 => UiNotificationSeverity::Info,
                         2 => UiNotificationSeverity::Success,
                         3 => UiNotificationSeverity::Warning,
-                        _ => UiNotificationSeverity::Error,
+                        4 => UiNotificationSeverity::Critical,
+                        _ => UiNotificationSeverity::Debug,
                     };
                     if let Some(mut notifications) = world.get_resource_mut::<UiNotifications>() {
                         let notification = UiNotification::new(

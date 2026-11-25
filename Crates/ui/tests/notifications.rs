@@ -101,7 +101,7 @@ fn keyed_notifications_coalesce_and_count_repeats() {
 #[test]
 fn sticky_notifications_survive_advance() {
     let mut notifications = UiNotifications::default();
-    notifications.post(UiNotification::error("Offline", "No connection").sticky());
+    notifications.post(UiNotification::critical("Offline", "No connection").sticky());
     notifications.advance(60.0);
     assert_eq!(notifications.visible().count(), 1);
 }
@@ -172,7 +172,7 @@ fn light_theme_toast_text_uses_dark_tokens() {
     world
         .get_resource_mut::<UiNotifications>()
         .unwrap()
-        .post(UiNotification::error("Light toast", "Still readable"));
+        .post(UiNotification::critical("Light toast", "Still readable"));
     update(&mut world, &mut measure);
 
     let text = text_commands(&world);
@@ -274,6 +274,92 @@ fn placement_supports_cardinal_and_intercardinal_anchors() {
         assert!((rect.x - x).abs() < 0.5, "{placement:?} x was {}", rect.x);
         assert!((rect.y - y).abs() < 0.5, "{placement:?} y was {}", rect.y);
     }
+}
+
+#[test]
+fn notification_header_shows_severity_label_and_color() {
+    let mut world = World::new();
+    setup(&mut world);
+    let mut measure = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut measure);
+    world
+        .get_resource_mut::<UiNotifications>()
+        .unwrap()
+        .post(UiNotification::warning("Heads up", "Body"));
+    update(&mut world, &mut measure);
+
+    let draw = world.get_resource::<ignit_ui::UiDrawList>().unwrap();
+    let header = draw
+        .commands
+        .iter()
+        .find_map(|command| match command {
+            UiDrawCommand::Rect { rect, color, .. }
+                if (rect.width - 340.0).abs() < 0.5 && (rect.height - 24.0).abs() < 0.5 =>
+            {
+                Some(*color)
+            }
+            _ => None,
+        })
+        .expect("header bar");
+    assert!(header[0] > 0.8 && header[1] > 0.6, "header {header:?}");
+    let label = draw
+        .commands
+        .iter()
+        .find_map(|command| match command {
+            UiDrawCommand::Text { text, style, .. } if text == "WARNING" => Some(style.color),
+            _ => None,
+        })
+        .expect("severity label");
+    // Warning is bright, so the header text must be dark.
+    assert!(label[0] < 0.2, "label color {label:?}");
+}
+
+#[test]
+fn notifications_slide_and_fade_in() {
+    let mut world = World::new();
+    setup(&mut world);
+    let mut measure = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut measure);
+    world
+        .get_resource_mut::<UiNotifications>()
+        .unwrap()
+        .post(UiNotification::info("Heads up", "Body"));
+    world
+        .get_resource_mut::<UiNotifications>()
+        .unwrap()
+        .advance(0.01);
+    update(&mut world, &mut measure);
+
+    let background = |world: &World| {
+        let draw = world.get_resource::<ignit_ui::UiDrawList>().unwrap();
+        draw.commands
+            .iter()
+            .find_map(|command| match command {
+                UiDrawCommand::Rect { rect, color, .. }
+                    if (rect.width - 340.0).abs() < 0.5 && rect.height > 24.5 =>
+                {
+                    Some((*rect, *color))
+                }
+                _ => None,
+            })
+            .expect("card background")
+    };
+    let (start, color) = background(&world);
+    assert!(start.x > 444.0, "start x was {}", start.x);
+    assert!(color[3] < 0.5, "start alpha was {}", color[3]);
+
+    world
+        .get_resource_mut::<UiNotifications>()
+        .unwrap()
+        .advance(0.5);
+    update(&mut world, &mut measure);
+    let (settled, color) = background(&world);
+    assert!(
+        (settled.x - 444.0).abs() < 0.5,
+        "settled x was {}",
+        settled.x
+    );
+    assert!(color[3] > 0.99, "settled alpha was {}", color[3]);
 }
 
 #[test]
