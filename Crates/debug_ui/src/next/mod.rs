@@ -139,6 +139,11 @@ impl UiSystem for DebugUiNextSystem {
         if self.last_visible != Some(visible) {
             self.last_visible = Some(visible);
             set_visible(world, self.state.root, visible);
+            if visible {
+                // The toolbar can reopen it; don't cover the screen with every
+                // panel on the first show.
+                crate::handle_debug_message_world(DebugMessage::HidePanel(PanelId::Console), world);
+            }
             debug!("debug UI next {}", if visible { "shown" } else { "hidden" });
         }
         if !visible {
@@ -447,12 +452,13 @@ fn toolbar() -> UiDocumentNode {
                 .background(ignit_ui::UiColor::Rgba([0.07, 0.08, 0.12, 0.96]))
                 .padding_text(ignit_ui::UiTextStyle {
                     size: 11.0,
+                    wrap: ignit_ui::UiTextWrap::NoWrap,
                     ..Default::default()
                 }),
         )
         .child(
             UiDocumentNode::new("debug_toolbar_label")
-                .layout(UiLayout::default().width(64.0))
+                .layout(UiLayout::default().width(84.0))
                 .text("Debug UI"),
         );
     for (id, label, action) in [
