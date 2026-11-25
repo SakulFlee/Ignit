@@ -42,6 +42,8 @@ pub enum UiDrawCommand {
         style: UiResolvedTextStyle,
         clip: Option<UiRect>,
         caret: Option<usize>,
+        /// Byte range highlighted behind the text, used by editable fields.
+        selection: Option<(usize, usize)>,
     },
     Image {
         entity: Entity,
@@ -186,6 +188,7 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
             }
             let mut text_rect = computed.content;
             let mut caret = None;
+            let mut selection = None;
             if let Some(widget) = widgets
                 .as_ref()
                 .and_then(|store| store.get_component(entity.index))
@@ -194,8 +197,14 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
                     UiWidgetSpec::TextBox { .. } => {
                         if focused == Some(entity) {
                             caret = Some(widget.cursor);
+                            if widget.cursor != widget.anchor {
+                                selection = Some((
+                                    widget.cursor.min(widget.anchor),
+                                    widget.cursor.max(widget.anchor),
+                                ));
+                            }
                         }
-                        text_rect.x -= widget.scroll_x;
+                        text_rect.x -= widget.scroll_x.round();
                         let line_height = style.line_height.unwrap_or(style.size * 1.25);
                         text_rect.y += ((text_rect.height - line_height) * 0.5).max(0.0);
                     }
@@ -213,6 +222,7 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
                 style: style.clone(),
                 clip: text_clip,
                 caret,
+                selection,
             });
         }
         if let Some(image) = images

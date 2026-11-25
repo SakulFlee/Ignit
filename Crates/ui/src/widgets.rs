@@ -9,6 +9,7 @@ use std::collections::HashSet;
 use ignit_ecs::{Entity, Events, World};
 use serde::{Deserialize, Serialize};
 
+use crate::clipboard::UiClipboardResource;
 use crate::draw::{UiDrawCommand, UiDrawList};
 use crate::events::UiEvent;
 use crate::focus::{self, UiFocusState};
@@ -17,8 +18,12 @@ use crate::geometry::UiRect;
 use crate::id::UiId;
 use crate::input::UiInputState;
 use crate::layout::{UiDimension, UiLayout, UiPosition};
+use crate::layout_engine::UiTextMeasure;
 use crate::node::{UiComputed, UiDirty};
-use crate::style::{UiResolvedStyle, UiResolvedTextStyle, UiStyle, UiText, UiTextWrap, UiThemes};
+use crate::style::{
+    UiColor, UiResolvedStyle, UiResolvedTextStyle, UiStyle, UiText, UiTextStyle, UiTextWrap,
+    UiThemes,
+};
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum UiWidgetSpec {
@@ -98,6 +103,10 @@ pub struct UiWidget {
     pub anchor: usize,
     pub scroll_x: f32,
     pub hovered_option: Option<usize>,
+    pub text_drag: bool,
+    pub resizing: bool,
+    pub resize_start: Option<(f32, f32)>,
+    pub resize_base: (f32, f32),
 }
 
 impl UiWidget {
@@ -115,13 +124,17 @@ impl UiWidget {
             anchor: cursor,
             scroll_x: 0.0,
             hovered_option: None,
+            text_drag: false,
+            resizing: false,
+            resize_start: None,
+            resize_base: (0.0, 0.0),
         }
     }
 }
 
 /// Runs widget state changes. Call after hit testing/focus and before the draw
 /// list is built.
-pub fn update_widgets(world: &mut World, input: &UiInputState) {
+pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn UiTextMeasure) {
     let events: Vec<UiEvent> = world
         .get_resource::<Events<UiEvent>>()
         .map(|events| events.read().cloned().collect())
@@ -199,11 +212,57 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
                     widget.dragging = false;
                 }
             }
-            UiWidgetSpec::TextBox { value, .. } if focused == Some(entity) => {
+            UiWidgetSpec::TextBox {
+                value, multiline, ..
+            } if focused == Some(entity) => {
                 let mut edited = value.clone();
                 let mut cursor = widget.cursor.min(edited.len());
                 let mut anchor = widget.anchor.min(edited.len());
                 let mut changed = false;
+                let edit_style = edit_text_style(world, entity);
+                let content_width = rect.content.width.max(1.0);
+                let text_width = measure.measure(&edited, &edit_style, None).width;
+                let max_scroll = (text_width - content_width).max(0.0);
+
+                if widget.text_drag && input.primary_down {
+                    let over_right = input.pointer.x - (rect.content.x + content_width);
+                    let over_left = input.pointer.x - rect.content.x;
+                    if over_right > 0.0 {
+                        widget.scroll_x += (over_right * 0.25).max(1.0);
+                    } else if over_left < 0.0 {
+                        widget.scroll_x += (over_left * 0.25).min(-1.0);
+                    }
+                    widget.scroll_x = widget.scroll_x.clamp(0.0, max_scroll);
+                }
+
+                let pointer_x = input.pointer.x - rect.content.x + widget.scroll_x;
+                let pointer_y = input.pointer.y - rect.content.y;
+                if input.primary_pressed && rect.rect.contains(input.pointer) {
+                    let next = measure.cursor_index(
+                        &edited,
+                        &edit_style,
+                        content_width,
+                        pointer_x,
+                        pointer_y,
+                    );
+                    cursor = next;
+                    if !input.modifiers.shift {
+                        anchor = next;
+                    }
+                    widget.text_drag = true;
+                } else if widget.text_drag && input.primary_down {
+                    cursor = measure.cursor_index(
+                        &edited,
+                        &edit_style,
+                        content_width,
+                        pointer_x,
+                        pointer_y,
+                    );
+                }
+                if input.primary_released {
+                    widget.text_drag = false;
+                }
+
                 for key in &input.keys_pressed {
                     match key {
                         crate::input::UiKey::Character(character)
@@ -244,6 +303,22 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
                             }
                             changed = true;
                         }
+                        crate::input::UiKey::ArrowLeft
+                            if input.modifiers.ctrl || input.modifiers.super_key =>
+                        {
+                            cursor = prev_word_boundary(&edited, cursor);
+                            if !input.modifiers.shift {
+                                anchor = cursor;
+                            }
+                        }
+                        crate::input::UiKey::ArrowRight
+                            if input.modifiers.ctrl || input.modifiers.super_key =>
+                        {
+                            cursor = next_word_boundary(&edited, cursor);
+                            if !input.modifiers.shift {
+                                anchor = cursor;
+                            }
+                        }
                         crate::input::UiKey::ArrowLeft => {
                             cursor = prev_boundary(&edited, cursor);
                             if !input.modifiers.shift {
@@ -269,15 +344,57 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
                             }
                         }
                         crate::input::UiKey::Character(character)
-                            if input.modifiers.ctrl && character.eq_ignore_ascii_case(&'a') =>
+                            if (input.modifiers.ctrl || input.modifiers.super_key)
+                                && character.eq_ignore_ascii_case(&'a') =>
                         {
                             anchor = 0;
                             cursor = edited.len();
                         }
+                        crate::input::UiKey::Character(character)
+                            if (input.modifiers.ctrl || input.modifiers.super_key)
+                                && character.eq_ignore_ascii_case(&'c') =>
+                        {
+                            if let Some((start, end)) = selection_range(cursor, anchor)
+                                && let Some(clipboard) = world.get_resource::<UiClipboardResource>()
+                            {
+                                clipboard.set_text(edited[start..end].to_string());
+                            }
+                        }
+                        crate::input::UiKey::Character(character)
+                            if (input.modifiers.ctrl || input.modifiers.super_key)
+                                && character.eq_ignore_ascii_case(&'x') =>
+                        {
+                            if let Some((start, end)) = selection_range(cursor, anchor) {
+                                if let Some(clipboard) = world.get_resource::<UiClipboardResource>()
+                                {
+                                    clipboard.set_text(edited[start..end].to_string());
+                                }
+                                delete_selection(&mut edited, &mut cursor, &mut anchor);
+                                changed = true;
+                            }
+                        }
+                        crate::input::UiKey::Character(character)
+                            if (input.modifiers.ctrl || input.modifiers.super_key)
+                                && character.eq_ignore_ascii_case(&'v') =>
+                        {
+                            let pasted = world
+                                .get_resource::<UiClipboardResource>()
+                                .and_then(|clipboard| clipboard.get_text());
+                            if let Some(mut pasted) = pasted {
+                                if !*multiline {
+                                    pasted = pasted.replace(['\n', '\r'], " ");
+                                }
+                                delete_selection(&mut edited, &mut cursor, &mut anchor);
+                                edited.insert_str(cursor, &pasted);
+                                cursor += pasted.len();
+                                anchor = cursor;
+                                changed = true;
+                            }
+                        }
                         _ => {}
                     }
                 }
-                if !input.text.is_empty() {
+                if !input.text.is_empty() && !input.modifiers.ctrl && !input.modifiers.super_key {
                     delete_selection(&mut edited, &mut cursor, &mut anchor);
                     edited.insert_str(cursor, &input.text);
                     cursor += input.text.len();
@@ -286,29 +403,25 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
                 }
                 widget.cursor = cursor;
                 widget.anchor = anchor;
+                let cursor_x = measure
+                    .measure(
+                        edited.get(..cursor.min(edited.len())).unwrap_or(&edited),
+                        &edit_style,
+                        None,
+                    )
+                    .width;
+                if cursor_x - widget.scroll_x > content_width - 4.0 {
+                    widget.scroll_x = cursor_x - content_width + 4.0;
+                } else if cursor_x < widget.scroll_x {
+                    widget.scroll_x = cursor_x;
+                }
+                let text_width = measure.measure(&edited, &edit_style, None).width;
+                widget.scroll_x = widget
+                    .scroll_x
+                    .clamp(0.0, (text_width - content_width).max(0.0))
+                    .round();
                 if changed && edited != *value {
                     *value = edited.clone();
-                    let text_size = world
-                        .get_component_store::<UiResolvedStyle>()
-                        .and_then(|store| {
-                            store
-                                .get_component(entity.index)
-                                .and_then(|style| style.text.as_ref().map(|text| text.size))
-                        })
-                        .unwrap_or(14.0);
-                    let cursor_x = edited
-                        .get(..cursor.min(edited.len()))
-                        .unwrap_or(&edited)
-                        .chars()
-                        .count() as f32
-                        * text_size
-                        * 0.55;
-                    let visible_width = rect.content.width.max(1.0);
-                    if cursor_x - widget.scroll_x > visible_width - 4.0 {
-                        widget.scroll_x = cursor_x - visible_width + 4.0;
-                    } else if cursor_x < widget.scroll_x {
-                        widget.scroll_x = cursor_x;
-                    }
                     text_changes.push((entity, edited.clone()));
                     event = Some(UiEvent::ValueChanged {
                         entity,
@@ -378,25 +491,32 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
             }
             UiWidgetSpec::FloatingWindow { .. } => {
                 let title_bar = 32.0;
-                if input.primary_pressed
-                    && rect.rect.contains(input.pointer)
-                    && input.pointer.y <= rect.rect.y + title_bar
-                {
-                    widget.dragging = true;
-                    widget.drag_start = Some((input.pointer.x, input.pointer.y));
-                    let layout = world
-                        .get_component_store::<UiLayout>()
-                        .and_then(|store| store.get_component(entity.index).cloned());
-                    widget.drag_base = (
-                        resolve_dimension(
-                            layout.as_ref().map(|layout| layout.inset.left),
-                            rect.rect.x,
-                        ),
-                        resolve_dimension(
-                            layout.as_ref().map(|layout| layout.inset.top),
-                            rect.rect.y,
-                        ),
-                    );
+                let grip = 18.0;
+                let on_grip = input.pointer.x >= rect.rect.x + rect.rect.width - grip
+                    && input.pointer.y >= rect.rect.y + rect.rect.height - grip;
+                if input.primary_pressed && rect.rect.contains(input.pointer) {
+                    if on_grip {
+                        widget.resizing = true;
+                        widget.resize_start = Some((input.pointer.x, input.pointer.y));
+                        widget.resize_base = (rect.rect.width, rect.rect.height);
+                        widget.dragging = false;
+                    } else if input.pointer.y <= rect.rect.y + title_bar {
+                        widget.dragging = true;
+                        widget.drag_start = Some((input.pointer.x, input.pointer.y));
+                        let layout = world
+                            .get_component_store::<UiLayout>()
+                            .and_then(|store| store.get_component(entity.index).cloned());
+                        widget.drag_base = (
+                            resolve_dimension(
+                                layout.as_ref().map(|layout| layout.inset.left),
+                                rect.rect.x,
+                            ),
+                            resolve_dimension(
+                                layout.as_ref().map(|layout| layout.inset.top),
+                                rect.rect.y,
+                            ),
+                        );
+                    }
                 }
                 if widget.dragging
                     && input.primary_down
@@ -409,9 +529,22 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
                         widget.drag_base.1 + input.pointer.y - start_y,
                     );
                 }
+                if widget.resizing
+                    && input.primary_down
+                    && let Some((start_x, start_y)) = widget.resize_start
+                {
+                    resize_widget(
+                        world,
+                        entity,
+                        (widget.resize_base.0 + input.pointer.x - start_x).max(180.0),
+                        (widget.resize_base.1 + input.pointer.y - start_y).max(120.0),
+                    );
+                }
                 if input.primary_released {
                     widget.dragging = false;
                     widget.drag_start = None;
+                    widget.resizing = false;
+                    widget.resize_start = None;
                 }
             }
             UiWidgetSpec::Modal { open } => {
@@ -435,6 +568,10 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
                 anchor: widget.anchor,
                 scroll_x: widget.scroll_x,
                 hovered_option: widget.hovered_option,
+                text_drag: widget.text_drag,
+                resizing: widget.resizing,
+                resize_start: widget.resize_start,
+                resize_base: widget.resize_base,
             },
             event,
         ));
@@ -452,6 +589,10 @@ pub fn update_widgets(world: &mut World, input: &UiInputState) {
                 current.anchor = widget.anchor;
                 current.scroll_x = widget.scroll_x;
                 current.hovered_option = widget.hovered_option;
+                current.text_drag = widget.text_drag;
+                current.resizing = widget.resizing;
+                current.resize_start = widget.resize_start;
+                current.resize_base = widget.resize_base;
             }
         }
         if let Some(event) = event
@@ -528,6 +669,19 @@ fn move_widget(world: &mut World, entity: Entity, x: f32, y: f32) {
     layout.position = UiPosition::Absolute;
     layout.inset.left = UiDimension::Length(x);
     layout.inset.top = UiDimension::Length(y);
+    let _ = world.attach_component(&entity, layout);
+    mark_dirty(world, entity, UiDirty::LAYOUT | UiDirty::PAINT);
+}
+
+fn resize_widget(world: &mut World, entity: Entity, width: f32, height: f32) {
+    let Some(mut layout) = world
+        .get_component_store::<UiLayout>()
+        .and_then(|store| store.get_component(entity.index).cloned())
+    else {
+        return;
+    };
+    layout.width = UiDimension::Length(width);
+    layout.height = UiDimension::Length(height);
     let _ = world.attach_component(&entity, layout);
     mark_dirty(world, entity, UiDirty::LAYOUT | UiDirty::PAINT);
 }
@@ -731,6 +885,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                         text: option.clone(),
                         style: text_style.clone(),
                         caret: None,
+                        selection: None,
                         clip,
                     });
                 }
@@ -768,6 +923,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                             text: option.clone(),
                             style: text_style.clone(),
                             caret: None,
+                            selection: None,
                             clip,
                         });
                     }
@@ -803,6 +959,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                         text: item.clone(),
                         style: text_style.clone(),
                         caret: None,
+                        selection: None,
                         clip,
                     });
                 }
@@ -848,6 +1005,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                         text: tab.clone(),
                         style: text_style.clone(),
                         caret: None,
+                        selection: None,
                         clip,
                     });
                 }
@@ -865,6 +1023,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     text: title.clone(),
                     style: title_style,
                     caret: None,
+                    selection: None,
                     clip,
                 });
                 draw.commands.push(UiDrawCommand::Line {
@@ -873,6 +1032,22 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     color: token_color(theme, "border", [0.24, 0.27, 0.36, 1.0]),
                     clip,
                 });
+                let grip = token_color(theme, "border", [0.24, 0.27, 0.36, 1.0]);
+                for index in 0..3 {
+                    let offset = 5.0 + index as f32 * 4.0;
+                    let length = 5.0 + index as f32 * 5.0;
+                    draw.commands.push(UiDrawCommand::Line {
+                        entity,
+                        rect: UiRect::new(
+                            rect.rect.x + rect.rect.width - offset - length,
+                            rect.rect.y + rect.rect.height - offset,
+                            length,
+                            1.0,
+                        ),
+                        color: grip,
+                        clip,
+                    });
+                }
             }
             UiWidgetSpec::Sparkline { values, max } => {
                 if values.is_empty() || rect.content.width <= 0.0 {
@@ -925,6 +1100,23 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
             _ => {}
         }
     }
+}
+
+fn edit_text_style(world: &World, entity: Entity) -> UiTextStyle {
+    world
+        .get_component_store::<UiResolvedStyle>()
+        .and_then(|store| store.get_component(entity.index).cloned())
+        .and_then(|style| style.text)
+        .map(|style| UiTextStyle {
+            size: style.size,
+            line_height: style.line_height,
+            color: UiColor::Rgba(style.color),
+            family: style.family,
+            weight: style.weight,
+            wrap: style.wrap,
+            ellipsis: style.ellipsis,
+        })
+        .unwrap_or_default()
 }
 
 fn default_text(theme: Option<&UiThemes>) -> UiResolvedTextStyle {
@@ -981,6 +1173,46 @@ fn next_boundary(text: &str, index: usize) -> usize {
         .char_indices()
         .nth(1)
         .map_or(text.len(), |(offset, _)| index + offset)
+}
+
+fn prev_word_boundary(text: &str, cursor: usize) -> usize {
+    let mut index = cursor.min(text.len());
+    while index > 0 {
+        let prev = prev_boundary(text, index);
+        if text[prev..index].chars().all(char::is_whitespace) {
+            index = prev;
+        } else {
+            break;
+        }
+    }
+    while index > 0 {
+        let prev = prev_boundary(text, index);
+        if text[prev..index].chars().all(char::is_whitespace) {
+            break;
+        }
+        index = prev;
+    }
+    index
+}
+
+fn next_word_boundary(text: &str, cursor: usize) -> usize {
+    let mut index = cursor.min(text.len());
+    while index < text.len() {
+        let next = next_boundary(text, index);
+        if text[index..next].chars().all(char::is_whitespace) {
+            index = next;
+        } else {
+            break;
+        }
+    }
+    while index < text.len() {
+        let next = next_boundary(text, index);
+        if text[index..next].chars().all(char::is_whitespace) {
+            break;
+        }
+        index = next;
+    }
+    index
 }
 
 fn token_color(theme: Option<&UiThemes>, name: &str, fallback: [f32; 4]) -> [f32; 4] {

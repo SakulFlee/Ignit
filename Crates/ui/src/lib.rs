@@ -9,6 +9,7 @@
 //! main scene encoder.
 
 pub mod builder;
+pub mod clipboard;
 pub mod document;
 pub mod draw;
 pub mod events;
@@ -26,6 +27,7 @@ pub mod style_pass;
 pub mod widgets;
 
 pub use builder::{UiBuilder, UiHandle};
+pub use clipboard::{UiClipboard, UiClipboardResource, UiMemoryClipboard};
 pub use document::{
     UI_DOCUMENT_VERSION, UiDocument, UiDocumentEntry, UiDocumentNode, UiDocumentRegistry,
     load_document, reload_changed_documents, reload_document, reload_document_from_source,
@@ -81,6 +83,9 @@ pub fn init(world: &mut World) {
     }
     if world.get_resource::<UiInputCapture>().is_none() {
         world.insert_resource(UiInputCapture::default());
+    }
+    if world.get_resource::<UiClipboardResource>().is_none() {
+        world.insert_resource(UiClipboardResource::default());
     }
     if world.get_resource::<UiFocusState>().is_none() {
         world.insert_resource(UiFocusState::default());
@@ -153,15 +158,29 @@ pub fn update(world: &mut World, measure: &mut dyn UiTextMeasure) -> UiStats {
         focus::focus_next(world, input.modifiers.shift);
         capture.keyboard = true;
     }
-    for (key, direction) in [
-        (UiKey::ArrowLeft, UiDirection::Left),
-        (UiKey::ArrowRight, UiDirection::Right),
-        (UiKey::ArrowUp, UiDirection::Up),
-        (UiKey::ArrowDown, UiDirection::Down),
-    ] {
-        if input.key_pressed(key) {
-            focus::focus_direction(world, direction);
-            capture.keyboard = true;
+    // Arrows belong to a focused text field; only use them for spatial focus
+    // navigation when no editable field owns the keyboard.
+    let editing = focused.is_some_and(|entity| {
+        world
+            .get_component_store::<widgets::UiWidget>()
+            .and_then(|store| {
+                store
+                    .get_component(entity.index)
+                    .map(|widget| matches!(widget.spec, widgets::UiWidgetSpec::TextBox { .. }))
+            })
+            .unwrap_or(false)
+    });
+    if !editing {
+        for (key, direction) in [
+            (UiKey::ArrowLeft, UiDirection::Left),
+            (UiKey::ArrowRight, UiDirection::Right),
+            (UiKey::ArrowUp, UiDirection::Up),
+            (UiKey::ArrowDown, UiDirection::Down),
+        ] {
+            if input.key_pressed(key) {
+                focus::focus_direction(world, direction);
+                capture.keyboard = true;
+            }
         }
     }
     if input.key_pressed(UiKey::Escape) {
@@ -204,7 +223,7 @@ pub fn update(world: &mut World, measure: &mut dyn UiTextMeasure) -> UiStats {
         capture.pointer = true;
     }
 
-    widgets::update_widgets(world, &input);
+    widgets::update_widgets(world, &input, measure);
     input.end_frame();
     world.insert_resource(input);
     world.insert_resource(capture);

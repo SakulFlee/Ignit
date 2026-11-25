@@ -1,8 +1,32 @@
 use ignit_ecs::{Entity, World};
 use ignit_ui::{
-    UiBuilder, UiComputed, UiDocumentNode, UiDrawCommand, UiDrawList, UiFocusState, UiInputState,
-    UiLayout, UiPoint, UiText, UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec, init, update,
+    UiBuilder, UiClipboardResource, UiComputed, UiDocumentNode, UiDrawCommand, UiDrawList,
+    UiFocusState, UiInputState, UiLayout, UiPoint, UiSize, UiText, UiTextMeasure, UiTextStyle,
+    UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec, init, update,
 };
+
+struct TenPixelMeasure;
+
+impl UiTextMeasure for TenPixelMeasure {
+    fn measure(&mut self, text: &str, style: &UiTextStyle, max_width: Option<f32>) -> UiSize {
+        ignit_ui::UiFallbackTextMeasure.measure(text, style, max_width)
+    }
+
+    fn cursor_index(
+        &mut self,
+        text: &str,
+        _style: &UiTextStyle,
+        _max_width: f32,
+        x: f32,
+        _y: f32,
+    ) -> usize {
+        let index = ((x / 10.0).round().max(0.0) as usize).min(text.chars().count());
+        text.char_indices()
+            .nth(index)
+            .map(|(offset, _)| offset)
+            .unwrap_or(text.len())
+    }
+}
 
 fn build(world: &mut World, id: &str, widget: UiWidgetSpec) -> Entity {
     let mut root = UiDocumentNode::new("root")
@@ -242,6 +266,312 @@ fn text_box_backspace_deletes_a_character() {
         .value
         .clone();
     assert_eq!(value, "ab");
+}
+
+#[test]
+fn text_box_arrows_home_end_and_word_selection() {
+    let mut world = World::new();
+    init(&mut world);
+    let entity = build(
+        &mut world,
+        "text_keys",
+        UiWidgetSpec::TextBox {
+            value: "hello world".into(),
+            placeholder: String::new(),
+            multiline: false,
+        },
+    );
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    ignit_ui::focus_entity(&mut world, entity);
+
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::ArrowLeft, ignit_ui::UiKey::ArrowLeft],
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let widget = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!(widget.cursor, 9);
+    assert_eq!(
+        world.get_resource::<UiFocusState>().unwrap().focused,
+        Some(entity)
+    );
+
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::Home],
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let widget = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!(widget.cursor, 0);
+
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::End],
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let widget = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!(widget.cursor, 11);
+
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::ArrowLeft],
+        modifiers: ignit_ui::UiModifiers {
+            ctrl: true,
+            shift: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let widget = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!((widget.anchor, widget.cursor), (11, 6));
+}
+
+#[test]
+fn text_box_drag_beyond_the_edge_scrolls() {
+    let mut world = World::new();
+    init(&mut world);
+    let value = "abcdefghij".repeat(10);
+    let entity = build(
+        &mut world,
+        "text_scroll_select",
+        UiWidgetSpec::TextBox {
+            value: value.clone(),
+            placeholder: String::new(),
+            multiline: false,
+        },
+    );
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    ignit_ui::focus_entity(&mut world, entity);
+    let rect = rect(&world, entity);
+    let y = rect.content.y + 10.0;
+
+    world.insert_resource(UiInputState {
+        pointer: UiPoint::new(rect.content.x + 231.0, y),
+        primary_down: true,
+        primary_pressed: true,
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let pressed_anchor = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .unwrap()
+        .anchor;
+    assert!(pressed_anchor > 0);
+    for _ in 0..40 {
+        world.insert_resource(UiInputState {
+            pointer: UiPoint::new(rect.content.x + 450.0, y),
+            primary_down: true,
+            ..Default::default()
+        });
+        update(&mut world, &mut text);
+    }
+    let widget = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert!(widget.scroll_x > 0.0, "scroll was {}", widget.scroll_x);
+    assert_eq!(widget.cursor, value.len());
+    assert_eq!(widget.anchor, pressed_anchor);
+
+    for _ in 0..40 {
+        world.insert_resource(UiInputState {
+            pointer: UiPoint::new(rect.content.x - 200.0, y),
+            primary_down: true,
+            ..Default::default()
+        });
+        update(&mut world, &mut text);
+    }
+    let widget = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!(widget.scroll_x, 0.0);
+    assert_eq!(widget.cursor, 0);
+}
+
+#[test]
+fn text_box_mouse_selection_copy_and_paste() {
+    let mut world = World::new();
+    init(&mut world);
+    let entity = build(
+        &mut world,
+        "text_selection",
+        UiWidgetSpec::TextBox {
+            value: "hello world".into(),
+            placeholder: String::new(),
+            multiline: false,
+        },
+    );
+    let mut text = TenPixelMeasure;
+    update(&mut world, &mut text);
+    let rect = rect(&world, entity);
+    let y = rect.content.y + 10.0;
+
+    world.insert_resource(UiInputState {
+        pointer: UiPoint::new(rect.content.x + 60.0, y),
+        primary_down: true,
+        primary_pressed: true,
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    world.insert_resource(UiInputState {
+        pointer: UiPoint::new(rect.content.x + 10.0, y),
+        primary_down: true,
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    world.insert_resource(UiInputState {
+        pointer: UiPoint::new(rect.content.x + 10.0, y),
+        primary_released: true,
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+
+    let widget = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!((widget.anchor, widget.cursor), (6, 1));
+    {
+        let draw = world.get_resource::<UiDrawList>().unwrap();
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            UiDrawCommand::Text {
+                selection: Some((1, 6)),
+                ..
+            }
+        )));
+    }
+
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::Character('c')],
+        modifiers: ignit_ui::UiModifiers {
+            ctrl: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    {
+        let clipboard = world.get_resource::<UiClipboardResource>().unwrap();
+        assert_eq!(clipboard.get_text().as_deref(), Some("ello "));
+    }
+
+    world
+        .get_resource::<UiClipboardResource>()
+        .unwrap()
+        .set_text("XYZ".into());
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::Character('v')],
+        modifiers: ignit_ui::UiModifiers {
+            ctrl: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let value = world
+        .get_component_store::<UiText>()
+        .unwrap()
+        .get_component(entity.index)
+        .unwrap()
+        .value
+        .clone();
+    assert_eq!(value, "hXYZworld");
+}
+
+#[test]
+fn floating_window_resizes_from_the_grip() {
+    let mut world = World::new();
+    init(&mut world);
+    let mut root = UiDocumentNode::new("float_root")
+        .layout(UiLayout::column().size(600.0, 400.0).padding(20.0))
+        .child(
+            UiDocumentNode::new("float_window")
+                .layout(
+                    UiLayout::column()
+                        .width(300.0)
+                        .height(200.0)
+                        .absolute()
+                        .inset(ignit_ui::UiEdges {
+                            left: ignit_ui::UiDimension::Length(10.0),
+                            right: ignit_ui::UiDimension::Auto,
+                            top: ignit_ui::UiDimension::Length(10.0),
+                            bottom: ignit_ui::UiDimension::Auto,
+                        }),
+                )
+                .widget(UiWidgetSpec::FloatingWindow {
+                    title: "Float".into(),
+                    open: true,
+                }),
+        );
+    root.view = Some(UiView::new(600.0, 400.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    let rect = computed(&world, "float_window");
+    let grip = UiPoint::new(
+        rect.rect.x + rect.rect.width - 5.0,
+        rect.rect.y + rect.rect.height - 5.0,
+    );
+
+    world.insert_resource(UiInputState {
+        pointer: grip,
+        primary_down: true,
+        primary_pressed: true,
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    world.insert_resource(UiInputState {
+        pointer: UiPoint::new(grip.x + 50.0, grip.y + 30.0),
+        primary_down: true,
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+
+    let entity = world
+        .get_resource::<ignit_ui::UiForest>()
+        .unwrap()
+        .find(&"float_window".into())
+        .unwrap();
+    let layout = world
+        .get_component_store::<UiLayout>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!(layout.width, ignit_ui::UiDimension::Length(350.0));
+    assert_eq!(layout.height, ignit_ui::UiDimension::Length(230.0));
 }
 
 #[test]

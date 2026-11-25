@@ -587,6 +587,7 @@ pub fn append_notification_commands(
             },
             clip: None,
             caret: None,
+            selection: None,
         });
 
         let text_x = rect.x + text_pad;
@@ -603,6 +604,7 @@ pub fn append_notification_commands(
                 },
                 clip: None,
                 caret: None,
+                selection: None,
             });
             text_y += title_height;
         }
@@ -621,6 +623,7 @@ pub fn append_notification_commands(
                 },
                 clip: None,
                 caret: None,
+                selection: None,
             });
         }
 

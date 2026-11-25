@@ -125,6 +125,11 @@ promoted, so nothing expires unread just because it was queued.
 - `Button`, `Toggle`, `Checkbox`, `Slider`, `ProgressBar`, `TextBox`,
   `Dropdown`, `ListBox`, `Tabs`, `Collapsible`, `FloatingWindow`,
   `Sparkline`, `Tooltip`, `Popup`, `Menu`, `Modal`, `Divider`.
+- `TextBox` supports keyboard and mouse selection, highlighted ranges, and
+  Ctrl+C/X/V through `UiClipboardResource`. The core defaults to an in-memory
+  clipboard; `ignit_ui_render` installs the system clipboard.
+- `FloatingWindow` drags from the title bar and resizes from the bottom-right
+  grip.
 - Widgets emit semantic `UiEvent::ValueChanged`/`Action` values; no stored
   callbacks.
 - `Examples/ui` showcases the code-authored and RON-authored screens.

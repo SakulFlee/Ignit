@@ -19,6 +19,23 @@ use crate::style::{UiResolvedStyle, UiStyle, UiText, UiTextStyle, UiThemes};
 /// headless construction and tests do not need a font stack.
 pub trait UiTextMeasure {
     fn measure(&mut self, text: &str, style: &UiTextStyle, max_width: Option<f32>) -> UiSize;
+
+    /// Maps a point inside a text run to a byte cursor index.
+    fn cursor_index(
+        &mut self,
+        text: &str,
+        style: &UiTextStyle,
+        _max_width: f32,
+        x: f32,
+        _y: f32,
+    ) -> usize {
+        let char_width = (style.size * 0.55).max(1.0);
+        let index = (x / char_width).round().max(0.0) as usize;
+        text.char_indices()
+            .nth(index)
+            .map(|(offset, _)| offset)
+            .unwrap_or(text.len())
+    }
 }
 
 #[derive(Default)]
