@@ -163,16 +163,20 @@ pub fn update(world: &mut World, measure: &mut dyn UiTextMeasure) -> UiStats {
     }
     // Arrows belong to a focused text field; only use them for spatial focus
     // navigation when no editable field owns the keyboard.
-    let editing = focused.is_some_and(|entity| {
+    let text_edit = focused.and_then(|entity| {
         world
             .get_component_store::<widgets::UiWidget>()
             .and_then(|store| {
                 store
                     .get_component(entity.index)
-                    .map(|widget| matches!(widget.spec, widgets::UiWidgetSpec::TextBox { .. }))
+                    .and_then(|widget| match &widget.spec {
+                        widgets::UiWidgetSpec::TextBox { multiline, .. } => Some(*multiline),
+                        _ => None,
+                    })
             })
-            .unwrap_or(false)
     });
+    let editing = text_edit.is_some();
+    let multiline_edit = text_edit.unwrap_or(false);
     if !editing {
         for (key, direction) in [
             (UiKey::ArrowLeft, UiDirection::Left),
@@ -191,7 +195,8 @@ pub fn update(world: &mut World, measure: &mut dyn UiTextMeasure) -> UiStats {
         capture.keyboard = true;
     }
     if input.key_pressed(UiKey::Enter) {
-        if let Some(entity) = focused
+        if !multiline_edit
+            && let Some(entity) = focused
             && let Some(id) = world.get_component_store::<UiNode>().and_then(|store| {
                 store
                     .get_component(entity.index)

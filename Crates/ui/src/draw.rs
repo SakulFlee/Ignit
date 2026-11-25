@@ -194,7 +194,7 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
                 .and_then(|store| store.get_component(entity.index))
             {
                 match &widget.spec {
-                    UiWidgetSpec::TextBox { .. } => {
+                    UiWidgetSpec::TextBox { multiline, .. } => {
                         if focused == Some(entity) {
                             caret = Some(widget.cursor);
                             if widget.cursor != widget.anchor {
@@ -205,8 +205,11 @@ pub fn build_draw_list(world: &World, list: &mut UiDrawList) {
                             }
                         }
                         text_rect.x -= widget.scroll_x.round();
-                        let line_height = style.line_height.unwrap_or(style.size * 1.25);
-                        text_rect.y += ((text_rect.height - line_height) * 0.5).max(0.0);
+                        text_rect.y -= widget.scroll_y.round();
+                        if !*multiline {
+                            let line_height = style.line_height.unwrap_or(style.size * 1.25);
+                            text_rect.y += ((text_rect.height - line_height) * 0.5).max(0.0);
+                        }
                     }
                     UiWidgetSpec::Button { .. } | UiWidgetSpec::Collapsible { .. } => {
                         let line_height = style.line_height.unwrap_or(style.size * 1.25);

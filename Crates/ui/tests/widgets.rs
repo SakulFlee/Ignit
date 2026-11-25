@@ -269,6 +269,125 @@ fn text_box_backspace_deletes_a_character() {
 }
 
 #[test]
+fn multiline_text_box_inserts_newlines_without_submitting() {
+    let mut world = World::new();
+    init(&mut world);
+    let entity = build(
+        &mut world,
+        "text_multiline",
+        UiWidgetSpec::TextBox {
+            value: "one\ntwo".into(),
+            placeholder: String::new(),
+            multiline: true,
+        },
+    );
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    ignit_ui::focus_entity(&mut world, entity);
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::Enter],
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+
+    let value = world
+        .get_component_store::<UiText>()
+        .unwrap()
+        .get_component(entity.index)
+        .unwrap()
+        .value
+        .clone();
+    assert_eq!(value, "one\ntwo\n");
+    let submitted = world
+        .get_resource::<ignit_ecs::Events<ignit_ui::UiEvent>>()
+        .is_some_and(|events| {
+            events
+                .read()
+                .any(|event| matches!(event, ignit_ui::UiEvent::Submit { .. }))
+        });
+    assert!(!submitted);
+}
+
+#[test]
+fn multiline_text_box_moves_between_lines() {
+    let mut world = World::new();
+    init(&mut world);
+    let entity = build(
+        &mut world,
+        "text_lines",
+        UiWidgetSpec::TextBox {
+            value: "ab\ncd".into(),
+            placeholder: String::new(),
+            multiline: true,
+        },
+    );
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    ignit_ui::focus_entity(&mut world, entity);
+
+    for (key, expected) in [
+        (ignit_ui::UiKey::ArrowUp, 2),
+        (ignit_ui::UiKey::ArrowDown, 5),
+        (ignit_ui::UiKey::Home, 3),
+        (ignit_ui::UiKey::End, 5),
+    ] {
+        world.insert_resource(UiInputState {
+            keys_pressed: vec![key],
+            ..Default::default()
+        });
+        update(&mut world, &mut text);
+        let cursor = world
+            .get_component_store::<UiWidget>()
+            .unwrap()
+            .get_component(entity.index)
+            .unwrap()
+            .cursor;
+        assert_eq!(cursor, expected);
+    }
+}
+
+#[test]
+fn multiline_text_box_scrolls_vertically() {
+    let mut world = World::new();
+    init(&mut world);
+    let value = (0..15)
+        .map(|index| format!("line {index}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut root = UiDocumentNode::new("scroll_text_root")
+        .layout(UiLayout::column().size(400.0, 300.0).padding(20.0))
+        .child(
+            UiDocumentNode::new("text_scroll_y")
+                .layout(UiLayout::default().width(240.0).height(50.0))
+                .widget(UiWidgetSpec::TextBox {
+                    value,
+                    placeholder: String::new(),
+                    multiline: true,
+                })
+                .focusable(),
+        );
+    root.view = Some(UiView::new(400.0, 300.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let entity = world
+        .get_resource::<ignit_ui::UiForest>()
+        .unwrap()
+        .find(&"text_scroll_y".into())
+        .unwrap();
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    ignit_ui::focus_entity(&mut world, entity);
+    update(&mut world, &mut text);
+
+    let widget = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert!(widget.scroll_y > 0.0, "scroll_y was {}", widget.scroll_y);
+}
+
+#[test]
 fn text_box_arrows_home_end_and_word_selection() {
     let mut world = World::new();
     init(&mut world);

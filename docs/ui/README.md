@@ -139,9 +139,9 @@ cd Examples/ui && cargo run
 ```
 
 The example covers code and RON screens, theme switching, resize, buttons,
-toggle/checkbox, slider, progress, mouse/keyboard text editing and clipboard,
-dropdown, tabs, collapsible, scroll list, a resizable floating window, modal,
-sparkline, and notifications.
+toggle/checkbox, slider, progress, single- and multi-line text editing with
+clipboard, dropdown, tabs, collapsible, scroll list, a resizable floating
+window, modal, sparkline, and notifications.
 
 ## Known limits in v1.7
 
@@ -150,6 +150,6 @@ sparkline, and notifications.
   damage caching are out of scope.
 - RichText spans, nine-slice widgets, and full list virtualization are not
   complete; the generic text/image/list paths cover the basic cases.
-- `TextBox` editing is single-line in v1.7. Multi-line selection, IME
-  composition, and accessibility stay deferred.
+- `TextBox` supports multi-line editing with wrapped rows and vertical
+  scrolling. IME composition and accessibility stay deferred.
 - The iced debug UI still exists until #1222/#1223; do not add new iced UI.

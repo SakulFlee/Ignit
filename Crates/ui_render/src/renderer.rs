@@ -710,29 +710,29 @@ impl UiRenderer {
                 let shaped = text.shape(value, &text_style, rect.width);
                 let quads = text.quads(&shaped);
                 let clip = clip.map(|clip| transform_rect(clip, scale, origin));
-                if let Some((start, end)) = selection
-                    && let Some(selection) = text.selection_rect(&shaped, *start, *end)
-                {
-                    push_quad(
-                        vertices,
-                        batches,
-                        transform_rect(
-                            UiRect::new(
-                                rect.x + selection[0],
-                                rect.y + selection[1],
-                                selection[2],
-                                selection[3],
+                if let Some((start, end)) = selection {
+                    for highlight in text.selection_rects(&shaped, *start, *end) {
+                        push_quad(
+                            vertices,
+                            batches,
+                            transform_rect(
+                                UiRect::new(
+                                    rect.x + highlight[0],
+                                    rect.y + highlight[1],
+                                    highlight[2],
+                                    highlight[3],
+                                ),
+                                scale,
+                                origin,
                             ),
-                            scale,
-                            origin,
-                        ),
-                        [0.32, 0.56, 0.95, 0.35],
-                        [0.0; 4],
-                        [0.0; 4],
-                        [0.0; 2],
-                        clip,
-                        UiTextureRef::White,
-                    );
+                            [0.32, 0.56, 0.95, 0.35],
+                            [0.0; 4],
+                            [0.0; 4],
+                            [0.0; 2],
+                            clip,
+                            UiTextureRef::White,
+                        );
+                    }
                 }
                 for quad in quads {
                     let rect = transform_rect(

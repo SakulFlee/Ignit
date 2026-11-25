@@ -10,8 +10,8 @@ cd Examples/ui && cargo run
 The screen contains code-authored panels and a RON-authored panel
 (`Assets/Scenes/ui_demo.ron`), buttons, toggle, checkbox, slider, progress,
 text box, dropdown, tabs, collapsible content, a scroll list, a floating
-window, a modal, a sparkline, and notification buttons that post transient
-toasts and cycle their corner. The theme button changes paint tokens without
+window, a multi-line textarea, a modal, a sparkline, and notification buttons
+that post transient toasts and cycle their corner. The theme button changes paint tokens without
 relaying out.
 
 Headless coverage lives in `Crates/ui/tests`; the visual run needs a GPU/display.

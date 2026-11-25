@@ -36,6 +36,80 @@ pub trait UiTextMeasure {
             .map(|(offset, _)| offset)
             .unwrap_or(text.len())
     }
+
+    /// Byte range of the visual line containing `cursor`.
+    fn line_bounds(
+        &mut self,
+        text: &str,
+        _style: &UiTextStyle,
+        _max_width: f32,
+        cursor: usize,
+    ) -> (usize, usize) {
+        let cursor = cursor.min(text.len());
+        let start = text[..cursor].rfind('\n').map_or(0, |index| index + 1);
+        let end = text[cursor..]
+            .find('\n')
+            .map_or(text.len(), |index| cursor + index);
+        (start, end)
+    }
+
+    /// Cursor index one visual line above/below `cursor`.
+    fn vertical_cursor(
+        &mut self,
+        text: &str,
+        style: &UiTextStyle,
+        max_width: f32,
+        cursor: usize,
+        up: bool,
+        _goal_x: f32,
+    ) -> usize {
+        let (start, end) = self.line_bounds(text, style, max_width, cursor);
+        if up {
+            if start == 0 {
+                return cursor;
+            }
+            let previous_end = start - 1;
+            let previous_start = text[..previous_end]
+                .rfind('\n')
+                .map_or(0, |index| index + 1);
+            let column = text[start..cursor].chars().count();
+            text[previous_start..previous_end]
+                .char_indices()
+                .nth(column)
+                .map_or(previous_end, |(offset, _)| previous_start + offset)
+        } else {
+            if end == text.len() {
+                return cursor;
+            }
+            let next_start = end + 1;
+            let next_end = text[next_start..]
+                .find('\n')
+                .map_or(text.len(), |index| next_start + index);
+            let column = text[start..cursor].chars().count();
+            text[next_start..next_end]
+                .char_indices()
+                .nth(column)
+                .map_or(next_end, |(offset, _)| next_start + offset)
+        }
+    }
+
+    /// Caret rectangle relative to the text content.
+    fn cursor_rect(
+        &mut self,
+        text: &str,
+        style: &UiTextStyle,
+        _max_width: f32,
+        cursor: usize,
+    ) -> Option<[f32; 4]> {
+        let cursor = cursor.min(text.len());
+        let before = &text[..cursor];
+        let line_start = before.rfind('\n').map_or(0, |index| index + 1);
+        let line = before.matches('\n').count();
+        let char_width = (style.size * 0.55).max(1.0);
+        let x = text[line_start..cursor].chars().count() as f32 * char_width;
+        let height = style.line_height.unwrap_or(style.size * 1.25);
+        Some([x, line as f32 * height, 1.0, height])
+    }
 }
 
 #[derive(Default)]

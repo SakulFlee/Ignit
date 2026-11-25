@@ -131,6 +131,16 @@ fn nowrap_text_shapes_past_the_viewport_width() {
 }
 
 #[test]
+fn selection_rects_cover_each_visual_line() {
+    let mut engine = TextEngine::new();
+    let shaped = engine.shape("ab\ncd", &style(16.0), 200.0);
+    assert!(shaped.lines.len() >= 2);
+    let rects = engine.selection_rects(&shaped, 0, 5);
+    assert!(rects.len() >= 2, "rects: {rects:?}");
+    assert!(rects[0][1] < rects[1][1]);
+}
+
+#[test]
 fn selection_rect_matches_the_shaped_run() {
     let mut engine = TextEngine::new();
     let shaped = engine.shape("hello world", &style(16.0), 300.0);
