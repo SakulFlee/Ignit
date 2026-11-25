@@ -7,9 +7,8 @@ use ignit::ecs_bridge::{ActiveCamera, CameraDescriptor, Position, Rotation};
 use ignit::logging::{self, error, info};
 use ignit::ui::{
     UiAction, UiBuilder, UiColor, UiDimension, UiDocument, UiDocumentNode, UiEdges, UiEvent,
-    UiLayout, UiLengthPercentage, UiNotification, UiNotificationSeverity,
-    UiNotifications, UiStyle, UiTextStyle, UiTextWrap, UiTheme, UiThemes, UiView, UiWidget,
-    UiWidgetSpec,
+    UiLayout, UiLengthPercentage, UiNotification, UiNotificationSeverity, UiNotifications, UiStyle,
+    UiTextStyle, UiTextWrap, UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec,
 };
 use ignit::ui_render::UiRenderModule;
 use ignit::ui_text::TextEngine;
