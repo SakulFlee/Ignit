@@ -188,13 +188,12 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
     let mut content = UiDocumentNode::new("debug_next_perf_scroll")
         .layout(
             UiLayout::column()
-                .width_full()
-                .height_full()
-                .padding_edges(ignit_ui::UiEdges {
-                    left: ignit_ui::UiLengthPercentage::Length(10.0),
-                    right: ignit_ui::UiLengthPercentage::Length(10.0),
-                    top: ignit_ui::UiLengthPercentage::Length(34.0),
-                    bottom: ignit_ui::UiLengthPercentage::Length(10.0),
+                .absolute()
+                .inset(ignit_ui::UiEdges {
+                    left: ignit_ui::UiDimension::Length(10.0),
+                    right: ignit_ui::UiDimension::Length(10.0),
+                    top: ignit_ui::UiDimension::Length(34.0),
+                    bottom: ignit_ui::UiDimension::Length(10.0),
                 })
                 .gap(6.0),
         )
@@ -306,17 +305,6 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
                         .layout(UiLayout::default().size(40.0, 22.0))
                         .widget(UiWidgetSpec::Toggle { on: false }),
                 ),
-        )
-        .child(
-            UiDocumentNode::new("debug_perf_hide")
-                .layout(UiLayout::default().height(28.0))
-                .text("Hide panel")
-                .widget(UiWidgetSpec::Button {
-                    label: "Hide panel".into(),
-                })
-                .action(UiAction::new("debug_perf_hide"))
-                .focusable()
-                .style(UiStyle::default().class("panel")),
         );
 
     let panel = UiDocumentNode::new(PANEL_ID)
@@ -337,7 +325,8 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
             open: true,
         })
         .style(UiStyle::default().class("panel"))
-        .child(content);
+        .child(content)
+        .child(close_button("debug_perf_close", "debug_perf_hide"));
 
     let mut root = UiDocumentNode::new(ROOT_ID)
         .layout(UiLayout::column().width_full().height_full())
@@ -368,6 +357,26 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
 fn sane_ms(value: f64) -> Option<f32> {
     let value = value as f32;
     (value.is_finite() && value.abs() <= 10_000.0).then_some(value.max(0.0))
+}
+
+fn close_button(id: &str, action: &str) -> UiDocumentNode {
+    UiDocumentNode::new(id)
+        .layout(
+            UiLayout::default()
+                .size(20.0, 20.0)
+                .absolute()
+                .inset(ignit_ui::UiEdges {
+                    left: ignit_ui::UiDimension::Auto,
+                    right: ignit_ui::UiDimension::Length(6.0),
+                    top: ignit_ui::UiDimension::Length(5.0),
+                    bottom: ignit_ui::UiDimension::Auto,
+                }),
+        )
+        .text("×")
+        .widget(UiWidgetSpec::Button { label: "×".into() })
+        .action(UiAction::new(action))
+        .focusable()
+        .style(UiStyle::default().class("panel"))
 }
 
 fn small_style(muted: bool) -> UiStyle {

@@ -441,6 +441,14 @@ impl DebugUiState {
 
     /// Flips the overlay's visibility, logging the new state.
     pub fn toggle_visibility(&mut self) {
+        // If every panel was closed, treat the toggle as "bring the panels
+        // back" instead of hiding the empty overlay and requiring two presses.
+        if self.visible && self.panels.iter().all(|enabled| !enabled) {
+            self.panels = [true; PANEL_COUNT];
+            self.dirty = true;
+            return;
+        }
+
         self.visible = !self.visible;
 
         // Turning the overlay back on is also the recovery path for panels the
