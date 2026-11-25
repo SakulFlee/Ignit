@@ -34,8 +34,6 @@ fn notifications_expire_after_their_duration() {
     let mut notifications = UiNotifications::default();
     notifications.post(UiNotification::info("Saved", "Scene stored").duration(2.0));
     assert_eq!(notifications.visible().count(), 1);
-    // The first advance starts the visible timer.
-    notifications.advance(0.0);
 
     notifications.advance(1.9);
     assert_eq!(notifications.visible().count(), 1);
@@ -50,7 +48,6 @@ fn hidden_notifications_do_not_age_until_visible() {
     notifications.max_visible = 1;
     notifications.post(UiNotification::info("First", "Visible").duration(2.0));
     notifications.post(UiNotification::info("Second", "Hidden").duration(2.0));
-    notifications.advance(0.0);
 
     // Newest is painted first; the older card waits underneath.
     notifications.advance(1.9);
@@ -63,6 +60,27 @@ fn hidden_notifications_do_not_age_until_visible() {
     notifications.advance(1.9);
     assert_eq!(notifications.visible().count(), 1);
     notifications.advance(0.2);
+    assert!(notifications.is_empty());
+}
+
+#[test]
+fn hidden_cards_pause_their_visible_timer() {
+    let mut notifications = UiNotifications::default();
+    notifications.max_visible = 1;
+    notifications.post(UiNotification::info("First", "Paused").duration(2.0));
+    notifications.advance(1.0);
+
+    // A newer card takes the only slot; the first card pauses at 1.0s.
+    notifications.post(UiNotification::info("Second", "Visible").duration(2.0));
+    notifications.advance(1.5);
+    notifications.advance(1.0);
+    assert_eq!(notifications.len(), 1);
+    assert_eq!(notifications.visible().next().unwrap().title, "First");
+
+    // Four seconds have passed, but only 1.5 were spent visible.
+    notifications.advance(0.5);
+    assert_eq!(notifications.visible().count(), 1);
+    notifications.advance(0.6);
     assert!(notifications.is_empty());
 }
 

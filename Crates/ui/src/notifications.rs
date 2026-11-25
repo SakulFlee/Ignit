@@ -123,9 +123,9 @@ pub struct UiNotification {
     pub duration: f32,
     /// How many times this keyed notification has been posted.
     pub repeat: u32,
-    /// When the card first became visible. Hidden overflow entries keep `None`
-    /// so their duration only starts once they are painted.
-    pub(crate) shown_at: Option<f64>,
+    /// Accumulated seconds spent with a painted slot. Hidden entries pause
+    /// instead of aging, so nothing expires while queued below the stack.
+    pub(crate) visible_time: f64,
 }
 
 impl UiNotification {
@@ -141,7 +141,7 @@ impl UiNotification {
             message: message.into(),
             duration: 5.0,
             repeat: 1,
-            shown_at: None,
+            visible_time: 0.0,
         }
     }
 
@@ -178,11 +178,8 @@ impl UiNotification {
         self
     }
 
-    fn is_expired(&self, time: f64) -> bool {
-        self.duration > 0.0
-            && self
-                .shown_at
-                .is_some_and(|shown| time - shown >= self.duration as f64)
+    fn is_expired(&self) -> bool {
+        self.duration > 0.0 && self.visible_time >= self.duration as f64
     }
 }
 
@@ -246,9 +243,7 @@ impl UiNotifications {
             existing.message = notification.message;
             existing.duration = notification.duration;
             existing.repeat = existing.repeat.saturating_add(1);
-            // Refresh the timer; the next advance decides whether the card is
-            // currently visible and restarts it, or leaves it queued.
-            existing.shown_at = None;
+            existing.visible_time = 0.0;
             return;
         }
         self.entries.push(notification);
@@ -266,14 +261,35 @@ impl UiNotifications {
         self.post(UiNotification::new(severity, title, message).duration(duration));
     }
 
-    /// Advances the clock, starts the duration of newly visible cards, and
-    /// drops cards whose visible duration has elapsed. Hidden overflow cards
-    /// are kept without aging until a slot frees up.
+    /// Advances the clock and accumulates time only for cards that occupy a
+    /// painted slot. Cards pushed out of the stack pause and resume from their
+    /// accumulated time when promoted again.
     pub fn advance(&mut self, delta_seconds: f64) {
         if delta_seconds > 0.0 {
             self.time += delta_seconds;
+        } else {
+            self.prune();
+            return;
         }
-        self.mark_visible();
+        if self.entries.is_empty() {
+            return;
+        }
+
+        let mut visible = Vec::new();
+        let mut slots = self.max_visible;
+        for (index, entry) in self.entries.iter().enumerate().rev() {
+            if slots == 0 {
+                break;
+            }
+            if entry.is_expired() {
+                continue;
+            }
+            visible.push(index);
+            slots -= 1;
+        }
+        for index in visible {
+            self.entries[index].visible_time += delta_seconds;
+        }
         self.prune();
     }
 
@@ -292,7 +308,7 @@ impl UiNotifications {
         self.entries
             .iter()
             .rev()
-            .filter(|entry| !entry.is_expired(self.time))
+            .filter(|entry| !entry.is_expired())
             .take(self.max_visible)
     }
 
@@ -300,7 +316,7 @@ impl UiNotifications {
     pub fn hidden_count(&self) -> usize {
         self.entries
             .iter()
-            .filter(|entry| !entry.is_expired(self.time))
+            .filter(|entry| !entry.is_expired())
             .count()
             .saturating_sub(self.max_visible)
     }
@@ -332,27 +348,8 @@ impl UiNotifications {
         }
     }
 
-    /// Starts the timer for cards that currently occupy a visible slot.
-    fn mark_visible(&mut self) {
-        let time = self.time;
-        let mut slots = self.max_visible;
-        for entry in self.entries.iter_mut().rev() {
-            if slots == 0 {
-                break;
-            }
-            if entry.is_expired(time) {
-                continue;
-            }
-            if entry.shown_at.is_none() {
-                entry.shown_at = Some(time);
-            }
-            slots -= 1;
-        }
-    }
-
     fn prune(&mut self) {
-        let time = self.time;
-        self.entries.retain(|entry| !entry.is_expired(time));
+        self.entries.retain(|entry| !entry.is_expired());
     }
 
     fn evict(&mut self) {

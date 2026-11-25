@@ -103,9 +103,9 @@ cardinals and four intercardinals; the default is the top-right corner.
 `next()` cycles through them for settings UI.
 
 `max_visible` (default 6) bounds the painted stack and `max_queued` (default
-32) bounds the total queue. Hidden overflow entries wait without aging; a
-card's duration starts once it is actually painted, so nothing expires
-unread just because it was below the stack.
+32) bounds the total queue. Durations accumulate only while a card has a
+painted slot. Cards pushed below the stack pause their timer and resume when
+promoted, so nothing expires unread just because it was queued.
 
 ## Notes
 
