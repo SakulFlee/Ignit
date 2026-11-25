@@ -202,6 +202,12 @@ impl TextEngine {
 
         let color = resolve_color(&style.color);
         let scale = self.scale.max(0.5);
+        let mut logical_offsets = Vec::with_capacity(buffer.lines.len());
+        let mut offset = 0;
+        for line in &buffer.lines {
+            logical_offsets.push(offset);
+            offset += line.text().len() + 1;
+        }
         let mut shaped = ShapedText::default();
         for run in buffer.layout_runs() {
             let mut line_start = usize::MAX;
@@ -230,28 +236,32 @@ impl TextEngine {
                         0.0,
                     ]
                 };
+                let line_offset = logical_offsets.get(run.line_i).copied().unwrap_or(0);
                 shaped.glyphs.push(ShapedGlyph {
                     cache_key: physical.cache_key,
                     rect: glyph_rect,
                     color,
-                    start: glyph.start,
-                    end: glyph.end,
+                    start: line_offset + glyph.start,
+                    end: line_offset + glyph.end,
                     advance: glyph.w,
                 });
-                line_start = line_start.min(glyph.start);
-                line_end = line_end.max(glyph.end);
+                line_start = line_start.min(line_offset + glyph.start);
+                line_end = line_end.max(line_offset + glyph.end);
                 shaped.width = shaped.width.max(glyph.x + glyph.w);
             }
-            if line_start != usize::MAX {
-                shaped.lines.push(ShapedLine {
-                    y: run.line_top,
-                    height: run.line_height,
-                    width: run.line_w,
-                    start: line_start,
-                    end: line_end,
-                });
-                shaped.height += run.line_height;
-            }
+            let offset = logical_offsets.get(run.line_i).copied().unwrap_or(0);
+            shaped.lines.push(ShapedLine {
+                y: run.line_top,
+                height: run.line_height,
+                width: run.line_w,
+                start: if line_start == usize::MAX {
+                    offset
+                } else {
+                    line_start
+                },
+                end: line_end.max(offset),
+            });
+            shaped.height += run.line_height;
         }
         shaped
     }
@@ -312,19 +322,18 @@ impl TextEngine {
     }
 
     pub fn cursor_position(&mut self, shaped: &ShapedText, cursor: usize) -> Option<(f32, f32)> {
-        let glyph = shaped
-            .glyphs
-            .iter()
-            .find(|glyph| cursor >= glyph.start && cursor <= glyph.end)
-            .or_else(|| shaped.glyphs.last())?;
         let line = shaped
             .lines
             .iter()
             .find(|line| cursor >= line.start && cursor <= line.end)?;
-        let x = if cursor >= glyph.end {
-            glyph.rect[0] + glyph.advance
-        } else {
-            glyph.rect[0]
+        let glyph = shaped
+            .glyphs
+            .iter()
+            .find(|glyph| cursor >= glyph.start && cursor <= glyph.end);
+        let x = match glyph {
+            Some(glyph) if cursor >= glyph.end => glyph.rect[0] + glyph.advance,
+            Some(glyph) => glyph.rect[0],
+            None => 0.0,
         };
         Some((x, line.y))
     }
