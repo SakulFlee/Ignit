@@ -30,6 +30,8 @@ pub enum UiKey {
     ArrowDown,
     Home,
     End,
+    PageUp,
+    PageDown,
     Space,
     Character(char),
 }

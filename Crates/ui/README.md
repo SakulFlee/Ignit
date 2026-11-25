@@ -126,9 +126,9 @@ promoted, so nothing expires unread just because it was queued.
   `Dropdown`, `ListBox`, `Tabs`, `Collapsible`, `FloatingWindow`,
   `Sparkline`, `Tooltip`, `Popup`, `Menu`, `Modal`, `Divider`.
 - `TextBox` supports single- and multi-line editing, keyboard/mouse selection,
-  per-line highlights, vertical scrolling, and Ctrl+C/X/V through
-  `UiClipboardResource`. Enter inserts a newline in multi-line fields and
-  submits single-line fields. The core defaults to an in-memory clipboard;
+  per-line highlights, vertical scrolling, PageUp/PageDown, and Ctrl+C/X/V
+  through `UiClipboardResource`. Enter inserts a newline in multi-line fields
+  and submits single-line fields. The core defaults to an in-memory clipboard;
   `ignit_ui_render` installs the system clipboard.
 - `FloatingWindow` drags from the title bar, resizes from the bottom-right
   grip, and rises above other floating windows when clicked.

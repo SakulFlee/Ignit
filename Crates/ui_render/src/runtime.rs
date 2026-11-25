@@ -279,6 +279,8 @@ fn ui_key(key: &Key) -> Option<UiKey> {
         Key::Named(NamedKey::ArrowDown) => Some(UiKey::ArrowDown),
         Key::Named(NamedKey::Home) => Some(UiKey::Home),
         Key::Named(NamedKey::End) => Some(UiKey::End),
+        Key::Named(NamedKey::PageUp) => Some(UiKey::PageUp),
+        Key::Named(NamedKey::PageDown) => Some(UiKey::PageDown),
         Key::Named(NamedKey::Space) => Some(UiKey::Space),
         Key::Character(text) => text.chars().next().map(UiKey::Character),
         _ => None,

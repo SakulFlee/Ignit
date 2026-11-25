@@ -431,6 +431,58 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                                 anchor = cursor;
                             }
                         }
+                        crate::input::UiKey::PageUp => {
+                            let goal = widget.goal_x.unwrap_or_else(|| {
+                                measure
+                                    .cursor_rect(&edited, &edit_style, content_width, cursor)
+                                    .map_or(0.0, |rect| rect[0])
+                            });
+                            let line_height = edit_style
+                                .line_height
+                                .unwrap_or(edit_style.size * 1.25)
+                                .max(1.0);
+                            let page = (content_height / line_height).floor().max(1.0) as usize;
+                            for _ in 0..page {
+                                cursor = measure.vertical_cursor(
+                                    &edited,
+                                    &edit_style,
+                                    content_width,
+                                    cursor,
+                                    true,
+                                    goal,
+                                );
+                            }
+                            widget.goal_x = Some(goal);
+                            if !input.modifiers.shift {
+                                anchor = cursor;
+                            }
+                        }
+                        crate::input::UiKey::PageDown => {
+                            let goal = widget.goal_x.unwrap_or_else(|| {
+                                measure
+                                    .cursor_rect(&edited, &edit_style, content_width, cursor)
+                                    .map_or(0.0, |rect| rect[0])
+                            });
+                            let line_height = edit_style
+                                .line_height
+                                .unwrap_or(edit_style.size * 1.25)
+                                .max(1.0);
+                            let page = (content_height / line_height).floor().max(1.0) as usize;
+                            for _ in 0..page {
+                                cursor = measure.vertical_cursor(
+                                    &edited,
+                                    &edit_style,
+                                    content_width,
+                                    cursor,
+                                    false,
+                                    goal,
+                                );
+                            }
+                            widget.goal_x = Some(goal);
+                            if !input.modifiers.shift {
+                                anchor = cursor;
+                            }
+                        }
                         crate::input::UiKey::Character(character)
                             if (input.modifiers.ctrl || input.modifiers.super_key)
                                 && character.eq_ignore_ascii_case(&'a') =>

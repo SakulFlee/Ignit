@@ -347,6 +347,76 @@ fn multiline_text_box_moves_between_lines() {
 }
 
 #[test]
+fn multiline_text_box_pages_up_and_down() {
+    let mut world = World::new();
+    init(&mut world);
+    let value = (0..12)
+        .map(|index| format!("line {index}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut root = UiDocumentNode::new("page_text_root")
+        .layout(UiLayout::column().size(400.0, 300.0).padding(20.0))
+        .child(
+            UiDocumentNode::new("text_pages")
+                .layout(UiLayout::default().width(240.0).height(60.0))
+                .widget(UiWidgetSpec::TextBox {
+                    value,
+                    placeholder: String::new(),
+                    multiline: true,
+                })
+                .focusable(),
+        );
+    root.view = Some(UiView::new(400.0, 300.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let entity = world
+        .get_resource::<ignit_ui::UiForest>()
+        .unwrap()
+        .find(&"text_pages".into())
+        .unwrap();
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    ignit_ui::focus_entity(&mut world, entity);
+
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::End],
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let end = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .unwrap()
+        .cursor;
+
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::PageUp],
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let up = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .unwrap()
+        .cursor;
+    assert!(up < end, "PageUp cursor {up} >= {end}");
+
+    world.insert_resource(UiInputState {
+        keys_pressed: vec![ignit_ui::UiKey::PageDown],
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let down = world
+        .get_component_store::<UiWidget>()
+        .unwrap()
+        .get_component(entity.index)
+        .unwrap()
+        .cursor;
+    assert!(down > up, "PageDown cursor {down} <= {up}");
+}
+
+#[test]
 fn multiline_text_box_scrolls_vertically() {
     let mut world = World::new();
     init(&mut world);
