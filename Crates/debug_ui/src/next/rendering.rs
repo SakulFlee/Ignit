@@ -80,13 +80,13 @@ pub(super) fn build() -> UiDocumentNode {
     UiDocumentNode::new(WINDOW_ID)
         .layout(
             UiLayout::column()
-                .width(320.0)
-                .height(440.0)
+                .width(384.0)
+                .height(480.0)
                 .absolute()
                 .inset(ignit_ui::UiEdges {
-                    left: ignit_ui::UiDimension::Length(960.0),
+                    left: ignit_ui::UiDimension::Length(880.0),
                     right: ignit_ui::UiDimension::Auto,
-                    top: ignit_ui::UiDimension::Length(320.0),
+                    top: ignit_ui::UiDimension::Length(240.0),
                     bottom: ignit_ui::UiDimension::Auto,
                 }),
         )
@@ -117,7 +117,7 @@ fn heading(text: &str) -> UiDocumentNode {
 
 fn dropdown(id: &str, options: &[&str], selected: usize) -> UiDocumentNode {
     UiDocumentNode::new(id)
-        .layout(UiLayout::row().width(280.0).height(38.0))
+        .layout(UiLayout::row().width(340.0).height(38.0))
         .widget(UiWidgetSpec::Dropdown {
             options: options.iter().map(|value| (*value).to_string()).collect(),
             selected,
@@ -132,7 +132,7 @@ fn dropdown(id: &str, options: &[&str], selected: usize) -> UiDocumentNode {
 
 fn toggle_row(label: &str, id: &str) -> UiDocumentNode {
     UiDocumentNode::new(format!("{id}_row"))
-        .layout(UiLayout::row().width(280.0).height(24.0).gap(6.0))
+        .layout(UiLayout::row().width(340.0).height(24.0).gap(6.0))
         .child(
             UiDocumentNode::new(format!("{id}_label"))
                 .layout(UiLayout {
@@ -150,11 +150,11 @@ fn toggle_row(label: &str, id: &str) -> UiDocumentNode {
 
 fn slider(label: &str, id: &str, min: f32, max: f32) -> UiDocumentNode {
     UiDocumentNode::new(format!("{id}_row"))
-        .layout(UiLayout::row().width(280.0).height(24.0).gap(6.0))
+        .layout(UiLayout::row().width(340.0).height(24.0).gap(6.0))
         .child(
             UiDocumentNode::new(format!("{id}_label"))
-                .layout(UiLayout::default().width(128.0))
-                .text(format!("{label}: --")),
+                .layout(UiLayout::default().width(150.0))
+                .text(format!("{label} --")),
         )
         .child(
             UiDocumentNode::new(id)
@@ -249,13 +249,13 @@ pub(super) fn refresh(world: &mut World) {
     super::set_text(
         world,
         "debug_render_scale_label",
-        format!("Render scale: {:.2}", settings.render_scale),
+        format!("Render scale {:.2}", settings.render_scale),
     );
     set_slider(world, "debug_render_exposure", settings.exposure);
     super::set_text(
         world,
         "debug_render_exposure_label",
-        format!("Exposure: {:.2}", settings.exposure),
+        format!("Exposure {:.2}", settings.exposure),
     );
     set_slider(
         world,
@@ -265,7 +265,7 @@ pub(super) fn refresh(world: &mut World) {
     super::set_text(
         world,
         "debug_render_bloom_threshold_label",
-        format!("Bloom threshold: {:.2}", settings.bloom_threshold),
+        format!("Bloom threshold {:.2}", settings.bloom_threshold),
     );
     set_slider(
         world,
@@ -275,13 +275,13 @@ pub(super) fn refresh(world: &mut World) {
     super::set_text(
         world,
         "debug_render_bloom_intensity_label",
-        format!("Bloom intensity: {:.2}", settings.bloom_intensity),
+        format!("Bloom intensity {:.2}", settings.bloom_intensity),
     );
     set_slider(world, "debug_render_density", volumetrics.density);
     super::set_text(
         world,
         "debug_render_density_label",
-        format!("Fog density: {:.3}", volumetrics.density),
+        format!("Fog density {:.3}", volumetrics.density),
     );
     set_toggle(
         world,
