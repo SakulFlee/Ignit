@@ -23,6 +23,7 @@ use winit::keyboard::KeyCode;
 use crate::state::{DebugMessage, DebugUiState, PanelId};
 
 mod console;
+mod ecs;
 mod rendering;
 
 const REFRESH: Duration = Duration::from_millis(33);
@@ -163,6 +164,7 @@ impl UiSystem for DebugUiNextSystem {
         refresh_performance(world);
         console::refresh(world);
         rendering::refresh(world);
+        ecs::refresh(world);
     }
 }
 
@@ -173,6 +175,9 @@ fn handle_events(world: &mut World, panel: Entity) {
         .unwrap_or_default();
     for event in events {
         if rendering::handle_event(world, &event) {
+            continue;
+        }
+        if ecs::handle_event(world, &event) {
             continue;
         }
         match event {
@@ -207,6 +212,9 @@ fn handle_events(world: &mut World, panel: Entity) {
                     DebugMessage::TogglePanel(PanelId::Console),
                     world,
                 );
+            }
+            UiEvent::Action { action, .. } if action.name == "debug_toggle_ecs" => {
+                crate::handle_debug_message_world(DebugMessage::TogglePanel(PanelId::Ecs), world);
             }
             UiEvent::Action { action, .. } if action.name == "debug_toggle_rendering" => {
                 crate::handle_debug_message_world(
@@ -390,7 +398,8 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
         .child(toolbar())
         .child(panel)
         .child(console::build())
-        .child(rendering::build());
+        .child(rendering::build())
+        .child(ecs::build());
     root.view = Some(UiView::new(1280.0, 720.0));
 
     ignit_ui::init(world);
@@ -484,6 +493,7 @@ fn toolbar() -> UiDocumentNode {
             "debug_toggle_perf",
             116.0,
         ),
+        ("debug_toolbar_ecs", "ECS", "debug_toggle_ecs", 56.0),
         (
             "debug_toolbar_console",
             "Console",
