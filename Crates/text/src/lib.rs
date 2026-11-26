@@ -37,8 +37,9 @@ pub use text_mesh::{
 
 /// The default font embedded in the binary.
 ///
-/// Uses Inter, a font designed for screens and UI.
-/// Licensed under the SIL Open Font License.
+/// Uses Inter, a font designed for screens and UI, by The Inter Project
+/// Authors. It is licensed under the SIL Open Font License 1.1; the full
+/// notice is in `assets/Inter-OFL.txt`.
 pub struct DefaultFont;
 
 impl DefaultFont {

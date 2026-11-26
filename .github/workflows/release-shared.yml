@@ -125,6 +125,7 @@ jobs:
             printf 'On Windows, use the .exe files.\n'
           } > "$out/README.txt"
           cp LICENSE "$out/LICENSE"
+          cp Crates/text/assets/Inter-OFL.txt "$out/Inter-OFL.txt"
 
 
           if [ "$target" = "x86_64-pc-windows-gnu" ]; then
@@ -202,6 +203,7 @@ jobs:
             printf 'On Windows, use the .exe files.\n'
           } > "$out/README.txt"
           cp LICENSE "$out/LICENSE"
+          cp Crates/text/assets/Inter-OFL.txt "$out/Inter-OFL.txt"
 
 
           (cd dist && tar -czf "$archive.tar.gz" "$archive")
