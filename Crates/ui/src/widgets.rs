@@ -60,6 +60,11 @@ pub enum UiWidgetSpec {
         items: Vec<String>,
         selected: usize,
     },
+    RadioGroup {
+        options: Vec<String>,
+        selected: usize,
+        horizontal: bool,
+    },
     Tabs {
         tabs: Vec<String>,
         active: usize,
@@ -623,6 +628,30 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                     None
                 };
             }
+            UiWidgetSpec::RadioGroup {
+                options,
+                selected,
+                horizontal,
+            } if clicks.contains(&id) => {
+                if !options.is_empty() {
+                    let index = if *horizontal {
+                        ((input.pointer.x - rect.rect.x) / (rect.rect.width / options.len() as f32))
+                            .floor()
+                    } else {
+                        ((input.pointer.y - rect.rect.y)
+                            / (rect.rect.height / options.len() as f32))
+                            .floor()
+                    };
+                    if index >= 0.0 && (index as usize) < options.len() {
+                        *selected = index as usize;
+                        event = Some(UiEvent::ValueChanged {
+                            entity,
+                            id: id.clone(),
+                            value: selected.to_string(),
+                        });
+                    }
+                }
+            }
             UiWidgetSpec::Tabs {
                 tabs,
                 active,
@@ -1107,6 +1136,58 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                             clip,
                         });
                     }
+                }
+            }
+            UiWidgetSpec::RadioGroup {
+                options,
+                selected,
+                horizontal,
+            } => {
+                let text_style = style.text.clone().unwrap_or_else(|| default_text(theme));
+                let count = options.len().max(1) as f32;
+                let (cell_w, cell_h) = if *horizontal {
+                    (rect.content.width / count, rect.content.height)
+                } else {
+                    (rect.content.width, rect.content.height / count)
+                };
+                for (index, option) in options.iter().enumerate() {
+                    let x = if *horizontal {
+                        rect.content.x + index as f32 * cell_w
+                    } else {
+                        rect.content.x
+                    };
+                    let y = if *horizontal {
+                        rect.content.y
+                    } else {
+                        rect.content.y + index as f32 * cell_h
+                    };
+                    let circle = UiRect::new(x + 2.0, y + (cell_h - 14.0) * 0.5, 14.0, 14.0);
+                    draw.commands.push(UiDrawCommand::Border {
+                        entity,
+                        rect: circle,
+                        width: 1.0,
+                        color: token_color(theme, "border", [0.4, 0.45, 0.55, 1.0]),
+                        radius: [7.0; 4],
+                        clip,
+                    });
+                    if index == *selected {
+                        draw.commands.push(UiDrawCommand::Rect {
+                            entity,
+                            rect: UiRect::new(circle.x + 4.0, circle.y + 4.0, 6.0, 6.0),
+                            color: token_color(theme, "accent", [0.26, 0.62, 0.92, 1.0]),
+                            radius: [3.0; 4],
+                            clip,
+                        });
+                    }
+                    draw.commands.push(UiDrawCommand::Text {
+                        entity,
+                        rect: UiRect::new(x + 22.0, y + (cell_h - 16.0) * 0.5, cell_w - 24.0, 16.0),
+                        text: option.clone(),
+                        style: text_style.clone(),
+                        caret: None,
+                        selection: None,
+                        clip,
+                    });
                 }
             }
             UiWidgetSpec::ListBox { items, selected } => {
