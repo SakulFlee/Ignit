@@ -210,6 +210,22 @@ fn build_showcase(world: &mut World) {
                         .focusable()
                         .style(UiStyle::default().class("panel"))
                         .child(UiDocumentNode::new("log_samples_label").text("Log samples")),
+                )
+                .child(
+                    UiDocumentNode::new("radio_demo")
+                        .layout(
+                            UiLayout::default()
+                                .width(190.0)
+                                .height(38.0)
+                                .shrink(0.0),
+                        )
+                        .widget(UiWidgetSpec::RadioGroup {
+                            options: vec!["Alpha".into(), "Beta".into()],
+                            selected: 0,
+                            horizontal: true,
+                        })
+                        .focusable()
+                        .style(UiStyle::default().class("panel")),
                 ),
         )
         .child(
