@@ -141,9 +141,13 @@ impl UiSystem for DebugUiNextSystem {
             self.last_visible = Some(visible);
             set_visible(world, self.state.root, visible);
             if visible {
-                // The toolbar can reopen it; don't cover the screen with every
-                // panel on the first show.
+                // The toolbar can reopen them; don't cover the screen with
+                // every panel on the first show.
                 crate::handle_debug_message_world(DebugMessage::HidePanel(PanelId::Console), world);
+                crate::handle_debug_message_world(
+                    DebugMessage::HidePanel(PanelId::Rendering),
+                    world,
+                );
             }
             debug!("debug UI next {}", if visible { "shown" } else { "hidden" });
         }
@@ -201,6 +205,12 @@ fn handle_events(world: &mut World, panel: Entity) {
             UiEvent::Action { action, .. } if action.name == "debug_toggle_console" => {
                 crate::handle_debug_message_world(
                     DebugMessage::TogglePanel(PanelId::Console),
+                    world,
+                );
+            }
+            UiEvent::Action { action, .. } if action.name == "debug_toggle_rendering" => {
+                crate::handle_debug_message_world(
+                    DebugMessage::TogglePanel(PanelId::Rendering),
                     world,
                 );
             }
@@ -480,7 +490,12 @@ fn toolbar() -> UiDocumentNode {
             "debug_toggle_console",
             92.0,
         ),
-        ("debug_toolbar_hide", "Hide", "debug_hide_all", 64.0),
+        (
+            "debug_toolbar_rendering",
+            "Rendering",
+            "debug_toggle_rendering",
+            100.0,
+        ),
     ] {
         row = row.child(
             UiDocumentNode::new(id)
@@ -499,7 +514,29 @@ fn toolbar() -> UiDocumentNode {
                 .child(UiDocumentNode::new(format!("{id}_label")).text(label)),
         );
     }
-    row
+    row = row.child(
+        UiDocumentNode::new("debug_toolbar_spacer").layout(UiLayout {
+            flex_grow: 1.0,
+            height: ignit_ui::UiDimension::Length(1.0),
+            ..Default::default()
+        }),
+    );
+    row.child(
+        UiDocumentNode::new("debug_toolbar_hide")
+            .layout(
+                UiLayout::row()
+                    .size(64.0, 22.0)
+                    .justify(ignit_ui::UiJustify::Center)
+                    .align_items(ignit_ui::UiAlign::Center),
+            )
+            .widget(UiWidgetSpec::Button {
+                label: "Hide".into(),
+            })
+            .action(UiAction::new("debug_hide_all"))
+            .focusable()
+            .style(UiStyle::default().class("panel"))
+            .child(UiDocumentNode::new("debug_toolbar_hide_label").text("Hide")),
+    )
 }
 
 fn refresh_performance(world: &mut World) {

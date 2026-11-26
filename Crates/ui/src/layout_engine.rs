@@ -448,6 +448,7 @@ impl UiLayoutEngine {
                             z_index.saturating_mul(1000) + 100_000 + widget.raise
                         }
                         crate::widgets::UiWidgetSpec::Modal { .. } => z_index + 1_000_000,
+                        crate::widgets::UiWidgetSpec::Dropdown { open: true, .. } => z_index + 200,
                         _ => z_index,
                     })
             })

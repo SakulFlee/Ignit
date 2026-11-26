@@ -611,6 +611,10 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                 );
             }
             UiWidgetSpec::Dropdown { options, open, .. } => {
+                if *open && input.primary_pressed && !rect.rect.contains(input.pointer) {
+                    *open = false;
+                    set_widget_height(world, entity, 38.0);
+                }
                 widget.hovered_option = if *open {
                     let option_index = ((input.pointer.y - (rect.rect.y + 38.0)) / 24.0).floor();
                     (option_index >= 0.0 && (option_index as usize) < options.len())

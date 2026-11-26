@@ -55,17 +55,27 @@ pub(super) fn build() -> UiDocumentNode {
         0,
     ));
     content = content.child(heading("Scaling"));
-    content = content.child(slider("debug_render_scale", 0.25, 1.5));
+    content = content.child(slider("Render scale", "debug_render_scale", 0.25, 1.5));
     content = content.child(toggle_row("Adaptive scale", "debug_render_adaptive"));
     content = content.child(heading("Tonemap"));
-    content = content.child(slider("debug_render_exposure", 0.1, 4.0));
+    content = content.child(slider("Exposure", "debug_render_exposure", 0.1, 4.0));
     content = content.child(toggle_row("Bloom", "debug_render_bloom"));
-    content = content.child(slider("debug_render_bloom_threshold", 0.0, 4.0));
-    content = content.child(slider("debug_render_bloom_intensity", 0.0, 4.0));
+    content = content.child(slider(
+        "Bloom threshold",
+        "debug_render_bloom_threshold",
+        0.0,
+        4.0,
+    ));
+    content = content.child(slider(
+        "Bloom intensity",
+        "debug_render_bloom_intensity",
+        0.0,
+        4.0,
+    ));
     content = content.child(toggle_row("Deferred", "debug_render_deferred"));
     content = content.child(heading("Volumetrics"));
     content = content.child(toggle_row("Enabled", "debug_render_volumetrics"));
-    content = content.child(slider("debug_render_density", 0.0, 0.2));
+    content = content.child(slider("Fog density", "debug_render_density", 0.0, 0.2));
 
     UiDocumentNode::new(WINDOW_ID)
         .layout(
@@ -84,7 +94,10 @@ pub(super) fn build() -> UiDocumentNode {
             title: "Rendering".into(),
             open: true,
         })
-        .style(UiStyle::default().class("panel"))
+        .style(UiStyle::default().class("panel").padding_text(UiTextStyle {
+            size: 12.0,
+            ..Default::default()
+        }))
         .child(content)
         .child(super::close_button(
             "debug_render_close",
@@ -96,7 +109,7 @@ fn heading(text: &str) -> UiDocumentNode {
     UiDocumentNode::new(format!("debug_render_heading_{text}"))
         .text(text)
         .style(UiStyle::default().padding_text(UiTextStyle {
-            size: 12.0,
+            size: 13.0,
             weight: 600,
             ..Default::default()
         }))
@@ -104,14 +117,17 @@ fn heading(text: &str) -> UiDocumentNode {
 
 fn dropdown(id: &str, options: &[&str], selected: usize) -> UiDocumentNode {
     UiDocumentNode::new(id)
-        .layout(UiLayout::row().width(280.0).height(30.0))
+        .layout(UiLayout::row().width(280.0).height(38.0))
         .widget(UiWidgetSpec::Dropdown {
             options: options.iter().map(|value| (*value).to_string()).collect(),
             selected,
             open: false,
         })
         .focusable()
-        .style(UiStyle::default().class("panel"))
+        .style(UiStyle::default().class("panel").padding_text(UiTextStyle {
+            size: 12.0,
+            ..Default::default()
+        }))
 }
 
 fn toggle_row(label: &str, id: &str) -> UiDocumentNode {
@@ -132,15 +148,28 @@ fn toggle_row(label: &str, id: &str) -> UiDocumentNode {
         )
 }
 
-fn slider(id: &str, min: f32, max: f32) -> UiDocumentNode {
-    UiDocumentNode::new(id)
-        .layout(UiLayout::default().width(280.0).height(22.0))
-        .widget(UiWidgetSpec::Slider {
-            value: min,
-            min,
-            max,
-        })
-        .focusable()
+fn slider(label: &str, id: &str, min: f32, max: f32) -> UiDocumentNode {
+    UiDocumentNode::new(format!("{id}_row"))
+        .layout(UiLayout::row().width(280.0).height(24.0).gap(6.0))
+        .child(
+            UiDocumentNode::new(format!("{id}_label"))
+                .layout(UiLayout::default().width(128.0))
+                .text(format!("{label}: --")),
+        )
+        .child(
+            UiDocumentNode::new(id)
+                .layout(UiLayout {
+                    flex_grow: 1.0,
+                    height: ignit_ui::UiDimension::Length(22.0),
+                    ..Default::default()
+                })
+                .widget(UiWidgetSpec::Slider {
+                    value: min,
+                    min,
+                    max,
+                })
+                .focusable(),
+        )
 }
 
 pub(super) fn handle_event(world: &mut World, event: &UiEvent) -> bool {
@@ -217,18 +246,43 @@ pub(super) fn refresh(world: &mut World) {
         .unwrap_or_default();
 
     set_slider(world, "debug_render_scale", settings.render_scale);
+    super::set_text(
+        world,
+        "debug_render_scale_label",
+        format!("Render scale: {:.2}", settings.render_scale),
+    );
     set_slider(world, "debug_render_exposure", settings.exposure);
+    super::set_text(
+        world,
+        "debug_render_exposure_label",
+        format!("Exposure: {:.2}", settings.exposure),
+    );
     set_slider(
         world,
         "debug_render_bloom_threshold",
         settings.bloom_threshold,
+    );
+    super::set_text(
+        world,
+        "debug_render_bloom_threshold_label",
+        format!("Bloom threshold: {:.2}", settings.bloom_threshold),
     );
     set_slider(
         world,
         "debug_render_bloom_intensity",
         settings.bloom_intensity,
     );
+    super::set_text(
+        world,
+        "debug_render_bloom_intensity_label",
+        format!("Bloom intensity: {:.2}", settings.bloom_intensity),
+    );
     set_slider(world, "debug_render_density", volumetrics.density);
+    super::set_text(
+        world,
+        "debug_render_density_label",
+        format!("Fog density: {:.3}", volumetrics.density),
+    );
     set_toggle(
         world,
         "debug_render_adaptive",
