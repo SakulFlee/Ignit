@@ -23,6 +23,7 @@ use winit::keyboard::KeyCode;
 use crate::state::{DebugMessage, DebugUiState, PanelId};
 
 mod console;
+mod rendering;
 
 const REFRESH: Duration = Duration::from_millis(33);
 const PANEL_ID: &str = "debug_next_perf_window";
@@ -157,6 +158,7 @@ impl UiSystem for DebugUiNextSystem {
         self.last_refresh = Instant::now();
         refresh_performance(world);
         console::refresh(world);
+        rendering::refresh(world);
     }
 }
 
@@ -166,6 +168,9 @@ fn handle_events(world: &mut World, panel: Entity) {
         .map(|events| events.read().cloned().collect())
         .unwrap_or_default();
     for event in events {
+        if rendering::handle_event(world, &event) {
+            continue;
+        }
         match event {
             UiEvent::ValueChanged { id, value, .. } if id.as_str() == "debug_perf_console" => {
                 if let Ok(on) = value.parse::<bool>() {
@@ -374,7 +379,8 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
         .style(UiStyle::default().visible(false))
         .child(toolbar())
         .child(panel)
-        .child(console::build());
+        .child(console::build())
+        .child(rendering::build());
     root.view = Some(UiView::new(1280.0, 720.0));
 
     ignit_ui::init(world);
