@@ -22,6 +22,8 @@ use winit::keyboard::KeyCode;
 
 use crate::state::{DebugMessage, DebugUiState, PanelId};
 
+mod console;
+
 const REFRESH: Duration = Duration::from_millis(33);
 const PANEL_ID: &str = "debug_next_perf_window";
 const ROOT_ID: &str = "debug_next_root";
@@ -149,6 +151,7 @@ impl UiSystem for DebugUiNextSystem {
         }
         self.last_refresh = Instant::now();
         refresh_performance(world);
+        console::refresh(world);
     }
 }
 
@@ -178,6 +181,24 @@ fn handle_events(world: &mut World, panel: Entity) {
                     world,
                 );
                 let _ = panel;
+            }
+            UiEvent::Action { action, .. } if action.name == "debug_console_clear" => {
+                crate::handle_debug_message_world(DebugMessage::ClearLog, world);
+            }
+            UiEvent::Action { action, .. } if action.name == "debug_console_hide" => {
+                crate::handle_debug_message_world(DebugMessage::HidePanel(PanelId::Console), world);
+            }
+            UiEvent::Action { action, .. } if action.name.starts_with("debug_console_level_") => {
+                let index = action
+                    .name
+                    .rsplit('_')
+                    .next()
+                    .and_then(|value| value.parse::<usize>().ok());
+                if let Some(index) = index
+                    && let Some((_, level)) = console::levels().get(index)
+                {
+                    crate::handle_debug_message_world(DebugMessage::SetMinLevel(*level), world);
+                }
             }
             _ => {}
         }
@@ -331,7 +352,8 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
     let mut root = UiDocumentNode::new(ROOT_ID)
         .layout(UiLayout::column().width_full().height_full())
         .style(UiStyle::default().visible(false))
-        .child(panel);
+        .child(panel)
+        .child(console::build());
     root.view = Some(UiView::new(1280.0, 720.0));
 
     ignit_ui::init(world);

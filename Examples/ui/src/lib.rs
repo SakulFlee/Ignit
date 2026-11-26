@@ -56,6 +56,11 @@ impl Module for UiDemoModule {
     ) -> Vec<Box<dyn System>> {
         ignit::ui::init(ecs);
         install_themes(ecs);
+        error!("UI demo log sample: error");
+        warn!("UI demo log sample: warning");
+        info!("UI demo log sample: info");
+        debug!("UI demo log sample: debug");
+        trace!("UI demo log sample: trace");
         if let Some(mut notifications) = ecs.get_resource_mut::<UiNotifications>() {
             notifications.max_visible = 6;
         }
