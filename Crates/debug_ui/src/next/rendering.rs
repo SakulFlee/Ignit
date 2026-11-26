@@ -32,7 +32,7 @@ pub(super) fn build() -> UiDocumentNode {
     content = content.scroll();
 
     content = content.child(heading("Anti-aliasing"));
-    content = content.child(dropdown(
+    content = content.child(radio_group(
         "debug_render_aa",
         &AA_OPTIONS
             .iter()
@@ -130,6 +130,21 @@ fn dropdown(id: &str, options: &[&str], selected: usize) -> UiDocumentNode {
         }))
 }
 
+fn radio_group(id: &str, options: &[&str], selected: usize) -> UiDocumentNode {
+    UiDocumentNode::new(id)
+        .layout(
+            UiLayout::default()
+                .width(280.0)
+                .height(options.len() as f32 * 24.0),
+        )
+        .widget(UiWidgetSpec::RadioGroup {
+            options: options.iter().map(|value| (*value).to_string()).collect(),
+            selected,
+            horizontal: false,
+        })
+        .focusable()
+}
+
 fn toggle_row(label: &str, id: &str) -> UiDocumentNode {
     UiDocumentNode::new(format!("{id}_row"))
         .layout(
@@ -197,6 +212,11 @@ pub(super) fn handle_event(world: &mut World, event: &UiEvent) -> bool {
         UiEvent::ValueChanged { id, value, .. } => {
             let id = id.as_str();
             match id {
+                "debug_render_aa" => value
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|index| AA_OPTIONS.get(index).copied())
+                    .map(DebugMessage::SetAntiAliasing),
                 "debug_render_scale" => parse_f32(value).map(DebugMessage::SetRenderScale),
                 "debug_render_adaptive" => {
                     parse_bool(value).map(DebugMessage::SetAdaptiveRenderScale)
@@ -316,9 +336,7 @@ pub(super) fn refresh(world: &mut World) {
         .iter()
         .position(|mode| *mode == settings.anti_aliasing)
         .unwrap_or(0);
-    poll_dropdown(world, "debug_render_aa", aa_index, |index| {
-        Some(DebugMessage::SetAntiAliasing(AA_OPTIONS[index]))
-    });
+    set_radio(world, "debug_render_aa", aa_index);
     let smaa_index = SMAA_OPTIONS
         .iter()
         .position(|quality| *quality == settings.smaa_quality)
@@ -343,6 +361,26 @@ pub(super) fn refresh(world: &mut World) {
         .and_then(|forest| forest.find(&WINDOW_ID.into()))
     {
         super::set_panel_open(world, entity, open);
+    }
+}
+
+fn set_radio(world: &mut World, id: &str, selected: usize) {
+    let Some(entity) = find(world, id) else {
+        return;
+    };
+    let mut changed = false;
+    if let Some(store) = world.get_component_store_mut::<UiWidget>()
+        && let Some(widget) = store.get_mut_store().get_component_mut(entity.index)
+        && let UiWidgetSpec::RadioGroup {
+            selected: current, ..
+        } = &mut widget.spec
+        && *current != selected
+    {
+        *current = selected;
+        changed = true;
+    }
+    if changed {
+        super::mark_dirty(world, entity, ignit_ui::UiDirty::PAINT);
     }
 }
 
