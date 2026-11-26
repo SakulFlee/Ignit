@@ -54,7 +54,8 @@ pub(super) fn build() -> UiDocumentNode {
             ..UiLayout::column().height_full().gap(4.0)
         })
         .child(selected_section())
-        .child(component_list());
+        .child(component_list())
+        .child(selected_footer());
 
     let content = UiDocumentNode::new("debug_ecs_body")
         .layout(
@@ -182,6 +183,19 @@ fn selected_section() -> UiDocumentNode {
                 .text("No entity selected")
                 .style(small_style()),
         )
+}
+
+fn selected_footer() -> UiDocumentNode {
+    UiDocumentNode::new("debug_ecs_footer")
+        .layout(
+            UiLayout::row()
+                .width_full()
+                .height(24.0)
+                .gap(4.0)
+                .justify(ignit_ui::UiJustify::End)
+                .align_items(ignit_ui::UiAlign::Center)
+                .shrink(0.0),
+        )
         .child(
             UiDocumentNode::new(DESPAWN_ID)
                 .layout(
@@ -197,14 +211,6 @@ fn selected_section() -> UiDocumentNode {
                 .focusable()
                 .style(UiStyle::default().class("panel").visible(false))
                 .child(UiDocumentNode::new("debug_ecs_despawn_label").text("Despawn")),
-        )
-        .child(
-            UiDocumentNode::new("debug_ecs_hide_button").layout(
-                UiLayout::row()
-                    .size(52.0, 20.0)
-                    .justify(ignit_ui::UiJustify::Center)
-                    .align_items(ignit_ui::UiAlign::Center),
-            ),
         )
 }
 
