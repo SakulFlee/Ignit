@@ -149,6 +149,7 @@ impl UiSystem for DebugUiNextSystem {
                     DebugMessage::HidePanel(PanelId::Rendering),
                     world,
                 );
+                crate::handle_debug_message_world(DebugMessage::HidePanel(PanelId::Ecs), world);
             }
             debug!("debug UI next {}", if visible { "shown" } else { "hidden" });
         }
@@ -795,6 +796,7 @@ mod tests {
     fn performance_content_scrolls() {
         let mut world = World::new();
         let (root, _) = build_document(&mut world).expect("document");
+        crate::handle_debug_message_world(DebugMessage::HidePanel(PanelId::Ecs), &mut world);
         set_visible(&mut world, root, true);
         let mut text = ignit_ui::UiFallbackTextMeasure;
         ignit_ui::update(&mut world, &mut text);

@@ -78,7 +78,7 @@ pub(super) fn build() -> UiDocumentNode {
                 .height(450.0)
                 .absolute()
                 .inset(UiEdges {
-                    left: UiDimension::Length(40.0),
+                    left: UiDimension::Length(520.0),
                     right: UiDimension::Auto,
                     top: UiDimension::Length(250.0),
                     bottom: UiDimension::Auto,
@@ -672,7 +672,7 @@ mod tests {
             .and_then(|store| store.get_component(window.index).copied())
             .expect("window layout");
         assert!(computed.visible);
-        assert_eq!((computed.rect.width, computed.rect.height), (600.0, 460.0));
+        assert_eq!((computed.rect.width, computed.rect.height), (720.0, 450.0));
 
         let row = world
             .get_resource::<ignit_ui::UiForest>()
