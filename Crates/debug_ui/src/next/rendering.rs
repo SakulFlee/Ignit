@@ -139,7 +139,11 @@ fn toggle_row(label: &str, id: &str) -> UiDocumentNode {
                     flex_grow: 1.0,
                     ..Default::default()
                 })
-                .text(label),
+                .text(label)
+                .style(UiStyle::default().padding_text(UiTextStyle {
+                    size: 12.0,
+                    ..Default::default()
+                })),
         )
         .child(
             UiDocumentNode::new(id)
@@ -153,8 +157,12 @@ fn slider(label: &str, id: &str, min: f32, max: f32) -> UiDocumentNode {
         .layout(UiLayout::row().width(340.0).height(24.0).gap(6.0))
         .child(
             UiDocumentNode::new(format!("{id}_label"))
-                .layout(UiLayout::default().width(150.0))
-                .text(format!("{label} --")),
+                .layout(UiLayout::default().width(160.0))
+                .text(format!("{label} --"))
+                .style(UiStyle::default().padding_text(UiTextStyle {
+                    size: 12.0,
+                    ..Default::default()
+                })),
         )
         .child(
             UiDocumentNode::new(id)
