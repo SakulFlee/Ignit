@@ -117,7 +117,7 @@ fn heading(text: &str) -> UiDocumentNode {
 
 fn dropdown(id: &str, options: &[&str], selected: usize) -> UiDocumentNode {
     UiDocumentNode::new(id)
-        .layout(UiLayout::row().width(340.0).height(38.0))
+        .layout(UiLayout::row().width(340.0).height(38.0).shrink(0.0))
         .widget(UiWidgetSpec::Dropdown {
             options: options.iter().map(|value| (*value).to_string()).collect(),
             selected,
@@ -132,7 +132,13 @@ fn dropdown(id: &str, options: &[&str], selected: usize) -> UiDocumentNode {
 
 fn toggle_row(label: &str, id: &str) -> UiDocumentNode {
     UiDocumentNode::new(format!("{id}_row"))
-        .layout(UiLayout::row().width(340.0).height(24.0).gap(6.0))
+        .layout(
+            UiLayout::row()
+                .width(340.0)
+                .height(24.0)
+                .gap(6.0)
+                .shrink(0.0),
+        )
         .child(
             UiDocumentNode::new(format!("{id}_label"))
                 .layout(UiLayout {
@@ -154,7 +160,13 @@ fn toggle_row(label: &str, id: &str) -> UiDocumentNode {
 
 fn slider(label: &str, id: &str, min: f32, max: f32) -> UiDocumentNode {
     UiDocumentNode::new(format!("{id}_row"))
-        .layout(UiLayout::row().width(340.0).height(24.0).gap(6.0))
+        .layout(
+            UiLayout::row()
+                .width(340.0)
+                .height(24.0)
+                .gap(6.0)
+                .shrink(0.0),
+        )
         .child(
             UiDocumentNode::new(format!("{id}_label"))
                 .layout(UiLayout::default().width(160.0))

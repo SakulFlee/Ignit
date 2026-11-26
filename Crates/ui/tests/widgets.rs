@@ -968,3 +968,42 @@ fn golden_progress_draw_list_signature() {
         .collect();
     assert_eq!(signature, vec!["rect", "rect"]);
 }
+
+#[test]
+fn open_dropdown_height_matches_its_options() {
+    let mut world = World::new();
+    init(&mut world);
+    let entity = build(
+        &mut world,
+        "dropdown_height",
+        UiWidgetSpec::Dropdown {
+            options: (0..8).map(|i| format!("Option {i}")).collect(),
+            selected: 0,
+            open: false,
+        },
+    );
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    let start = rect(&world, entity);
+    world.insert_resource(UiInputState {
+        pointer: UiPoint::new(start.rect.x + 5.0, start.rect.y + 5.0),
+        primary_down: true,
+        primary_pressed: true,
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let mut input = world.get_resource::<UiInputState>().unwrap().clone();
+    input.primary_down = false;
+    input.primary_pressed = false;
+    input.primary_released = true;
+    world.insert_resource(input);
+    update(&mut world, &mut text);
+    update(&mut world, &mut text);
+    let opened = rect(&world, entity);
+    assert_eq!(
+        opened.rect.height,
+        38.0 + 8.0 * 24.0,
+        "height {}",
+        opened.rect.height
+    );
+}
