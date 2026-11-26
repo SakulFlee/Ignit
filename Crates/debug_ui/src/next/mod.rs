@@ -139,6 +139,11 @@ impl UiSystem for DebugUiNextSystem {
         if self.last_visible != Some(visible) {
             self.last_visible = Some(visible);
             set_visible(world, self.state.root, visible);
+            if visible {
+                // The toolbar can reopen it; don't cover the screen with every
+                // panel on the first show.
+                crate::handle_debug_message_world(DebugMessage::HidePanel(PanelId::Console), world);
+            }
             debug!("debug UI next {}", if visible { "shown" } else { "hidden" });
         }
         if !visible {
@@ -181,6 +186,21 @@ fn handle_events(world: &mut World, panel: Entity) {
                     world,
                 );
                 let _ = panel;
+            }
+            UiEvent::Action { action, .. } if action.name == "debug_toggle_perf" => {
+                crate::handle_debug_message_world(
+                    DebugMessage::TogglePanel(PanelId::Performance),
+                    world,
+                );
+            }
+            UiEvent::Action { action, .. } if action.name == "debug_toggle_console" => {
+                crate::handle_debug_message_world(
+                    DebugMessage::TogglePanel(PanelId::Console),
+                    world,
+                );
+            }
+            UiEvent::Action { action, .. } if action.name == "debug_hide_all" => {
+                crate::handle_debug_message_world(DebugMessage::HideDebugUi, world);
             }
             UiEvent::Action { action, .. } if action.name == "debug_console_clear" => {
                 crate::handle_debug_message_world(DebugMessage::ClearLog, world);
@@ -352,6 +372,7 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
     let mut root = UiDocumentNode::new(ROOT_ID)
         .layout(UiLayout::column().width_full().height_full())
         .style(UiStyle::default().visible(false))
+        .child(toolbar())
         .child(panel)
         .child(console::build());
     root.view = Some(UiView::new(1280.0, 720.0));
@@ -414,6 +435,65 @@ fn small_style(muted: bool) -> UiStyle {
         wrap: ignit_ui::UiTextWrap::NoWrap,
         ..Default::default()
     })
+}
+
+fn toolbar() -> UiDocumentNode {
+    let mut row = UiDocumentNode::new("debug_next_toolbar")
+        .layout(
+            UiLayout::row()
+                .width_full()
+                .height(28.0)
+                .padding(4.0)
+                .gap(4.0)
+                .align_items(ignit_ui::UiAlign::Center),
+        )
+        .style(
+            UiStyle::default()
+                .background(ignit_ui::UiColor::Rgba([0.07, 0.08, 0.12, 0.96]))
+                .padding_text(ignit_ui::UiTextStyle {
+                    size: 11.0,
+                    wrap: ignit_ui::UiTextWrap::NoWrap,
+                    ..Default::default()
+                }),
+        )
+        .child(
+            UiDocumentNode::new("debug_toolbar_label")
+                .layout(UiLayout::default().width(84.0))
+                .text("Debug UI"),
+        );
+    for (id, label, action, width) in [
+        (
+            "debug_toolbar_perf",
+            "Performance",
+            "debug_toggle_perf",
+            116.0,
+        ),
+        (
+            "debug_toolbar_console",
+            "Console",
+            "debug_toggle_console",
+            92.0,
+        ),
+        ("debug_toolbar_hide", "Hide", "debug_hide_all", 64.0),
+    ] {
+        row = row.child(
+            UiDocumentNode::new(id)
+                .layout(
+                    UiLayout::row()
+                        .size(width, 22.0)
+                        .justify(ignit_ui::UiJustify::Center)
+                        .align_items(ignit_ui::UiAlign::Center),
+                )
+                .widget(UiWidgetSpec::Button {
+                    label: label.into(),
+                })
+                .action(UiAction::new(action))
+                .focusable()
+                .style(UiStyle::default().class("panel"))
+                .child(UiDocumentNode::new(format!("{id}_label")).text(label)),
+        );
+    }
+    row
 }
 
 fn refresh_performance(world: &mut World) {
