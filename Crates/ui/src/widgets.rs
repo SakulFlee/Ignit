@@ -644,7 +644,8 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                     set_content_visible(world, content.clone(), *open);
                 }
             }
-            UiWidgetSpec::FloatingWindow { .. } => {
+            UiWidgetSpec::FloatingWindow { open, .. } => {
+                set_entity_visible(world, entity, *open);
                 let title_bar = 32.0;
                 let grip = 18.0;
                 let on_grip = input.pointer.x >= rect.rect.x + rect.rect.width - grip
@@ -837,10 +838,10 @@ fn move_widget(world: &mut World, entity: Entity, x: f32, y: f32) {
 
 fn raise_floating(world: &mut World, entity: Entity, widget: &mut UiWidget) {
     let next = if let Some(mut order) = world.get_resource_mut::<UiWindowOrder>() {
-        order.next = order.next.saturating_add(1000);
+        order.next = order.next.saturating_add(10_000);
         order.next
     } else {
-        widget.raise.saturating_add(1000)
+        widget.raise.saturating_add(10_000)
     };
     if widget.raise != next {
         widget.raise = next;
@@ -1234,14 +1235,15 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     values.iter().copied().fold(0.0, f32::max).max(0.001)
                 };
                 let step = rect.content.width / values.len() as f32;
+                let bar = (step - 1.0).clamp(1.0, 3.0);
                 for (index, value) in values.iter().enumerate() {
                     let height = (value / max).clamp(0.0, 1.0) * rect.content.height;
                     draw.commands.push(UiDrawCommand::Rect {
                         entity,
                         rect: UiRect::new(
-                            rect.content.x + index as f32 * step,
+                            rect.content.x + index as f32 * step + (step - bar).max(0.0) * 0.5,
                             rect.content.y + rect.content.height - height,
-                            step.max(1.0),
+                            bar,
                             height,
                         ),
                         color: token_color(theme, "accent", [0.30, 0.70, 0.96, 1.0]),

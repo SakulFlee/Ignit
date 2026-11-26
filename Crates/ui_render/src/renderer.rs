@@ -705,6 +705,9 @@ impl UiRenderer {
                 caret,
                 selection,
             } => {
+                if clip.is_some_and(|clip| clip.intersect(*rect).is_none()) {
+                    return;
+                }
                 let (scale, origin) = self.transform(world, *entity);
                 let text_style = text_style(style);
                 let shaped = text.shape(value, &text_style, rect.width);

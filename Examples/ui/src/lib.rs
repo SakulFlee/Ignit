@@ -4,7 +4,7 @@ use ignit::app::{App, AppSettings, Module, UiSystem};
 use ignit::cgmath::{Point3, Rad};
 use ignit::ecs::{System, World};
 use ignit::ecs_bridge::{ActiveCamera, CameraDescriptor, Position, Rotation};
-use ignit::logging::{self, error, info};
+use ignit::logging::{self, debug, error, info, trace, warn};
 use ignit::ui::{
     UiAction, UiBuilder, UiColor, UiDimension, UiDocument, UiDocumentNode, UiEdges, UiEvent,
     UiLayout, UiLengthPercentage, UiNotification, UiNotificationSeverity, UiNotifications, UiStyle,
@@ -37,6 +37,7 @@ pub fn entrypoint(
     match App::new()
         .add_module(UiRenderModule::new(text))
         .add_module(UiDemoModule)
+        .add_module(ignit::debug_ui::DebugUiNextModule::new())
         .liftoff(event_loop, app_settings)
     {
         Ok(()) => info!("Cleanly exited!"),
@@ -188,6 +189,22 @@ fn build_showcase(world: &mut World) {
                         .focusable()
                         .style(UiStyle::default().class("panel"))
                         .child(UiDocumentNode::new("toast_corner_label").text("Toast corner")),
+                )
+                .child(
+                    UiDocumentNode::new("log_samples_button")
+                        .layout(
+                            UiLayout::row()
+                                .size(140.0, 38.0)
+                                .justify(ignit::ui::UiJustify::Center)
+                                .align_items(ignit::ui::UiAlign::Center),
+                        )
+                        .widget(UiWidgetSpec::Button {
+                            label: "Log samples".into(),
+                        })
+                        .action(UiAction::new("log_samples"))
+                        .focusable()
+                        .style(UiStyle::default().class("panel"))
+                        .child(UiDocumentNode::new("log_samples_label").text("Log samples")),
                 ),
         )
         .child(
@@ -538,6 +555,13 @@ impl DemoSystem {
                             themes.active = next;
                         }
                     }
+                }
+                "log_samples" => {
+                    error!("UI demo sample: error level");
+                    warn!("UI demo sample: warning level");
+                    info!("UI demo sample: info level");
+                    debug!("UI demo sample: debug level");
+                    trace!("UI demo sample: trace level");
                 }
                 "toast_corner" => {
                     if let Some(mut notifications) = world.get_resource_mut::<UiNotifications>() {

@@ -441,6 +441,14 @@ impl DebugUiState {
 
     /// Flips the overlay's visibility, logging the new state.
     pub fn toggle_visibility(&mut self) {
+        // A toggle while any panel is closed reopens the panels instead of
+        // hiding the whole overlay and requiring a second press.
+        if self.visible && self.panels.iter().any(|enabled| !enabled) {
+            self.panels = [true; PANEL_COUNT];
+            self.dirty = true;
+            return;
+        }
+
         self.visible = !self.visible;
 
         // Turning the overlay back on is also the recovery path for panels the
@@ -689,8 +697,8 @@ mod tests {
         assert!(!state.is_panel_visible(PanelId::Rendering));
 
         state.toggle_visibility();
-        state.toggle_visibility();
         assert!(state.is_panel_visible(PanelId::Rendering));
+        assert!(state.visible);
     }
 
     #[test]

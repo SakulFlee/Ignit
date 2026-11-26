@@ -21,6 +21,7 @@
 
 pub mod editable;
 pub mod layout;
+pub mod next;
 pub mod panels;
 pub mod sparkline;
 pub mod state;
@@ -48,6 +49,8 @@ use crate::panels::{
     animation_panel, console_panel, ecs_panel, edit, performance_panel, rendering_panel,
 };
 use crate::state::{DebugMessage, DebugUiState, PanelId};
+
+pub use next::DebugUiNextModule;
 
 /// Releases the cursor while the debug overlay is visible and restores the
 /// previous grab state when it closes.
@@ -428,11 +431,7 @@ fn mobile_debug_toggle(
 ///
 /// Everything a panel changes lives in the `DebugUiState` resource, so this
 /// routes the message there and performs any component write.
-fn handle_debug_message(
-    _panel: &mut IcedState<DebugMessage>,
-    message: DebugMessage,
-    world: &mut World,
-) {
+pub(crate) fn handle_debug_message_world(message: DebugMessage, world: &mut World) {
     if let DebugMessage::ApplyField(ref key) = message {
         let input = world
             .get_resource::<DebugUiState>()
@@ -458,6 +457,10 @@ fn handle_debug_message(
         }
 
         return;
+    }
+
+    if matches!(message, DebugMessage::ClearLog) {
+        ignit_core::logging::clear_log_buffer();
     }
 
     if let DebugMessage::SelectEntity(entity) = &message
@@ -943,6 +946,14 @@ fn mark_debug_dirty(world: &mut World) {
     if let Some(mut state) = world.get_resource_mut::<DebugUiState>() {
         state.dirty = true;
     }
+}
+
+fn handle_debug_message(
+    _panel: &mut IcedState<DebugMessage>,
+    message: DebugMessage,
+    world: &mut World,
+) {
+    handle_debug_message_world(message, world);
 }
 
 /// Mutates the debug-render settings when the debug-render module is present.

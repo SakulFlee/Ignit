@@ -95,7 +95,7 @@ impl TextEngine {
         Self {
             font_system: setup.system,
             swash_cache: SwashCache::new(),
-            atlas: GlyphAtlas::new(1024, 4),
+            atlas: GlyphAtlas::new(2048, 6),
             stack,
             default_family: setup.default_family,
             scale: 1.0,

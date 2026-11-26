@@ -45,6 +45,13 @@ pub fn log_buffer() -> Vec<LogLine> {
         .unwrap_or_default()
 }
 
+/// Drops every captured log line.
+pub fn clear_log_buffer() {
+    if let Ok(mut buffer) = LOG_BUFFER.write() {
+        buffer.clear();
+    }
+}
+
 /// Borrows the log ring without copying it, oldest first.
 ///
 /// Meant for a per-frame consumer such as an in-game console: it avoids
