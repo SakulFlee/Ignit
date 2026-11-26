@@ -31,9 +31,34 @@ const COMPONENT_ROWS: usize = 20;
 const MAX_SCANNED_ENTITIES: usize = 2_000;
 
 pub(super) fn build() -> UiDocumentNode {
-    let content = UiDocumentNode::new("debug_ecs_body")
+    let left = UiDocumentNode::new("debug_ecs_left")
         .layout(
             UiLayout::column()
+                .width(300.0)
+                .height_full()
+                .gap(4.0)
+                .shrink(0.0),
+        )
+        .child(filter_row())
+        .child(
+            UiDocumentNode::new(STATUS_ID)
+                .layout(UiLayout::default().width_full().height(20.0).shrink(0.0))
+                .text("0 entities")
+                .style(small_style()),
+        )
+        .child(entity_list());
+
+    let right = UiDocumentNode::new("debug_ecs_right")
+        .layout(UiLayout {
+            flex_grow: 1.0,
+            ..UiLayout::column().height_full().gap(4.0)
+        })
+        .child(selected_section())
+        .child(component_list());
+
+    let content = UiDocumentNode::new("debug_ecs_body")
+        .layout(
+            UiLayout::row()
                 .absolute()
                 .inset(UiEdges {
                     left: UiDimension::Length(10.0),
@@ -41,34 +66,21 @@ pub(super) fn build() -> UiDocumentNode {
                     top: UiDimension::Length(34.0),
                     bottom: UiDimension::Length(10.0),
                 })
-                .gap(4.0),
+                .gap(8.0),
         )
-        .child(filter_row())
-        .child(
-            UiDocumentNode::new(STATUS_ID)
-                .layout(UiLayout::default().width_full().height(14.0).shrink(0.0))
-                .text("0 entities")
-                .style(small_style()),
-        )
-        .child(entity_list())
-        .child(
-            UiDocumentNode::new("debug_ecs_divider")
-                .layout(UiLayout::default().width_full().height(1.0).shrink(0.0))
-                .widget(UiWidgetSpec::Divider),
-        )
-        .child(selected_section())
-        .child(component_list());
+        .child(left)
+        .child(right);
 
     UiDocumentNode::new(WINDOW_ID)
         .layout(
             UiLayout::column()
-                .width(600.0)
-                .height(460.0)
+                .width(720.0)
+                .height(450.0)
                 .absolute()
                 .inset(UiEdges {
                     left: UiDimension::Length(40.0),
                     right: UiDimension::Auto,
-                    top: UiDimension::Length(420.0),
+                    top: UiDimension::Length(250.0),
                     bottom: UiDimension::Auto,
                 }),
         )
@@ -138,7 +150,7 @@ fn entity_list() -> UiDocumentNode {
     for index in 0..ENTITY_ROWS {
         list = list.child(
             UiDocumentNode::new(format!("{ROW_PREFIX}{index}"))
-                .layout(UiLayout::default().width_full().height(18.0).shrink(0.0))
+                .layout(UiLayout::default().width_full().height(20.0).shrink(0.0))
                 .widget(UiWidgetSpec::Button {
                     label: String::new(),
                 })
@@ -156,7 +168,7 @@ fn selected_section() -> UiDocumentNode {
         .layout(
             UiLayout::row()
                 .width_full()
-                .height(24.0)
+                .height(26.0)
                 .gap(4.0)
                 .align_items(ignit_ui::UiAlign::Center)
                 .shrink(0.0),
@@ -187,26 +199,18 @@ fn selected_section() -> UiDocumentNode {
                 .child(UiDocumentNode::new("debug_ecs_despawn_label").text("Despawn")),
         )
         .child(
-            UiDocumentNode::new("debug_ecs_hide_button")
-                .layout(
-                    UiLayout::row()
-                        .size(52.0, 20.0)
-                        .justify(ignit_ui::UiJustify::Center)
-                        .align_items(ignit_ui::UiAlign::Center),
-                )
-                .widget(UiWidgetSpec::Button {
-                    label: "Hide".into(),
-                })
-                .action(UiAction::new("debug_ecs_hide"))
-                .focusable()
-                .style(UiStyle::default().class("panel"))
-                .child(UiDocumentNode::new("debug_ecs_hide_label").text("Hide")),
+            UiDocumentNode::new("debug_ecs_hide_button").layout(
+                UiLayout::row()
+                    .size(52.0, 20.0)
+                    .justify(ignit_ui::UiJustify::Center)
+                    .align_items(ignit_ui::UiAlign::Center),
+            ),
         )
 }
 
 fn component_list() -> UiDocumentNode {
     let mut list = UiDocumentNode::new("debug_ecs_component_scroll").layout(UiLayout {
-        height: UiDimension::Length(132.0),
+        flex_grow: 1.0,
         min_height: UiDimension::Length(0.0),
         ..UiLayout::column().width_full().gap(1.0)
     });
@@ -215,7 +219,7 @@ fn component_list() -> UiDocumentNode {
     for index in 0..COMPONENT_ROWS {
         list = list.child(
             UiDocumentNode::new(format!("{COMPONENT_PREFIX}{index}"))
-                .layout(UiLayout::default().width_full().height(16.0).shrink(0.0))
+                .layout(UiLayout::default().width_full().height(18.0).shrink(0.0))
                 .style(component_style(false)),
         );
     }
