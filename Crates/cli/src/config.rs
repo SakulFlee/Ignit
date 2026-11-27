@@ -322,9 +322,18 @@ pub fn resolve_lib_name(package_name: Option<&str>) -> Result<String> {
     Ok(name.replace('-', "_"))
 }
 
-/// Find a package's path in the workspace
+/// Find a package's path in the workspace.
+///
+/// Uses `cargo metadata` first so glob workspace members such as
+/// `Examples/*` resolve correctly, then falls back to the small manifest
+/// parser for environments where Cargo metadata is unavailable.
 pub fn find_package_path(package_name: &str) -> Result<PathBuf> {
     let project_root = find_project_root()?;
+
+    if let Some(path) = package_path_from_cargo_metadata(&project_root, package_name) {
+        return Ok(path);
+    }
+
     let cargo_toml_path = project_root.join("Cargo.toml");
 
     let content = std::fs::read_to_string(&cargo_toml_path)
@@ -423,6 +432,33 @@ pub fn find_package_path(package_name: &str) -> Result<PathBuf> {
     }
 
     anyhow::bail!("Package '{}' not found in workspace", package_name)
+}
+
+/// Resolve a workspace package directory through `cargo metadata`.
+fn package_path_from_cargo_metadata(project_root: &Path, package_name: &str) -> Option<PathBuf> {
+    let output = std::process::Command::new("cargo")
+        .args(["metadata", "--no-deps", "--format-version", "1"])
+        .current_dir(project_root)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    let packages = metadata.get("packages")?.as_array()?;
+
+    for package in packages {
+        if package.get("name").and_then(|name| name.as_str()) != Some(package_name) {
+            continue;
+        }
+
+        let manifest = package.get("manifest_path")?.as_str()?;
+        return Path::new(manifest).parent().map(Path::to_path_buf);
+    }
+
+    None
 }
 
 /// Find a package's lib name in the workspace
