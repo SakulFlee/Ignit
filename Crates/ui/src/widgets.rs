@@ -30,6 +30,24 @@ pub const MIN_FLOATING_WINDOW_WIDTH: f32 = 240.0;
 /// Smallest height a floating window may be resized to, in logical pixels.
 pub const MIN_FLOATING_WINDOW_HEIGHT: f32 = 160.0;
 
+/// One line of a multi-series [`UiWidgetSpec::Graph`].
+///
+/// Values are drawn oldest first. A series with a transparent colour falls
+/// back to the widget's palette, indexed by its position.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct UiGraphSeries {
+    pub values: Vec<f32>,
+    #[serde(default)]
+    pub color: [f32; 4],
+}
+
+impl UiGraphSeries {
+    /// A series drawn in `color`.
+    pub fn new(values: Vec<f32>, color: [f32; 4]) -> Self {
+        Self { values, color }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum UiWidgetSpec {
     #[default]
@@ -86,6 +104,11 @@ pub enum UiWidgetSpec {
     },
     Sparkline {
         values: Vec<f32>,
+        max: f32,
+    },
+    /// Several overlaid series, drawn as narrow bars.
+    Graph {
+        series: Vec<UiGraphSeries>,
         max: f32,
     },
     Tooltip {
@@ -1349,6 +1372,67 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     });
                 }
             }
+            UiWidgetSpec::Graph { series, max } => {
+                let samples = series
+                    .iter()
+                    .map(|series| series.values.len())
+                    .max()
+                    .unwrap_or(0);
+                if samples == 0 || rect.content.width <= 0.0 || rect.content.height <= 0.0 {
+                    continue;
+                }
+
+                let peak = series
+                    .iter()
+                    .flat_map(|series| series.values.iter().copied())
+                    .filter(|value| value.is_finite() && *value >= 0.0)
+                    .fold(0.0f32, f32::max);
+                let max = if max.is_finite() && *max > 0.0 {
+                    *max
+                } else {
+                    peak.max(0.001)
+                };
+
+                let step = rect.content.width / samples as f32;
+                let lanes = series.len().max(1) as f32;
+                let grouped = (step - 1.0).max(1.0);
+                let bar = if series.len() > 1 {
+                    (grouped / lanes).clamp(1.0, 3.0)
+                } else {
+                    grouped.clamp(1.0, 3.0)
+                };
+                let group_width = bar * lanes;
+                let offset = ((step - group_width) * 0.5).max(0.0);
+
+                for (series_index, series) in series.iter().enumerate() {
+                    let color = if series.color[3] > 0.0 {
+                        series.color
+                    } else {
+                        graph_palette(series_index)
+                    };
+                    for (index, value) in series.values.iter().enumerate() {
+                        if !value.is_finite() || *value < 0.0 {
+                            continue;
+                        }
+                        let height = (value / max).clamp(0.0, 1.0) * rect.content.height;
+                        draw.commands.push(UiDrawCommand::Rect {
+                            entity,
+                            rect: UiRect::new(
+                                rect.content.x
+                                    + index as f32 * step
+                                    + offset
+                                    + series_index as f32 * bar,
+                                rect.content.y + rect.content.height - height,
+                                bar,
+                                height,
+                            ),
+                            color,
+                            radius: [0.0; 4],
+                            clip,
+                        });
+                    }
+                }
+            }
             UiWidgetSpec::Divider => {
                 draw.commands.push(UiDrawCommand::Line {
                     entity,
@@ -1487,6 +1571,17 @@ fn next_word_boundary(text: &str, cursor: usize) -> usize {
         index = next;
     }
     index
+}
+
+fn graph_palette(index: usize) -> [f32; 4] {
+    const PALETTE: [[f32; 4]; 4] = [
+        [0.50, 0.90, 0.60, 1.0],
+        [0.40, 0.80, 1.00, 1.0],
+        [0.45, 0.60, 1.00, 1.0],
+        [1.00, 0.80, 0.40, 1.0],
+    ];
+
+    PALETTE[index % PALETTE.len()]
 }
 
 fn token_color(theme: Option<&UiThemes>, name: &str, fallback: [f32; 4]) -> [f32; 4] {

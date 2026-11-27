@@ -5,6 +5,7 @@
 //! The existing iced-backed [`crate::DebugUiModule`] stays available until the
 //! port is complete and iced is removed.
 
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 use ignit_app::{Module, UiSystem};
@@ -13,14 +14,14 @@ use ignit_ecs_bridge::{
     DebugSelectedEntity, FpsStats, FrameTimings, PerformanceLogConfig, TimingsHistoryConfig,
 };
 use ignit_ui::{
-    UiAction, UiBuilder, UiDirty, UiDocumentNode, UiEvent, UiInteraction, UiLayout, UiStyle,
-    UiText, UiView, UiWidget, UiWidgetSpec,
+    UiAction, UiBuilder, UiDirty, UiDocumentNode, UiEvent, UiGraphSeries, UiInteraction, UiLayout,
+    UiStyle, UiText, UiView, UiWidget, UiWidgetSpec,
 };
 use ignit_ui_render::UiTextResource;
 use log::{debug, warn};
 use winit::keyboard::KeyCode;
 
-use crate::state::{DebugMessage, DebugUiState, PanelId};
+use crate::state::{DebugMessage, DebugUiState, GraphMetric, GraphSeries, PanelId, format_seconds};
 
 mod animation;
 mod console;
@@ -30,6 +31,28 @@ mod rendering;
 const REFRESH: Duration = Duration::from_millis(33);
 const PANEL_ID: &str = "debug_next_perf_window";
 const ROOT_ID: &str = "debug_next_root";
+/// At most this many graphs are shown at once.
+const GRAPH_SLOTS: usize = 3;
+/// Points drawn per series. The UI is refreshed at ~30 Hz and the panel is
+/// small, so retaining more would only add work to the paint pass.
+const MAX_GRAPH_SAMPLES: usize = 120;
+/// Rolling window used by the average/min/max metrics, in seconds.
+const ROLLING_WINDOW_SECS: f64 = 1.0;
+/// Values above this are treated as timestamp-readback garbage.
+const MAX_GRAPH_VALUE: f32 = 10_000.0;
+
+const LAST_COLOR: [f32; 4] = [0.50, 0.90, 0.60, 1.0];
+const AVG_COLOR: [f32; 4] = [0.40, 0.80, 1.00, 1.0];
+const MIN_COLOR: [f32; 4] = [0.45, 0.60, 1.00, 1.0];
+const MAX_COLOR: [f32; 4] = [1.00, 0.80, 0.40, 1.0];
+
+const METRICS: [GraphMetric; 5] = [
+    GraphMetric::Last,
+    GraphMetric::Avg,
+    GraphMetric::Min,
+    GraphMetric::Max,
+    GraphMetric::All,
+];
 
 /// New-UI debug overlay. Add after `UiRenderModule`.
 pub struct DebugUiNextModule {
@@ -188,6 +211,35 @@ fn handle_events(world: &mut World, panel: Entity) {
             continue;
         }
         match event {
+            UiEvent::ValueChanged { id, value, .. } if id.as_str() == "debug_perf_window" => {
+                if let Ok(seconds) = value.parse::<f32>()
+                    && seconds.is_finite()
+                {
+                    crate::handle_debug_message_world(DebugMessage::SetGraphWindow(seconds), world);
+                }
+            }
+            UiEvent::Action { action, .. } if action.name == "debug_perf_series_fps" => {
+                crate::handle_debug_message_world(
+                    DebugMessage::ToggleGraphSeries(GraphSeries::Fps),
+                    world,
+                );
+            }
+            UiEvent::Action { action, .. } if action.name == "debug_perf_series_cdt" => {
+                crate::handle_debug_message_world(
+                    DebugMessage::ToggleGraphSeries(GraphSeries::Cdt),
+                    world,
+                );
+            }
+            UiEvent::Action { action, .. } if action.name.starts_with("debug_perf_series_") => {
+                if let Some(index) = stage_series_action(&action.name)
+                    && index < ignit_ecs_bridge::TIMING_STAGES.len()
+                {
+                    crate::handle_debug_message_world(
+                        DebugMessage::ToggleGraphSeries(GraphSeries::Stage(index)),
+                        world,
+                    );
+                }
+            }
             UiEvent::ValueChanged { id, value, .. } if id.as_str() == "debug_perf_console" => {
                 if let Ok(on) = value.parse::<bool>() {
                     crate::handle_debug_message_world(
@@ -277,74 +329,160 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
         .scroll();
 
     content = content
-        .child(UiDocumentNode::new("debug_perf_fps").text("FPS: --").style(
-            UiStyle::default().padding_text(ignit_ui::UiTextStyle {
-                size: 22.0,
-                weight: 600,
-                ..Default::default()
-            }),
-        ))
-        .child(UiDocumentNode::new("debug_perf_frame").text("Frame: -- ms"))
         .child(
-            UiDocumentNode::new("debug_perf_graph")
-                .layout(UiLayout::default().width_full().height(90.0).shrink(0.0))
-                .widget(UiWidgetSpec::Sparkline {
-                    values: Vec::new(),
-                    max: 1.0,
-                }),
+            UiDocumentNode::new("debug_perf_fps")
+                .text("FPS: --")
+                .action(UiAction::new("debug_perf_series_fps"))
+                .focusable()
+                .style(UiStyle::default().padding_text(ignit_ui::UiTextStyle {
+                    size: 22.0,
+                    weight: 600,
+                    ..Default::default()
+                })),
         )
         .child(
-            UiDocumentNode::new("debug_perf_stage_header")
+            UiDocumentNode::new("debug_perf_frame")
+                .text("Frame: -- ms")
+                .action(UiAction::new("debug_perf_series_cdt"))
+                .focusable(),
+        )
+        .child(
+            UiDocumentNode::new("debug_perf_window_row")
                 .layout(
                     UiLayout::row()
                         .width_full()
-                        .height(16.0)
-                        .gap(4.0)
+                        .height(24.0)
+                        .gap(6.0)
                         .shrink(0.0),
                 )
                 .child(
-                    UiDocumentNode::new("debug_perf_stage_header_name")
-                        .layout(UiLayout::default().width_percent(38.0))
-                        .text("Stage")
+                    UiDocumentNode::new("debug_perf_window_label")
+                        .layout(UiLayout::default().width(92.0))
+                        .text("window 10s")
                         .style(small_style(true)),
                 )
                 .child(
-                    UiDocumentNode::new("debug_perf_stage_header_values")
+                    UiDocumentNode::new("debug_perf_window")
                         .layout(UiLayout {
                             flex_grow: 1.0,
+                            height: ignit_ui::UiDimension::Length(22.0),
                             ..Default::default()
                         })
-                        .text("last      avg      max")
-                        .style(small_style(true)),
+                        .widget(UiWidgetSpec::Slider {
+                            value: crate::state::DEFAULT_GRAPH_WINDOW_SECS,
+                            min: crate::state::MIN_GRAPH_WINDOW_SECS,
+                            max: crate::state::MAX_GRAPH_WINDOW_SECS,
+                        })
+                        .focusable(),
                 ),
+        )
+        .child(
+            UiDocumentNode::new("debug_perf_metric_label")
+                .text("metric")
+                .style(small_style(true)),
+        )
+        .child(
+            UiDocumentNode::new("debug_perf_metric")
+                .layout(UiLayout::default().width_full().height(38.0).shrink(0.0))
+                .widget(UiWidgetSpec::Dropdown {
+                    options: METRICS
+                        .iter()
+                        .map(|metric| metric_label(*metric).to_string())
+                        .collect(),
+                    selected: 0,
+                    open: false,
+                })
+                .focusable()
+                .style(small_style(false)),
+        )
+        .child(
+            UiDocumentNode::new("debug_perf_graph_empty")
+                .text("no graphs pinned — click a row")
+                .style(small_style(true)),
         );
 
-    for index in 0..ignit_ecs_bridge::TIMING_STAGES.len() {
+    for slot in 0..GRAPH_SLOTS {
         content = content.child(
-            UiDocumentNode::new(format!("debug_perf_stage_row_{index}"))
+            UiDocumentNode::new(format!("debug_perf_graph_slot_{slot}"))
                 .layout(
-                    UiLayout::row()
+                    UiLayout::column()
                         .width_full()
-                        .height(16.0)
-                        .gap(4.0)
+                        .height(108.0)
+                        .gap(2.0)
                         .shrink(0.0),
                 )
+                .style(UiStyle::default().visible(false))
                 .child(
-                    UiDocumentNode::new(format!("debug_perf_stage_name_{index}"))
-                        .layout(UiLayout::default().width_percent(38.0))
-                        .text("--")
-                        .style(small_style(true)),
-                )
-                .child(
-                    UiDocumentNode::new(format!("debug_perf_stage_{index}"))
-                        .layout(UiLayout {
-                            flex_grow: 1.0,
-                            ..Default::default()
-                        })
+                    UiDocumentNode::new(format!("debug_perf_graph_title_{slot}"))
                         .text("--")
                         .style(small_style(false)),
+                )
+                .child(
+                    UiDocumentNode::new(format!("debug_perf_graph_{slot}"))
+                        .layout(UiLayout::default().width_full().height(92.0).shrink(0.0))
+                        .widget(UiWidgetSpec::Graph {
+                            series: Vec::new(),
+                            max: 1.0,
+                        }),
                 ),
         );
+    }
+
+    content = content.child(
+        UiDocumentNode::new("debug_perf_stage_header")
+            .layout(
+                UiLayout::row()
+                    .width_full()
+                    .height(16.0)
+                    .gap(4.0)
+                    .shrink(0.0),
+            )
+            .child(
+                UiDocumentNode::new("debug_perf_stage_header_name")
+                    .layout(UiLayout::default().width_percent(38.0))
+                    .text("Stage")
+                    .style(small_style(true)),
+            )
+            .child(
+                UiDocumentNode::new("debug_perf_stage_header_values")
+                    .layout(UiLayout {
+                        flex_grow: 1.0,
+                        ..Default::default()
+                    })
+                    .text("last      avg      max")
+                    .style(small_style(true)),
+            ),
+    );
+
+    for index in 0..ignit_ecs_bridge::TIMING_STAGES.len() {
+        content = content
+            .child(
+                UiDocumentNode::new(format!("debug_perf_stage_row_{index}"))
+                    .layout(
+                        UiLayout::row()
+                            .width_full()
+                            .height(16.0)
+                            .gap(4.0)
+                            .shrink(0.0),
+                    )
+                    .child(
+                        UiDocumentNode::new(format!("debug_perf_stage_name_{index}"))
+                            .layout(UiLayout::default().width_percent(38.0))
+                            .text("--")
+                            .style(small_style(true)),
+                    )
+                    .child(
+                        UiDocumentNode::new(format!("debug_perf_stage_{index}"))
+                            .layout(UiLayout {
+                                flex_grow: 1.0,
+                                ..Default::default()
+                            })
+                            .text("--")
+                            .style(small_style(false)),
+                    ),
+            )
+            .action(UiAction::new(format!("debug_perf_series_{index}")))
+            .focusable();
     }
 
     content = content
@@ -439,6 +577,219 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
 fn sane_ms(value: f64) -> Option<f32> {
     let value = value as f32;
     (value.is_finite() && value.abs() <= 10_000.0).then_some(value.max(0.0))
+}
+
+/// Parses `debug_perf_series_<index>` into the stage index it toggles.
+fn stage_series_action(name: &str) -> Option<usize> {
+    name.strip_prefix("debug_perf_series_")
+        .and_then(|value| value.parse().ok())
+}
+
+fn metric_label(metric: GraphMetric) -> &'static str {
+    match metric {
+        GraphMetric::Last => "last",
+        GraphMetric::Avg => "avg",
+        GraphMetric::Min => "min",
+        GraphMetric::Max => "max",
+        GraphMetric::All => "all",
+    }
+}
+
+/// One ready-to-paint graph.
+struct GraphPlot {
+    title: String,
+    series: Vec<UiGraphSeries>,
+    max: f32,
+}
+
+/// Builds the plotted series for one graph.
+///
+/// The graph window comes from [`DebugUiState::graph_window_secs`]. Metrics
+/// use a fixed one-second rolling window per retained frame; `All` draws the
+/// four statistics as separate series.
+fn graph_plot(
+    timings: &FrameTimings,
+    series: GraphSeries,
+    metric: GraphMetric,
+    window_secs: f64,
+) -> GraphPlot {
+    let start = timings.window_start(window_secs);
+    let pairs = graph_pairs(timings, series, start);
+    let times = pairs.iter().map(|(time, _)| *time).collect::<Vec<_>>();
+    let values = pairs.iter().map(|(_, value)| *value).collect::<Vec<_>>();
+    let frames = values.len();
+
+    let plotted = match metric {
+        GraphMetric::Last => vec![UiGraphSeries::new(tail(values), LAST_COLOR)],
+        GraphMetric::Avg => {
+            let (average, _, _) = rolling_stats(&times, &values, ROLLING_WINDOW_SECS);
+            vec![UiGraphSeries::new(tail(average), AVG_COLOR)]
+        }
+        GraphMetric::Min => {
+            let (_, minimum, _) = rolling_stats(&times, &values, ROLLING_WINDOW_SECS);
+            vec![UiGraphSeries::new(tail(minimum), MIN_COLOR)]
+        }
+        GraphMetric::Max => {
+            let (_, _, maximum) = rolling_stats(&times, &values, ROLLING_WINDOW_SECS);
+            vec![UiGraphSeries::new(tail(maximum), MAX_COLOR)]
+        }
+        GraphMetric::All => {
+            let (average, minimum, maximum) = rolling_stats(&times, &values, ROLLING_WINDOW_SECS);
+            vec![
+                UiGraphSeries::new(tail(values), LAST_COLOR),
+                UiGraphSeries::new(tail(average), AVG_COLOR),
+                UiGraphSeries::new(tail(minimum), MIN_COLOR),
+                UiGraphSeries::new(tail(maximum), MAX_COLOR),
+            ]
+        }
+    };
+
+    let peak = plotted
+        .iter()
+        .flat_map(|series| series.values.iter().copied())
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .fold(0.0f32, f32::max);
+
+    GraphPlot {
+        title: graph_title(series, frames, window_secs),
+        series: plotted,
+        max: (peak * 1.1).max(1.0),
+    }
+}
+
+fn graph_title(series: GraphSeries, frames: usize, window_secs: f64) -> String {
+    let name = series_name(series);
+    let unit = if matches!(series, GraphSeries::Fps) {
+        "fps"
+    } else {
+        "ms"
+    };
+    format!(
+        "{name} · {unit} · {:.1}s · {} frames",
+        window_secs.max(0.0),
+        frames
+    )
+}
+
+fn series_name(series: GraphSeries) -> &'static str {
+    match series {
+        GraphSeries::Fps => "FPS",
+        GraphSeries::Cdt => "Frame time",
+        GraphSeries::Stage(index) => ignit_ecs_bridge::TIMING_STAGES
+            .get(index)
+            .copied()
+            .unwrap_or("stage"),
+    }
+}
+
+fn graph_pairs(timings: &FrameTimings, series: GraphSeries, start: usize) -> Vec<(f64, f32)> {
+    let times = timings.history_times();
+
+    match series {
+        GraphSeries::Stage(index) => timings
+            .history()
+            .iter()
+            .zip(times.iter())
+            .skip(start)
+            .filter_map(|(frame, time)| {
+                let value = *frame.get(index)? as f32;
+                sane_graph_value(value).map(|value| (*time, value))
+            })
+            .collect(),
+        GraphSeries::Cdt => timings
+            .cdt_history()
+            .iter()
+            .zip(times.iter())
+            .skip(start)
+            .filter_map(|(value, time)| sane_graph_value(*value).map(|value| (*time, value)))
+            .collect(),
+        GraphSeries::Fps => timings
+            .cdt_history()
+            .iter()
+            .zip(times.iter())
+            .skip(start)
+            .filter_map(|(&cdt, time)| {
+                if cdt > 0.0 && cdt.is_finite() {
+                    sane_graph_value(1000.0 / cdt).map(|value| (*time, value))
+                } else {
+                    None
+                }
+            })
+            .collect(),
+    }
+}
+
+fn sane_graph_value(value: f32) -> Option<f32> {
+    (value.is_finite() && (0.0..=MAX_GRAPH_VALUE).contains(&value)).then_some(value)
+}
+
+fn tail(mut values: Vec<f32>) -> Vec<f32> {
+    if values.len() > MAX_GRAPH_SAMPLES {
+        let excess = values.len() - MAX_GRAPH_SAMPLES;
+        values.drain(..excess);
+    }
+    values
+}
+
+/// Rolling mean/min/max over a time window, one sample per input frame.
+fn rolling_stats(
+    times: &[f64],
+    values: &[f32],
+    window_secs: f64,
+) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    let len = times.len().min(values.len());
+    let mut average = Vec::with_capacity(len);
+    let mut minimum = Vec::with_capacity(len);
+    let mut maximum = Vec::with_capacity(len);
+
+    if len == 0 {
+        return (average, minimum, maximum);
+    }
+
+    let window = window_secs.max(0.0);
+    let mut start = 0usize;
+    let mut sum = 0.0f64;
+    let mut min_queue = VecDeque::new();
+    let mut max_queue = VecDeque::new();
+
+    for index in 0..len {
+        sum += values[index] as f64;
+
+        while start < index && times[index] - times[start] > window {
+            sum -= values[start] as f64;
+            start += 1;
+        }
+
+        while min_queue.front().is_some_and(|front| *front < start) {
+            min_queue.pop_front();
+        }
+        while max_queue.front().is_some_and(|front| *front < start) {
+            max_queue.pop_front();
+        }
+
+        while min_queue
+            .back()
+            .is_some_and(|back| values[*back] >= values[index])
+        {
+            min_queue.pop_back();
+        }
+        min_queue.push_back(index);
+
+        while max_queue
+            .back()
+            .is_some_and(|back| values[*back] <= values[index])
+        {
+            max_queue.pop_back();
+        }
+        max_queue.push_back(index);
+
+        let count = (index - start + 1) as f64;
+        average.push((sum / count) as f32);
+        minimum.push(values[min_queue.front().copied().unwrap_or(index)]);
+        maximum.push(values[max_queue.front().copied().unwrap_or(index)]);
+    }
+
+    (average, minimum, maximum)
 }
 
 fn close_button(id: &str, action: &str) -> UiDocumentNode {
@@ -594,19 +945,31 @@ fn refresh_performance(world: &mut World) {
         format!("Frame: {frame_ms:.2} ms"),
     );
 
-    let (values, max, rows) = world.get_resource::<FrameTimings>().map_or_else(
-        || (Vec::new(), 1.0, Vec::new()),
+    let (graph_series, metric, window_secs) = world
+        .get_resource::<DebugUiState>()
+        .map(|state| {
+            (
+                state.graph_series.clone(),
+                state.graph_metric,
+                state.graph_window_secs as f64,
+            )
+        })
+        .unwrap_or_default();
+
+    let (plots, rows) = world.get_resource::<FrameTimings>().map_or_else(
+        || (Vec::new(), Vec::new()),
         |timings| {
-            let mut values: Vec<f32> = timings
-                .cdt_history()
+            let plots = graph_series
                 .iter()
-                .rev()
-                .filter(|value| value.is_finite() && value.abs() < 10_000.0)
-                .take(120)
                 .copied()
-                .collect();
-            values.reverse();
-            let max = values.iter().copied().fold(1.0, f32::max) * 1.1;
+                .filter(|series| match series {
+                    GraphSeries::Stage(index) => *index < ignit_ecs_bridge::TIMING_STAGES.len(),
+                    GraphSeries::Fps | GraphSeries::Cdt => true,
+                })
+                .take(GRAPH_SLOTS)
+                .map(|series| graph_plot(&timings, series, metric, window_secs))
+                .collect::<Vec<_>>();
+
             let rows = timings
                 .samples()
                 .iter()
@@ -631,17 +994,64 @@ fn refresh_performance(world: &mut World) {
                         ),
                         _ => ("     --      --      --".to_string(), [1.0, 0.5, 0.45, 1.0]),
                     };
-                    (sample.name.to_string(), value, color)
+                    let pinned = graph_series.contains(&GraphSeries::Stage(index));
+                    (sample.name.to_string(), value, color, pinned)
                 })
                 .collect();
-            (values, max, rows)
+            (plots, rows)
         },
     );
-    set_sparkline(world, "debug_perf_graph", values, max);
-    for (index, (name, value, color)) in rows.into_iter().enumerate() {
+
+    set_slider(world, "debug_perf_window", window_secs as f32);
+    set_text(
+        world,
+        "debug_perf_window_label",
+        format!("window {}s", format_seconds(window_secs as f32)),
+    );
+    let metric_index = METRICS
+        .iter()
+        .position(|value| *value == metric)
+        .unwrap_or(0);
+    poll_metric_dropdown(world, metric_index);
+
+    for slot in 0..GRAPH_SLOTS {
+        let slot_id = format!("debug_perf_graph_slot_{slot}");
+        match plots.get(slot) {
+            Some(plot) => {
+                set_text(
+                    world,
+                    &format!("debug_perf_graph_title_{slot}"),
+                    plot.title.clone(),
+                );
+                set_graph(
+                    world,
+                    &format!("debug_perf_graph_{slot}"),
+                    plot.series.clone(),
+                    plot.max,
+                );
+                set_visible_by_id(world, &slot_id, true);
+            }
+            None => set_visible_by_id(world, &slot_id, false),
+        }
+    }
+    set_visible_by_id(world, "debug_perf_graph_empty", plots.is_empty());
+
+    set_row_highlight(
+        world,
+        "debug_perf_fps",
+        graph_series.contains(&GraphSeries::Fps),
+    );
+    set_row_highlight(
+        world,
+        "debug_perf_frame",
+        graph_series.contains(&GraphSeries::Cdt),
+    );
+    for (index, (name, value, color, pinned)) in rows.into_iter().enumerate() {
+        let name = if pinned { format!("● {name}") } else { name };
         set_text(world, &format!("debug_perf_stage_name_{index}"), name);
         set_text(world, &format!("debug_perf_stage_{index}"), value);
         set_text_color(world, &format!("debug_perf_stage_{index}"), color);
+        set_row_highlight(world, &format!("debug_perf_stage_row_{index}"), pinned);
     }
 
     let config = world
@@ -720,7 +1130,27 @@ fn set_text_color(world: &mut World, id: &str, color: [f32; 4]) {
     mark_dirty(world, entity, UiDirty::PAINT | UiDirty::TEXT);
 }
 
-fn set_sparkline(world: &mut World, id: &str, values: Vec<f32>, max: f32) {
+fn set_row_highlight(world: &mut World, id: &str, selected: bool) {
+    let Some(entity) = world
+        .get_resource::<ignit_ui::UiForest>()
+        .and_then(|forest| forest.find(&id.into()))
+    else {
+        return;
+    };
+    let current = world
+        .get_component_store::<UiStyle>()
+        .and_then(|store| store.get_component(entity.index).cloned());
+    let mut style = current.unwrap_or_default();
+    let background = selected.then(|| ignit_ui::UiColor::rgba([0.28, 0.42, 0.68, 0.35]));
+    if style.background == background {
+        return;
+    }
+    style.background = background;
+    let _ = world.attach_component(&entity, style);
+    mark_dirty(world, entity, UiDirty::PAINT);
+}
+
+fn set_graph(world: &mut World, id: &str, series: Vec<UiGraphSeries>, max: f32) {
     let Some(entity) = world
         .get_resource::<ignit_ui::UiForest>()
         .and_then(|forest| forest.find(&id.into()))
@@ -730,15 +1160,72 @@ fn set_sparkline(world: &mut World, id: &str, values: Vec<f32>, max: f32) {
     let mut changed = false;
     if let Some(store) = world.get_component_store_mut::<UiWidget>()
         && let Some(widget) = store.get_mut_store().get_component_mut(entity.index)
-        && let UiWidgetSpec::Sparkline { values: v, max: m } = &mut widget.spec
-        && (*v != values || *m != max)
+        && let UiWidgetSpec::Graph {
+            series: current,
+            max: current_max,
+        } = &mut widget.spec
+        && (*current != series || *current_max != max)
     {
-        *v = values;
-        *m = max;
+        *current = series;
+        *current_max = max;
         changed = true;
     }
     if changed {
         mark_dirty(world, entity, UiDirty::PAINT);
+    }
+}
+
+fn set_slider(world: &mut World, id: &str, value: f32) {
+    let Some(entity) = world
+        .get_resource::<ignit_ui::UiForest>()
+        .and_then(|forest| forest.find(&id.into()))
+    else {
+        return;
+    };
+    let mut changed = false;
+    if let Some(store) = world.get_component_store_mut::<UiWidget>()
+        && let Some(widget) = store.get_mut_store().get_component_mut(entity.index)
+        && let UiWidgetSpec::Slider { value: current, .. } = &mut widget.spec
+        && *current != value
+    {
+        *current = value;
+        changed = true;
+    }
+    if changed {
+        mark_dirty(world, entity, UiDirty::PAINT);
+    }
+}
+
+/// The dropdown owns its selection; dispatch when it no longer matches the
+/// state, mirroring the other polled dropdowns in the new UI.
+fn poll_metric_dropdown(world: &mut World, expected: usize) {
+    let Some(entity) = world
+        .get_resource::<ignit_ui::UiForest>()
+        .and_then(|forest| forest.find(&"debug_perf_metric".into()))
+    else {
+        return;
+    };
+    let selected = world
+        .get_component_store::<UiWidget>()
+        .and_then(|store| store.get_component(entity.index).cloned())
+        .and_then(|widget| match widget.spec {
+            UiWidgetSpec::Dropdown { selected, .. } => Some(selected),
+            _ => None,
+        });
+    if let Some(selected) = selected
+        && selected != expected
+        && let Some(metric) = METRICS.get(selected).copied()
+    {
+        crate::handle_debug_message_world(DebugMessage::SetGraphMetric(metric), world);
+    }
+}
+
+fn set_visible_by_id(world: &mut World, id: &str, visible: bool) {
+    if let Some(entity) = world
+        .get_resource::<ignit_ui::UiForest>()
+        .and_then(|forest| forest.find(&id.into()))
+    {
+        set_visible(world, entity, visible);
     }
 }
 
@@ -954,6 +1441,98 @@ mod tests {
             }
             assert!(clipped > 0, "{window_id} has no clipped descendants");
         }
+    }
+
+    #[test]
+    fn graph_actions_toggle_series_and_the_metric_dropdown_updates_state() {
+        let mut world = World::new();
+        world.insert_resource(DebugUiState::new(KeyCode::F1));
+        let (_, panel) = build_document(&mut world).expect("document");
+        let stage = world
+            .get_resource::<ignit_ui::UiForest>()
+            .and_then(|forest| forest.find(&"debug_perf_stage_row_0".into()))
+            .expect("stage row");
+        let fps = world
+            .get_resource::<ignit_ui::UiForest>()
+            .and_then(|forest| forest.find(&"debug_perf_fps".into()))
+            .expect("fps row");
+        {
+            let mut events = world
+                .get_resource_mut::<ignit_ecs::Events<UiEvent>>()
+                .expect("ui events");
+            events.send(UiEvent::Action {
+                entity: stage,
+                id: "debug_perf_stage_row_0".into(),
+                action: UiAction::new("debug_perf_series_0"),
+            });
+            events.send(UiEvent::Action {
+                entity: fps,
+                id: "debug_perf_fps".into(),
+                action: UiAction::new("debug_perf_series_fps"),
+            });
+        }
+
+        handle_events(&mut world, panel);
+
+        {
+            let state = world.get_resource::<DebugUiState>().expect("state");
+            assert!(state.graph_series.contains(&GraphSeries::Stage(0)));
+            assert!(state.graph_series.contains(&GraphSeries::Fps));
+        }
+
+        let metric = world
+            .get_resource::<ignit_ui::UiForest>()
+            .and_then(|forest| forest.find(&"debug_perf_metric".into()))
+            .expect("metric dropdown");
+        {
+            let store = world
+                .get_component_store_mut::<UiWidget>()
+                .expect("widgets");
+            let widget = store
+                .get_mut_store()
+                .get_component_mut(metric.index)
+                .expect("metric widget");
+            let UiWidgetSpec::Dropdown { selected, .. } = &mut widget.spec else {
+                panic!("metric selector is a dropdown");
+            };
+            *selected = METRICS
+                .iter()
+                .position(|metric| *metric == GraphMetric::All)
+                .expect("All metric");
+        }
+
+        refresh_performance(&mut world);
+
+        assert_eq!(
+            world
+                .get_resource::<DebugUiState>()
+                .expect("state")
+                .graph_metric,
+            GraphMetric::All
+        );
+    }
+
+    #[test]
+    fn graph_plot_builds_the_all_band_from_rolling_stats() {
+        let mut timings = FrameTimings::new();
+        let config = TimingsHistoryConfig {
+            enabled: true,
+            window_secs: 10.0,
+        };
+        let mut durations = vec![0.0; ignit_ecs_bridge::TIMING_STAGES.len()];
+        for (index, value) in [1.0, 3.0, 2.0, 4.0].into_iter().enumerate() {
+            durations[0] = value;
+            timings.record_at(&durations, index as f64 * 0.5, 16.0, config);
+        }
+
+        let plot = graph_plot(&timings, GraphSeries::Stage(0), GraphMetric::All, 10.0);
+
+        assert_eq!(plot.series.len(), 4, "last, avg, min, max");
+        assert_eq!(plot.series[0].values, vec![1.0, 3.0, 2.0, 4.0]);
+        assert_eq!(plot.series[1].values, vec![1.0, 2.0, 2.0, 3.0]);
+        assert_eq!(plot.series[2].values, vec![1.0, 1.0, 1.0, 2.0]);
+        assert_eq!(plot.series[3].values, vec![1.0, 3.0, 3.0, 4.0]);
+        assert!((plot.max - 4.4).abs() < 1.0e-4, "peak plus ten percent");
     }
 
     #[test]

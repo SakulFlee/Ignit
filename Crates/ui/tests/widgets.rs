@@ -1229,6 +1229,77 @@ fn golden_progress_draw_list_signature() {
 }
 
 #[test]
+fn graph_widget_paints_every_series_with_distinct_colours() {
+    let mut world = World::new();
+    init(&mut world);
+    let entity = build(
+        &mut world,
+        "graph",
+        UiWidgetSpec::Graph {
+            series: vec![
+                ignit_ui::UiGraphSeries::new(vec![0.0, 50.0, 100.0], [0.5, 0.9, 0.6, 1.0]),
+                ignit_ui::UiGraphSeries::new(vec![100.0, 50.0, 0.0], [1.0, 0.8, 0.4, 1.0]),
+            ],
+            max: 100.0,
+        },
+    );
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+
+    let draw = world.get_resource::<UiDrawList>().unwrap();
+    let bars = draw
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            UiDrawCommand::Rect {
+                entity: command_entity,
+                rect,
+                color,
+                ..
+            } if *command_entity == entity => Some((*rect, *color)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(bars.len(), 6, "one bar per sample per series");
+    assert!(
+        bars.iter()
+            .all(|(rect, _)| (1.0..=3.0).contains(&rect.width)),
+        "bars stay between one and three pixels wide"
+    );
+    assert!(
+        bars.iter().any(|(_, color)| *color == [0.5, 0.9, 0.6, 1.0])
+            && bars.iter().any(|(_, color)| *color == [1.0, 0.8, 0.4, 1.0]),
+        "each series keeps its own colour"
+    );
+}
+
+#[test]
+fn graph_widget_ignores_empty_series() {
+    let mut world = World::new();
+    init(&mut world);
+    let entity = build(
+        &mut world,
+        "graph_empty",
+        UiWidgetSpec::Graph {
+            series: vec![ignit_ui::UiGraphSeries::default()],
+            max: 1.0,
+        },
+    );
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+
+    let draw = world.get_resource::<UiDrawList>().unwrap();
+    assert!(!draw.commands.iter().any(|command| matches!(
+        command,
+        UiDrawCommand::Rect {
+            entity: command_entity,
+            ..
+        } if *command_entity == entity
+    )));
+}
+
+#[test]
 fn open_dropdown_height_matches_its_options() {
     let mut world = World::new();
     init(&mut world);
