@@ -311,6 +311,17 @@ pub fn get_lib_name() -> Result<String> {
     get_package_name()
 }
 
+/// Resolve the Rust library name for a package, normalizing hyphens the way
+/// Cargo does for static-library filenames.
+pub fn resolve_lib_name(package_name: Option<&str>) -> Result<String> {
+    let name = match package_name {
+        Some(pkg) => find_package_lib_name(pkg)?,
+        None => get_lib_name()?,
+    };
+
+    Ok(name.replace('-', "_"))
+}
+
 /// Find a package's path in the workspace
 pub fn find_package_path(package_name: &str) -> Result<PathBuf> {
     let project_root = find_project_root()?;

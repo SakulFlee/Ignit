@@ -39,6 +39,10 @@ fn generate_gitignore(project_dir: &Path) -> Result<()> {
 # Generated Android project
 /Android/
 
+# Generated iOS project and Xcode build output
+/iOS/
+/Build/
+
 # Cargo state
 /.cargo/
 
@@ -145,7 +149,7 @@ path = "src/main.rs"
 
 [lib]
 name = "{lib_name}"
-crate-type = ["cdylib", "lib"]
+crate-type = ["cdylib", "staticlib", "lib"]
 
 [dependencies]
 {ignit_dep}
@@ -182,10 +186,16 @@ screen_orientation = "sensorLandscape"
 # keystore_password = "your_keystore_password"
 # key_alias = "your_key_alias"
 # key_password = "your_key_password"
+
+[ios]
+bundle_id = "{package}"
+deployment_target = "16.0"
+app_name = "{app_name}"
 "#,
         package = config.package_name,
         min_sdk = config.min_sdk,
         target_sdk = config.target_sdk,
+        app_name = config.project_name,
     );
 
     fs::write(project_dir.join("Ignit.toml"), content).context("Failed to write Ignit.toml")?;

@@ -110,6 +110,12 @@ enum Commands {
     },
     /// Initialize Android project for existing Ignit project
     InitAndroid,
+    /// Initialize an Xcode project for an existing Ignit project
+    InitIos {
+        /// Regenerate the Xcode project, overwriting the current one
+        #[arg(long)]
+        force: bool,
+    },
     /// Build for a platform (defaults to desktop)
     Build {
         /// Platform to build for (defaults to desktop)
@@ -186,6 +192,7 @@ fn main() -> Result<()> {
             no_git,
         ),
         Commands::InitAndroid => android::project::init(),
+        Commands::InitIos { force } => ios::project::init(None, force),
         Commands::Build {
             platform,
             package,
