@@ -29,7 +29,7 @@ pub fn init(package_name: Option<&str>, force: bool) -> Result<()> {
     println!("  App Name: {}", ios_config.app_name());
     println!("  Library: {}", lib_name);
 
-    generate_project(&ios_dir, &ios_config, &lib_name)?;
+    generate_project(&ios_dir, &ios_config, &lib_name, package_name)?;
 
     println!(
         "\niOS project generated successfully at {}",
@@ -41,8 +41,13 @@ pub fn init(package_name: Option<&str>, force: bool) -> Result<()> {
     Ok(())
 }
 
-fn generate_project(ios_dir: &Path, config: &config::IosConfig, lib_name: &str) -> Result<()> {
-    let replacements = create_replacements(config, lib_name);
+fn generate_project(
+    ios_dir: &Path,
+    config: &config::IosConfig,
+    lib_name: &str,
+    package_name: Option<&str>,
+) -> Result<()> {
+    let replacements = create_replacements(config, lib_name, package_name);
     let app_dir = ios_dir.join(config.app_name());
 
     // Create directory structure
@@ -96,7 +101,11 @@ fn generate_project(ios_dir: &Path, config: &config::IosConfig, lib_name: &str) 
     Ok(())
 }
 
-fn create_replacements(config: &config::IosConfig, lib_name: &str) -> Vec<(String, String)> {
+fn create_replacements(
+    config: &config::IosConfig,
+    lib_name: &str,
+    package_name: Option<&str>,
+) -> Vec<(String, String)> {
     vec![
         (
             "@@@BUNDLE_ID@@@".to_string(),
@@ -108,6 +117,10 @@ fn create_replacements(config: &config::IosConfig, lib_name: &str) -> Vec<(Strin
         ),
         ("@@@APP_NAME@@@".to_string(), config.app_name().to_string()),
         ("@@@LIB_NAME@@@".to_string(), lib_name.to_string()),
+        (
+            "@@@PACKAGE@@@".to_string(),
+            package_name.unwrap_or_default().to_string(),
+        ),
         (
             "@@@RUST_TARGET@@@".to_string(),
             super::simulator_target()
