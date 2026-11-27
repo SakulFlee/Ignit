@@ -158,12 +158,12 @@ pub(super) fn build() -> UiDocumentNode {
                 .layout(
                     UiLayout::default()
                         .width_full()
-                        .height(60.0)
+                        .height(24.0)
                         .absolute()
                         .inset(ignit_ui::UiEdges {
                             left: UiDimension::Length(12.0),
                             right: UiDimension::Length(12.0),
-                            top: UiDimension::Length(70.0),
+                            top: UiDimension::Length(8.0),
                             bottom: UiDimension::Auto,
                         }),
                 )
@@ -259,6 +259,13 @@ pub(super) fn refresh(world: &mut World) {
     }
     if let Some(entity) = find(world, "debug_anim_empty") {
         super::set_visible(world, entity, empty);
+    }
+    let open = world
+        .get_resource::<DebugUiState>()
+        .map(|state| state.is_panel_visible(PanelId::Animation))
+        .unwrap_or(false);
+    if let Some(entity) = find(world, WINDOW_ID) {
+        super::set_panel_open(world, entity, open);
     }
     let selected = selected_entity(world);
     for index in 0..ROWS {
@@ -369,14 +376,6 @@ pub(super) fn refresh(world: &mut World) {
             format!("Clips ({})", clips.len())
         },
     );
-
-    let open = world
-        .get_resource::<DebugUiState>()
-        .map(|state| state.is_panel_visible(PanelId::Animation))
-        .unwrap_or(false);
-    if let Some(entity) = find(world, WINDOW_ID) {
-        super::set_panel_open(world, entity, open);
-    }
 }
 
 pub(super) fn handle_event(world: &mut World, event: &UiEvent) -> bool {
