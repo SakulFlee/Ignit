@@ -1,8 +1,8 @@
 use ignit_ecs::{Entity, World};
 use ignit_ui::{
-    UiBuilder, UiClipboardResource, UiComputed, UiDocumentNode, UiDrawCommand, UiDrawList,
-    UiFocusState, UiInputState, UiLayout, UiPoint, UiSize, UiText, UiTextMeasure, UiTextStyle,
-    UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec, init, update,
+    UiBuilder, UiClipboardResource, UiComputed, UiDimension, UiDocumentNode, UiDrawCommand,
+    UiDrawList, UiFocusState, UiInputState, UiLayout, UiPoint, UiSize, UiText, UiTextMeasure,
+    UiTextStyle, UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec, init, update,
 };
 
 struct TenPixelMeasure;
@@ -815,6 +815,138 @@ fn floating_window_resizes_from_the_grip() {
         .unwrap();
     assert_eq!(layout.width, ignit_ui::UiDimension::Length(350.0));
     assert_eq!(layout.height, ignit_ui::UiDimension::Length(230.0));
+}
+
+#[test]
+fn floating_window_clips_oversized_children() {
+    let mut world = World::new();
+    init(&mut world);
+    let mut root = UiDocumentNode::new("clip_root")
+        .layout(UiLayout::column().size(600.0, 400.0).padding(20.0))
+        .child(
+            UiDocumentNode::new("clip_window")
+                .layout(
+                    UiLayout::column()
+                        .width(240.0)
+                        .height(160.0)
+                        .absolute()
+                        .inset(ignit_ui::UiEdges {
+                            left: ignit_ui::UiDimension::Length(10.0),
+                            right: ignit_ui::UiDimension::Auto,
+                            top: ignit_ui::UiDimension::Length(10.0),
+                            bottom: ignit_ui::UiDimension::Auto,
+                        }),
+                )
+                .widget(UiWidgetSpec::FloatingWindow {
+                    title: "Clip".into(),
+                    open: true,
+                })
+                .child(
+                    UiDocumentNode::new("clip_child")
+                        .layout(UiLayout::default().size(900.0, 700.0).shrink(0.0)),
+                ),
+        );
+    root.view = Some(UiView::new(600.0, 400.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+
+    let window = computed(&world, "clip_window");
+    let child = computed(&world, "clip_child");
+    assert!(
+        child.rect.width > window.rect.width && child.rect.height > window.rect.height,
+        "child {}x{} should overflow window {}x{}",
+        child.rect.width,
+        child.rect.height,
+        window.rect.width,
+        window.rect.height
+    );
+    assert!(
+        window.clip.is_none(),
+        "the window must not clip its own paint"
+    );
+    let clip = child.clip.expect("window child should be clipped");
+    assert_eq!(
+        window.rect.intersect(clip),
+        Some(clip),
+        "child clip {clip:?} should stay inside window {:?}",
+        window.rect
+    );
+}
+
+#[test]
+fn floating_window_resize_clamps_to_minimum_size() {
+    let mut world = World::new();
+    init(&mut world);
+    let mut root = UiDocumentNode::new("min_root")
+        .layout(UiLayout::column().size(600.0, 400.0).padding(20.0))
+        .child(
+            UiDocumentNode::new("min_window")
+                .layout(
+                    UiLayout::column()
+                        .width(300.0)
+                        .height(200.0)
+                        .absolute()
+                        .inset(ignit_ui::UiEdges {
+                            left: ignit_ui::UiDimension::Length(10.0),
+                            right: ignit_ui::UiDimension::Auto,
+                            top: ignit_ui::UiDimension::Length(10.0),
+                            bottom: ignit_ui::UiDimension::Auto,
+                        }),
+                )
+                .widget(UiWidgetSpec::FloatingWindow {
+                    title: "Min".into(),
+                    open: true,
+                }),
+        );
+    root.view = Some(UiView::new(600.0, 400.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    let rect = computed(&world, "min_window");
+    let grip = UiPoint::new(
+        rect.rect.x + rect.rect.width - 5.0,
+        rect.rect.y + rect.rect.height - 5.0,
+    );
+
+    world.insert_resource(UiInputState {
+        pointer: grip,
+        primary_down: true,
+        primary_pressed: true,
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    world.insert_resource(UiInputState {
+        pointer: UiPoint::new(grip.x - 400.0, grip.y - 400.0),
+        primary_down: true,
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+
+    let entity = world
+        .get_resource::<ignit_ui::UiForest>()
+        .unwrap()
+        .find(&"min_window".into())
+        .unwrap();
+    let layout = world
+        .get_component_store::<UiLayout>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!(
+        layout.width,
+        UiDimension::Length(ignit_ui::MIN_FLOATING_WINDOW_WIDTH)
+    );
+    assert_eq!(
+        layout.height,
+        UiDimension::Length(ignit_ui::MIN_FLOATING_WINDOW_HEIGHT)
+    );
+
+    update(&mut world, &mut text);
+    let rect = computed(&world, "min_window");
+    assert_eq!(rect.rect.width, ignit_ui::MIN_FLOATING_WINDOW_WIDTH);
+    assert_eq!(rect.rect.height, ignit_ui::MIN_FLOATING_WINDOW_HEIGHT);
 }
 
 #[test]

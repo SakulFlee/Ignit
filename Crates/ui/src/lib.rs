@@ -64,7 +64,10 @@ pub use style::{
     UiState, UiStateStyles, UiStyle, UiStyleClass, UiStylePatch, UiText, UiTextStyle, UiTextWrap,
     UiTheme, UiThemes,
 };
-pub use widgets::{UiWidget, UiWidgetSpec, UiWindowOrder, append_widget_commands, update_widgets};
+pub use widgets::{
+    MIN_FLOATING_WINDOW_HEIGHT, MIN_FLOATING_WINDOW_WIDTH, UiWidget, UiWidgetSpec, UiWindowOrder,
+    append_widget_commands, update_widgets,
+};
 
 use std::time::Instant;
 

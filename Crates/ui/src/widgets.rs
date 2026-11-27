@@ -25,6 +25,11 @@ use crate::style::{
     UiThemes,
 };
 
+/// Smallest width a floating window may be resized to, in logical pixels.
+pub const MIN_FLOATING_WINDOW_WIDTH: f32 = 240.0;
+/// Smallest height a floating window may be resized to, in logical pixels.
+pub const MIN_FLOATING_WINDOW_HEIGHT: f32 = 160.0;
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum UiWidgetSpec {
     #[default]
@@ -726,8 +731,8 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                     resize_widget(
                         world,
                         entity,
-                        (widget.resize_base.0 + input.pointer.x - start_x).max(180.0),
-                        (widget.resize_base.1 + input.pointer.y - start_y).max(120.0),
+                        widget.resize_base.0 + input.pointer.x - start_x,
+                        widget.resize_base.1 + input.pointer.y - start_y,
                     );
                 }
                 if input.primary_released {
@@ -889,8 +894,8 @@ fn resize_widget(world: &mut World, entity: Entity, width: f32, height: f32) {
     else {
         return;
     };
-    layout.width = UiDimension::Length(width);
-    layout.height = UiDimension::Length(height);
+    layout.width = UiDimension::Length(width.max(MIN_FLOATING_WINDOW_WIDTH));
+    layout.height = UiDimension::Length(height.max(MIN_FLOATING_WINDOW_HEIGHT));
     let _ = world.attach_component(&entity, layout);
     mark_dirty(world, entity, UiDirty::LAYOUT | UiDirty::PAINT);
 }

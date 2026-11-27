@@ -142,6 +142,17 @@ struct LayoutNode {
     text: Option<TextMeasureData>,
 }
 
+/// Inherited clipping for a layout node.
+///
+/// `clip` is the effective content boundary. `overflow` is the same boundary
+/// with floating-window clipping removed so open dropdowns can keep painting
+/// their option list past the window edge.
+#[derive(Clone, Copy, Debug, Default)]
+struct ClipState {
+    clip: Option<UiRect>,
+    overflow: Option<UiRect>,
+}
+
 pub struct UiLayoutEngine {
     taffy: TaffyTree<LayoutNode>,
     node_ids: HashMap<Entity, NodeId>,
@@ -327,7 +338,7 @@ impl UiLayoutEngine {
                         .map(|view| (view.offset.x, view.offset.y))
                 })
                 .unwrap_or((0.0, 0.0));
-            self.write_computed(world, root_node, origin, None, z_base, true);
+            self.write_computed(world, root_node, origin, ClipState::default(), z_base, true);
         }
         clear_layout_dirty(world);
         true
@@ -425,7 +436,7 @@ impl UiLayoutEngine {
         world: &mut World,
         node: NodeId,
         origin: (f32, f32),
-        parent_clip: Option<UiRect>,
+        clips: ClipState,
         z_index: i32,
         parent_visible: bool,
     ) {
@@ -436,21 +447,34 @@ impl UiLayoutEngine {
             return;
         };
         let entity = context.entity;
-        let z_index = world
+        let parent_clip = clips.clip;
+        let overflow_clip = clips.overflow;
+        let widget = world
             .get_component_store::<crate::widgets::UiWidget>()
-            .and_then(|store| {
-                store
-                    .get_component(entity.index)
-                    .map(|widget| match &widget.spec {
-                        crate::widgets::UiWidgetSpec::FloatingWindow { .. } => {
-                            // Keep every child of one window inside a large z band
-                            // so another window's rows cannot interleave with it.
-                            z_index.saturating_mul(1000) + 100_000 + widget.raise
-                        }
-                        crate::widgets::UiWidgetSpec::Modal { .. } => z_index + 1_000_000,
-                        crate::widgets::UiWidgetSpec::Dropdown { open: true, .. } => z_index + 200,
-                        _ => z_index,
-                    })
+            .and_then(|store| store.get_component(entity.index).cloned());
+        let is_floating_window = widget.as_ref().is_some_and(|widget| {
+            matches!(
+                widget.spec,
+                crate::widgets::UiWidgetSpec::FloatingWindow { .. }
+            )
+        });
+        let is_open_dropdown = widget.as_ref().is_some_and(|widget| {
+            matches!(
+                widget.spec,
+                crate::widgets::UiWidgetSpec::Dropdown { open: true, .. }
+            )
+        });
+        let z_index = widget
+            .as_ref()
+            .map(|widget| match &widget.spec {
+                crate::widgets::UiWidgetSpec::FloatingWindow { .. } => {
+                    // Keep every child of one window inside a large z band
+                    // so another window's rows cannot interleave with it.
+                    z_index.saturating_mul(1000) + 100_000 + widget.raise
+                }
+                crate::widgets::UiWidgetSpec::Modal { .. } => z_index + 1_000_000,
+                crate::widgets::UiWidgetSpec::Dropdown { open: true, .. } => z_index + 200,
+                _ => z_index,
             })
             .unwrap_or(z_index);
         let abs = UiRect::new(
@@ -500,10 +524,28 @@ impl UiLayoutEngine {
                 store.get_mut_store().attach(entity.index, *scroll);
             }
         }
-        let clip = if scroll.is_some() {
-            Some(abs.intersect(parent_clip.unwrap_or(abs)).unwrap_or(abs))
-        } else {
-            parent_clip
+        let scroll_clip = scroll.map(|_| abs.intersect(parent_clip.unwrap_or(abs)).unwrap_or(abs));
+        // Open dropdowns paint their option list outside their own bounds, so
+        // they ignore floating-window clipping and keep the clip they had
+        // before entering the window. Scroll containers still win because
+        // their viewport is an explicit content boundary.
+        let clip = match scroll_clip {
+            Some(scroll_clip) => Some(scroll_clip),
+            None if is_open_dropdown => overflow_clip,
+            None => parent_clip,
+        };
+        // A floating window never clips its own paint, but all of its
+        // descendants stay inside the window bounds.
+        let child_clip = match scroll_clip {
+            Some(scroll_clip) => Some(scroll_clip),
+            None if is_floating_window => {
+                Some(abs.intersect(parent_clip.unwrap_or(abs)).unwrap_or(abs))
+            }
+            None => clip,
+        };
+        let child_overflow_clip = match scroll_clip {
+            Some(scroll_clip) => Some(scroll_clip),
+            None => overflow_clip,
         };
         let visible = parent_visible
             && world
@@ -544,7 +586,10 @@ impl UiLayoutEngine {
                 world,
                 child,
                 child_origin,
-                clip,
+                ClipState {
+                    clip: child_clip,
+                    overflow: child_overflow_clip,
+                },
                 z_index + index as i32 + 1,
                 visible,
             );
