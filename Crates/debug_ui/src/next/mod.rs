@@ -857,6 +857,106 @@ mod tests {
     }
 
     #[test]
+    fn floating_windows_clip_all_descendants_after_resize() {
+        let mut world = World::new();
+        let (root, _) = build_document(&mut world).expect("document");
+        set_visible(&mut world, root, true);
+
+        let windows = [
+            ("debug_next_perf_window", "debug_next_perf_scroll"),
+            ("debug_next_console_window", "debug_console_body"),
+            ("debug_render_window", "debug_render_scroll"),
+            ("debug_anim_window", "debug_anim_body"),
+            ("debug_ecs_window", "debug_ecs_body"),
+        ];
+
+        for (window_id, _) in windows {
+            let window = {
+                let forest = world.get_resource::<ignit_ui::UiForest>().unwrap();
+                forest.find(&window_id.into()).unwrap()
+            };
+            let mut layout = world
+                .get_component_store::<ignit_ui::UiLayout>()
+                .unwrap()
+                .get_component(window.index)
+                .cloned()
+                .unwrap();
+            layout.width = ignit_ui::UiDimension::Length(240.0);
+            layout.height = ignit_ui::UiDimension::Length(160.0);
+            world.attach_component(&window, layout).unwrap();
+            mark_dirty(&mut world, window, UiDirty::LAYOUT | UiDirty::PAINT);
+        }
+
+        let mut text = ignit_ui::UiFallbackTextMeasure;
+        ignit_ui::update(&mut world, &mut text);
+        ignit_ui::update(&mut world, &mut text);
+
+        let entities: Vec<_> = windows
+            .iter()
+            .map(|(window_id, descendant_id)| {
+                let forest = world.get_resource::<ignit_ui::UiForest>().unwrap();
+                (
+                    *window_id,
+                    *descendant_id,
+                    forest.find(&(*window_id).into()).unwrap(),
+                    forest.find(&(*descendant_id).into()).unwrap(),
+                )
+            })
+            .collect();
+
+        let nodes = world.get_component_store::<ignit_ui::UiNode>().unwrap();
+        let computed = world.get_component_store::<ignit_ui::UiComputed>().unwrap();
+        for (window_id, descendant_id, window, descendant) in entities {
+            let window_computed = computed.get_component(window.index).unwrap();
+            let window_rect = window_computed.rect;
+            assert_eq!(window_rect.width, 240.0, "{window_id} width");
+            assert_eq!(window_rect.height, 160.0, "{window_id} height");
+
+            let descendant_computed = computed.get_component(descendant.index).unwrap();
+            let clip = descendant_computed
+                .clip
+                .unwrap_or_else(|| panic!("{descendant_id} has no clip"));
+            assert!(
+                clip.is_empty() || window_rect.intersect(clip) == Some(clip),
+                "{descendant_id} clip {clip:?} escapes {window_id} {window_rect:?}"
+            );
+
+            let mut clipped = 0;
+            for entity in world.entities() {
+                let mut cursor = entity;
+                let mut inside = false;
+                while let Some(parent) = nodes
+                    .get_component(cursor.index)
+                    .and_then(|node| node.parent)
+                {
+                    if parent == window {
+                        inside = true;
+                        break;
+                    }
+                    cursor = parent;
+                }
+                if !inside {
+                    continue;
+                }
+                let Some(entity_computed) = computed.get_component(entity.index) else {
+                    continue;
+                };
+                let Some(clip) = entity_computed.clip else {
+                    continue;
+                };
+                clipped += 1;
+                let node = nodes.get_component(entity.index).unwrap();
+                assert!(
+                    clip.is_empty() || window_rect.intersect(clip) == Some(clip),
+                    "{} clip {clip:?} escapes {window_id} {window_rect:?}",
+                    node.id.as_str()
+                );
+            }
+            assert!(clipped > 0, "{window_id} has no clipped descendants");
+        }
+    }
+
+    #[test]
     fn refresh_updates_fps_and_toggles() {
         let mut world = World::new();
         let _ = build_document(&mut world).expect("document");
