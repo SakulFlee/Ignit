@@ -1,7 +1,7 @@
 mod prompt;
 mod template;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
@@ -12,7 +12,8 @@ pub fn run(
     project_path: Option<PathBuf>,
     package: Option<String>,
     template: Option<String>,
-    android: Option<bool>,
+    android: bool,
+    ios: bool,
     engine_repo: Option<String>,
     engine_branch: Option<String>,
     engine_path: Option<PathBuf>,
@@ -31,23 +32,24 @@ pub fn run(
 
     let config = if yes {
         // Non-interactive mode: use defaults or provided values
-        let android_flag = android.unwrap_or(false);
         prompt::non_interactive(
             name,
             package,
             template,
-            android_flag,
+            android,
+            ios,
             engine_repo,
             engine_branch,
             engine_path_str,
         )?
     } else {
-        // Interactive mode: prompt for all values
+        // Interactive mode: prompt for the general project settings
         prompt::interactive(
             name,
             package,
             template,
             android,
+            ios,
             engine_repo,
             engine_branch,
             engine_path_str,
@@ -84,20 +86,7 @@ pub fn run(
 
     println!("\nProject '{}' created successfully!", config.project_name);
 
-    // Auto-run init android if requested
-    if config.generate_android {
-        println!("\nInitializing Android project...");
-
-        // Save current directory and change to project directory
-        let original_dir = std::env::current_dir()?;
-        std::env::set_current_dir(&project_dir)?;
-
-        // Run init android
-        crate::android::project::init()?;
-
-        // Change back to original directory
-        std::env::set_current_dir(original_dir)?;
-    }
+    generate_platform_projects(&project_dir, &config)?;
 
     println!("\nNext steps:");
     println!("  cd {}", project_dir.display());
@@ -107,14 +96,44 @@ pub fn run(
         println!("  nix-shell -p cargo pkg-config systemd wayland libxkbcommon vulkan-loader mesa");
     }
 
-    if config.generate_android {
-        println!("  ignit build android");
-    } else {
-        println!("  ignit build");
-    }
+    println!("  ignit build");
+    println!("  ignit build android");
 
     #[cfg(target_os = "macos")]
     println!("  ignit build ios");
 
     Ok(())
+}
+
+/// Generates any platform projects requested with `--android` or `--ios`.
+fn generate_platform_projects(project_dir: &Path, config: &prompt::ProjectConfig) -> Result<()> {
+    if !config.generate_android && !config.generate_ios {
+        return Ok(());
+    }
+
+    let original_dir = std::env::current_dir()?;
+    std::env::set_current_dir(project_dir)?;
+
+    let result = (|| -> Result<()> {
+        if config.generate_android {
+            println!("\nInitializing Android project...");
+            crate::android::project::init()?;
+        }
+
+        if config.generate_ios {
+            #[cfg(target_os = "macos")]
+            {
+                println!("\nInitializing iOS project...");
+                crate::ios::project::init(None, false)?;
+            }
+
+            #[cfg(not(target_os = "macos"))]
+            println!("\nSkipping iOS project generation: it requires macOS with Xcode.");
+        }
+
+        Ok(())
+    })();
+
+    std::env::set_current_dir(original_dir)?;
+    result
 }

@@ -103,10 +103,16 @@ simulator architecture, generates the Xcode project on first use, and copies the
 project's `Assets/` directory into the app bundle.
 
 ```shell
-ignit init-ios          # optional; `ignit build ios` generates it on demand
+ignit init my-game --template minimal-3d --ios
 ignit build ios         # simulator, debug
 ignit run ios           # boot, install, launch, and stream stdout
 ```
+
+`ignit init` no longer prompts for platform setup. Pass `--android` and/or
+`--ios` to generate those native projects immediately; `ignit build android` and
+`ignit build ios` generate them on demand otherwise. Android SDK/NDK setup and
+the values in `Ignit.toml` are applied when the Android build runs. `init-ios`
+remains available for an existing project.
 
 Inside the engine workspace, pass the package explicitly, for example
 `ignit build ios --package template_minimal_3d`.

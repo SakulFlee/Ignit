@@ -89,9 +89,12 @@ enum Commands {
         /// Template to use (minimal-3d, all-in-one, minimal-2d)
         #[arg(short, long)]
         template: Option<String>,
-        /// Enable Android support
+        /// Generate the Android project during init
         #[arg(long)]
-        android: Option<bool>,
+        android: bool,
+        /// Generate the iOS project during init (macOS only)
+        #[arg(long)]
+        ios: bool,
         /// Custom engine git repository (overrides the source menu)
         #[arg(long, conflicts_with = "engine_path")]
         engine_repo: Option<String>,
@@ -176,6 +179,7 @@ fn main() -> Result<()> {
             package,
             template,
             android,
+            ios,
             engine_repo,
             engine_branch,
             engine_path,
@@ -188,6 +192,7 @@ fn main() -> Result<()> {
             package,
             template,
             android,
+            ios,
             engine_repo,
             engine_branch,
             engine_path,
@@ -269,6 +274,24 @@ mod tests {
         features.apply(&mut args);
         assert_eq!(args, ["run"]);
         assert!(features.is_empty());
+    }
+
+    #[test]
+    fn init_accepts_platform_generation_flags() {
+        let cli = Cli::try_parse_from(["ignit", "init", "demo", "--android", "--ios"])
+            .expect("init flags parse");
+        let Commands::Init { android, ios, .. } = cli.command else {
+            panic!("expected init");
+        };
+        assert!(android);
+        assert!(ios);
+
+        let cli = Cli::try_parse_from(["ignit", "init", "demo"]).expect("init parse");
+        let Commands::Init { android, ios, .. } = cli.command else {
+            panic!("expected init");
+        };
+        assert!(!android);
+        assert!(!ios);
     }
 
     #[test]

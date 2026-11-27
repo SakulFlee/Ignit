@@ -168,6 +168,9 @@ fn generate_cargo_toml(project_dir: &Path, config: &ProjectConfig) -> Result<()>
 }
 
 fn generate_ignit_toml(project_dir: &Path, config: &ProjectConfig) -> Result<()> {
+    let android = crate::config::AndroidConfig::default();
+    let ios = crate::config::IosConfig::default();
+
     let content = format!(
         r#"[ignit]
 
@@ -189,12 +192,13 @@ screen_orientation = "sensorLandscape"
 
 [ios]
 bundle_id = "{package}"
-deployment_target = "16.0"
+deployment_target = "{deployment_target}"
 app_name = "{app_name}"
 "#,
         package = config.package_name,
-        min_sdk = config.min_sdk,
-        target_sdk = config.target_sdk,
+        min_sdk = android.min_sdk(),
+        target_sdk = android.target_sdk(),
+        deployment_target = ios.deployment_target(),
         app_name = config.project_name,
     );
 
@@ -270,10 +274,9 @@ mod tests {
         ProjectConfig {
             project_name: "demo".to_string(),
             package_name: "com.example.demo".to_string(),
-            min_sdk: 21,
-            target_sdk: 34,
             template: "minimal-3d".to_string(),
             generate_android: false,
+            generate_ios: false,
             engine_source,
         }
     }
