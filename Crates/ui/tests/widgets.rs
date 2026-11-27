@@ -1,8 +1,8 @@
 use ignit_ecs::{Entity, World};
 use ignit_ui::{
     UiBuilder, UiClipboardResource, UiComputed, UiDimension, UiDocumentNode, UiDrawCommand,
-    UiDrawList, UiFocusState, UiInputState, UiLayout, UiPoint, UiSize, UiText, UiTextMeasure,
-    UiTextStyle, UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec, init, update,
+    UiDrawList, UiFocusState, UiInputState, UiLayout, UiPoint, UiRect, UiSize, UiText,
+    UiTextMeasure, UiTextStyle, UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec, init, update,
 };
 
 struct TenPixelMeasure;
@@ -61,6 +61,22 @@ fn computed(world: &World, id: &str) -> UiComputed {
         .find(&id.into())
         .unwrap();
     rect(world, entity)
+}
+
+fn set_view_size(world: &mut World, id: &str, width: f32, height: f32) {
+    let entity = world
+        .get_resource::<ignit_ui::UiForest>()
+        .unwrap()
+        .find(&id.into())
+        .unwrap();
+    let views = world
+        .get_component_store_mut::<UiView>()
+        .expect("view store");
+    views
+        .get_mut_store()
+        .get_component_mut(entity.index)
+        .expect("root view")
+        .size = UiSize::new(width, height);
 }
 
 #[test]
@@ -947,6 +963,117 @@ fn floating_window_resize_clamps_to_minimum_size() {
     let rect = computed(&world, "min_window");
     assert_eq!(rect.rect.width, ignit_ui::MIN_FLOATING_WINDOW_WIDTH);
     assert_eq!(rect.rect.height, ignit_ui::MIN_FLOATING_WINDOW_HEIGHT);
+}
+
+#[test]
+fn floating_window_is_pulled_back_after_viewport_shrink() {
+    let mut world = World::new();
+    init(&mut world);
+    let mut root = UiDocumentNode::new("shrink_root")
+        .layout(UiLayout::column().width_full().height_full())
+        .child(
+            UiDocumentNode::new("shrink_window")
+                .layout(
+                    UiLayout::column()
+                        .width(100.0)
+                        .height(80.0)
+                        .absolute()
+                        .inset(ignit_ui::UiEdges {
+                            left: UiDimension::Length(1200.0),
+                            right: UiDimension::Auto,
+                            top: UiDimension::Length(24.0),
+                            bottom: UiDimension::Auto,
+                        }),
+                )
+                .widget(UiWidgetSpec::FloatingWindow {
+                    title: "Shrink".into(),
+                    open: true,
+                }),
+        );
+    root.view = Some(UiView::new(1400.0, 900.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+
+    assert_eq!(
+        computed(&world, "shrink_window").rect,
+        UiRect::new(1200.0, 24.0, 100.0, 80.0)
+    );
+
+    set_view_size(&mut world, "shrink_root", 800.0, 600.0);
+    update(&mut world, &mut text);
+
+    let window = computed(&world, "shrink_window");
+    assert_eq!(window.rect, UiRect::new(700.0, 24.0, 100.0, 80.0));
+    assert!(
+        window.rect.x >= 0.0 && window.rect.x + window.rect.width <= 800.0,
+        "window {:?} should stay inside the 800-wide view",
+        window.rect
+    );
+
+    let entity = world
+        .get_resource::<ignit_ui::UiForest>()
+        .unwrap()
+        .find(&"shrink_window".into())
+        .unwrap();
+    let layout = world
+        .get_component_store::<UiLayout>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!(layout.inset.left, UiDimension::Length(700.0));
+    assert_eq!(layout.inset.top, UiDimension::Length(24.0));
+}
+
+#[test]
+fn floating_window_shrinks_to_fit_the_viewport() {
+    let mut world = World::new();
+    init(&mut world);
+    let mut root = UiDocumentNode::new("fit_root")
+        .layout(UiLayout::column().size(800.0, 600.0))
+        .child(
+            UiDocumentNode::new("fit_window")
+                .layout(
+                    UiLayout::column()
+                        .width(1200.0)
+                        .height(900.0)
+                        .absolute()
+                        .inset(ignit_ui::UiEdges {
+                            left: UiDimension::Length(50.0),
+                            right: UiDimension::Auto,
+                            top: UiDimension::Length(50.0),
+                            bottom: UiDimension::Auto,
+                        }),
+                )
+                .widget(UiWidgetSpec::FloatingWindow {
+                    title: "Fit".into(),
+                    open: true,
+                }),
+        );
+    root.view = Some(UiView::new(800.0, 600.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+
+    let window = computed(&world, "fit_window");
+    assert_eq!(window.rect, UiRect::new(0.0, 0.0, 800.0, 600.0));
+
+    let entity = world
+        .get_resource::<ignit_ui::UiForest>()
+        .unwrap()
+        .find(&"fit_window".into())
+        .unwrap();
+    let layout = world
+        .get_component_store::<UiLayout>()
+        .unwrap()
+        .get_component(entity.index)
+        .cloned()
+        .unwrap();
+    assert_eq!(layout.width, UiDimension::Length(800.0));
+    assert_eq!(layout.height, UiDimension::Length(600.0));
+    assert_eq!(layout.inset.left, UiDimension::Length(0.0));
+    assert_eq!(layout.inset.top, UiDimension::Length(0.0));
 }
 
 #[test]

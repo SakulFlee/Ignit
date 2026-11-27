@@ -736,10 +736,17 @@ pub fn update_widgets(world: &mut World, input: &UiInputState, measure: &mut dyn
                     );
                 }
                 if input.primary_released {
+                    let was_interacting = widget.dragging || widget.resizing;
                     widget.dragging = false;
                     widget.drag_start = None;
                     widget.resizing = false;
                     widget.resize_start = None;
+                    if was_interacting {
+                        // The viewport clamp is skipped while the pointer owns
+                        // the window. Re-run layout once the interaction ends so
+                        // an off-screen position or oversize is pulled back.
+                        mark_dirty(world, entity, UiDirty::LAYOUT);
+                    }
                 }
             }
             UiWidgetSpec::Modal { open } => {
