@@ -217,6 +217,12 @@ fn build_showcase(world: &mut World) {
                             UiLayout::default()
                                 .width(190.0)
                                 .height(38.0)
+                                .padding_edges(UiEdges {
+                                    left: UiLengthPercentage::Length(8.0),
+                                    right: UiLengthPercentage::Length(8.0),
+                                    top: UiLengthPercentage::Zero,
+                                    bottom: UiLengthPercentage::Zero,
+                                })
                                 .shrink(0.0),
                         )
                         .widget(UiWidgetSpec::RadioGroup {

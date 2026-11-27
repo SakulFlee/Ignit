@@ -22,6 +22,7 @@ use winit::keyboard::KeyCode;
 
 use crate::state::{DebugMessage, DebugUiState, PanelId};
 
+mod animation;
 mod console;
 mod ecs;
 mod rendering;
@@ -150,6 +151,10 @@ impl UiSystem for DebugUiNextSystem {
                     world,
                 );
                 crate::handle_debug_message_world(DebugMessage::HidePanel(PanelId::Ecs), world);
+                crate::handle_debug_message_world(
+                    DebugMessage::HidePanel(PanelId::Animation),
+                    world,
+                );
             }
             debug!("debug UI next {}", if visible { "shown" } else { "hidden" });
         }
@@ -165,6 +170,7 @@ impl UiSystem for DebugUiNextSystem {
         refresh_performance(world);
         console::refresh(world);
         rendering::refresh(world);
+        animation::refresh(world);
         ecs::refresh(world);
     }
 }
@@ -175,7 +181,7 @@ fn handle_events(world: &mut World, panel: Entity) {
         .map(|events| events.read().cloned().collect())
         .unwrap_or_default();
     for event in events {
-        if rendering::handle_event(world, &event) {
+        if animation::handle_event(world, &event) || rendering::handle_event(world, &event) {
             continue;
         }
         if ecs::handle_event(world, &event) {
@@ -220,6 +226,12 @@ fn handle_events(world: &mut World, panel: Entity) {
             UiEvent::Action { action, .. } if action.name == "debug_toggle_rendering" => {
                 crate::handle_debug_message_world(
                     DebugMessage::TogglePanel(PanelId::Rendering),
+                    world,
+                );
+            }
+            UiEvent::Action { action, .. } if action.name == "debug_toggle_animation" => {
+                crate::handle_debug_message_world(
+                    DebugMessage::TogglePanel(PanelId::Animation),
                     world,
                 );
             }
@@ -400,6 +412,7 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
         .child(panel)
         .child(console::build())
         .child(rendering::build())
+        .child(animation::build())
         .child(ecs::build());
     root.view = Some(UiView::new(1280.0, 720.0));
 
@@ -505,6 +518,12 @@ fn toolbar() -> UiDocumentNode {
             "debug_toolbar_rendering",
             "Rendering",
             "debug_toggle_rendering",
+            100.0,
+        ),
+        (
+            "debug_toolbar_animation",
+            "Animation",
+            "debug_toggle_animation",
             100.0,
         ),
     ] {
@@ -797,6 +816,7 @@ mod tests {
         let mut world = World::new();
         let (root, _) = build_document(&mut world).expect("document");
         crate::handle_debug_message_world(DebugMessage::HidePanel(PanelId::Ecs), &mut world);
+        crate::handle_debug_message_world(DebugMessage::HidePanel(PanelId::Animation), &mut world);
         set_visible(&mut world, root, true);
         let mut text = ignit_ui::UiFallbackTextMeasure;
         ignit_ui::update(&mut world, &mut text);
