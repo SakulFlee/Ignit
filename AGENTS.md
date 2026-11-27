@@ -293,14 +293,14 @@ Keep the flake minimal. If the pinned git dependencies or toolchain drift, prefe
 | System | Files | Lint/test behavior |
 |--------|-------|--------------------|
 | Forgejo | `.forgejo/workflows/` | `cargo fmt --all -- --check`, `cargo clippy -- -D warnings` on PRs and pushes to `main`; PRs may auto-fix and push a `[ci]` commit. Tests run for all PRs: directly changed crates only, with the full suite for pushes to `main`, PRs targeting `release/**`, and manual runs. Release tags use `.forgejo/workflows/release.yml`, which only builds release artifacts. Forgejo write-isolates `pull_request` caches, so the full `main` run seeds the shared cache that PRs restore. |
-| GitHub | `.github/workflows/main.yml`, `.github/workflows/release.yml` | `main.yml` runs `cargo fmt --all -- --check`, `cargo clippy -- -D warnings`, and `cargo test --no-fail-fast` for branches and PRs. Release tags use `release.yml`, which builds and publishes artifacts. |
+| GitHub | `.github/workflows/main.yml`, `.github/workflows/release.yml` | `main.yml` runs `cargo fmt --all -- --check`, `cargo clippy -- -D warnings`, `cargo test --no-fail-fast`, and a `macos-latest` iOS simulator check for branches and PRs. Release tags use `release.yml`, which builds and publishes artifacts, builds the desktop macOS targets, and validates an iOS simulator build on a macOS runner. |
 | TeamCity | `.teamcity/settings.kts` | `cargo fmt --all -- --check`, `cargo clippy -- -D warnings`, `cargo test --no-fail-fast`. |
 
 All CI systems use the toolchain pinned in `rust-toolchain.toml` through rustup.
 
 ### Release artifacts
 
-Release tags (`v*`) run the shared `.github/workflows/release-shared.yml` from both forges. Release builds do not run lint or tests; those stay in the PR/`main` pipelines. A release publishes:
+Release tags (`v*`) run the shared `.github/workflows/release-shared.yml` from both forges. Release builds do not run lint or tests; those stay in the PR/`main` pipelines. GitHub also builds the desktop macOS targets and validates an iOS simulator build, while Forgejo skips those jobs because it has no macOS runners. A release publishes:
 
 - raw `ignit-cli-<version>-<target>` binaries
 - one `ignit-examples-<version>-<target>.tar.gz` (Unix) or `.zip` (Windows) per desktop target containing every example; only `template_all_in_one` carries its runtime assets
@@ -354,7 +354,7 @@ Treat the current WASM status as unverified: `Crates/ecs/src/system/runner.rs` u
 - **The shadow depth shader is embedded.** It lives in `Crates/shadow/src/shadow_depth.wgsl`.
 - **iOS is simulator-only.** `ignit build ios` builds for the iOS Simulator, and `ignit run ios --device` takes a simulator UDID, not a physical device. Device builds and code signing are not wired up; macOS with Xcode is required and engine rendering on iOS is not verified yet. iOS app crates need `staticlib` in `[lib] crate-type`.
 - **`App` state hooks.** `CombinedModule` forwards `setup` and `register_overlays`, but not per-module `save_state`/`restore_state`/`clear_state`.
-- **CI coverage is uneven.** Linux is the primary target; Windows/macOS/Android/iOS paths exist but are not equally covered. iOS is not built in CI; verifying it needs a macOS machine with Xcode.
+- **CI coverage is uneven.** Linux is the primary target; Windows/macOS/Android/iOS paths exist but are not equally covered. GitHub runs the macOS desktop and iOS simulator checks; Forgejo has no macOS or Windows runners and cannot run them.
 
 ---
 
