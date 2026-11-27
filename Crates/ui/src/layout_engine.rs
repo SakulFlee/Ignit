@@ -153,6 +153,18 @@ struct ClipState {
     overflow: Option<UiRect>,
 }
 
+/// Intersects `bounds` with an inherited clip without dropping the clip when
+/// the two rectangles do not overlap. Falling back to `bounds` would let an
+/// overflowing scroll container or window paint outside its ancestor again.
+fn clip_to_parent(bounds: UiRect, parent: Option<UiRect>) -> UiRect {
+    match parent {
+        Some(parent) => bounds
+            .intersect(parent)
+            .unwrap_or(UiRect::new(bounds.x, bounds.y, 0.0, 0.0)),
+        None => bounds,
+    }
+}
+
 pub struct UiLayoutEngine {
     taffy: TaffyTree<LayoutNode>,
     node_ids: HashMap<Entity, NodeId>,
@@ -524,7 +536,7 @@ impl UiLayoutEngine {
                 store.get_mut_store().attach(entity.index, *scroll);
             }
         }
-        let scroll_clip = scroll.map(|_| abs.intersect(parent_clip.unwrap_or(abs)).unwrap_or(abs));
+        let scroll_clip = scroll.map(|_| clip_to_parent(abs, parent_clip));
         // Open dropdowns paint their option list outside their own bounds, so
         // they ignore floating-window clipping and keep the clip they had
         // before entering the window. Scroll containers still win because
@@ -538,9 +550,7 @@ impl UiLayoutEngine {
         // descendants stay inside the window bounds.
         let child_clip = match scroll_clip {
             Some(scroll_clip) => Some(scroll_clip),
-            None if is_floating_window => {
-                Some(abs.intersect(parent_clip.unwrap_or(abs)).unwrap_or(abs))
-            }
+            None if is_floating_window => Some(clip_to_parent(abs, parent_clip)),
             None => clip,
         };
         let child_overflow_clip = match scroll_clip {
