@@ -108,6 +108,12 @@ fn create_replacements(config: &config::IosConfig, lib_name: &str) -> Vec<(Strin
         ),
         ("@@@APP_NAME@@@".to_string(), config.app_name().to_string()),
         ("@@@LIB_NAME@@@".to_string(), lib_name.to_string()),
+        (
+            "@@@RUST_TARGET@@@".to_string(),
+            super::simulator_target()
+                .unwrap_or("aarch64-apple-ios-sim")
+                .to_string(),
+        ),
     ]
 }
 
@@ -163,10 +169,6 @@ const INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
-	<key>UIRequiredDeviceCapabilities</key>
-	<array>
-		<string>metal</string>
-	</array>
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UISupportedInterfaceOrientations</key>
@@ -199,7 +201,7 @@ void ios_main(void);
 "#;
 
 const LAUNCH_SCREEN_STORYBOARD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="21701" targetRuntime="AppleSDK" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="01J-lp-oVM">
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="21701" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="01J-lp-oVM">
     <scenes>
         <scene sceneID="EHf-IW-A2E">
             <objects>

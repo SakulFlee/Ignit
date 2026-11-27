@@ -112,6 +112,9 @@ enum Commands {
     InitAndroid,
     /// Initialize an Xcode project for an existing Ignit project
     InitIos {
+        /// Package to generate the project for (workspace projects only)
+        #[arg(short, long)]
+        package: Option<String>,
         /// Regenerate the Xcode project, overwriting the current one
         #[arg(long)]
         force: bool,
@@ -192,7 +195,7 @@ fn main() -> Result<()> {
             no_git,
         ),
         Commands::InitAndroid => android::project::init(),
-        Commands::InitIos { force } => ios::project::init(None, force),
+        Commands::InitIos { package, force } => ios::project::init(package.as_deref(), force),
         Commands::Build {
             platform,
             package,

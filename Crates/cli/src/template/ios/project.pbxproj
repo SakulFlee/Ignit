@@ -130,6 +130,7 @@
 /* Begin PBXShellScriptBuildPhase section */
 		AA000017 /* Build Rust library */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -144,10 +145,11 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ \"$IGNIT_SKIP_RUST_BUILD\" = \"1\" ]; then\n  echo \"Ignit: skipping Rust build (already built by ignit)\"\n  exit 0\nfi\n\nif ! command -v cargo >/dev/null 2>&1; then\n  echo \"error: cargo not found. Install Rust from https://rustup.rs\" >&2\n  exit 1\nfi\n\nif [ -z \"$IGNIT_RUST_TARGET\" ]; then\n  echo \"error: IGNIT_RUST_TARGET is not set. Build with 'ignit build ios' or set it manually.\" >&2\n  exit 1\nfi\n\nPACKAGE_ARG=''\nif [ -n \"$IGNIT_PACKAGE\" ]; then\n  PACKAGE_ARG=\"--package $IGNIT_PACKAGE\"\nfi\n\nRELEASE_ARG=''\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n  RELEASE_ARG='--release'\nfi\n\necho \"Ignit: cargo build --lib --target $IGNIT_RUST_TARGET $PACKAGE_ARG $RELEASE_ARG\"\n# shellcheck disable=SC2086\ncargo build --lib --target \"$IGNIT_RUST_TARGET\" $PACKAGE_ARG $RELEASE_ARG\n";
+			shellScript = "if [ \"$IGNIT_SKIP_RUST_BUILD\" = \"1\" ]; then\n  echo \"Ignit: skipping Rust build (already built by ignit)\"\n  exit 0\nfi\n\nif ! command -v cargo >/dev/null 2>&1; then\n  echo \"error: cargo not found. Install Rust from https://rustup.rs\" >&2\n  exit 1\nfi\n\ncd \"$SRCROOT/..\" || exit 1\n\nif [ -z \"$IGNIT_RUST_TARGET\" ]; then\n  if [ \"$PLATFORM_NAME\" = \"iphoneos\" ]; then\n    IGNIT_RUST_TARGET=\"aarch64-apple-ios\"\n  else\n    case \"$(uname -m)\" in\n      x86_64) IGNIT_RUST_TARGET=\"x86_64-apple-ios\" ;;\n      arm64) IGNIT_RUST_TARGET=\"aarch64-apple-ios-sim\" ;;\n      *) echo \"error: unsupported host architecture $(uname -m)\" >&2; exit 1 ;;\n    esac\n  fi\nfi\n\nPACKAGE_ARG=''\nif [ -n \"$IGNIT_PACKAGE\" ]; then\n  PACKAGE_ARG=\"--package $IGNIT_PACKAGE\"\nfi\n\nRELEASE_ARG=''\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n  RELEASE_ARG='--release'\nfi\n\necho \"Ignit: cargo build --lib --target $IGNIT_RUST_TARGET $PACKAGE_ARG $RELEASE_ARG\"\n# shellcheck disable=SC2086\ncargo build --lib --target \"$IGNIT_RUST_TARGET\" $PACKAGE_ARG $RELEASE_ARG\n";
 		};
 		AA000026 /* Copy Assets */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -162,7 +164,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ -n \"$IGNIT_ASSET_DIR\" ] && [ -d \"$IGNIT_ASSET_DIR\" ]; then\n  DEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\n  mkdir -p \"$DEST\"\n  echo \"Ignit: copying assets from $IGNIT_ASSET_DIR\"\n  rsync -a \"$IGNIT_ASSET_DIR/\" \"$DEST/\"\nelse\n  echo \"Ignit: no asset directory configured; skipping asset copy\"\nfi\n";
+			shellScript = "if [ -z \"$IGNIT_ASSET_DIR\" ]; then\n  IGNIT_ASSET_DIR=\"$SRCROOT/../Assets\"\nfi\n\nif [ -d \"$IGNIT_ASSET_DIR\" ]; then\n  DEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\n  mkdir -p \"$DEST\"\n  echo \"Ignit: copying assets from $IGNIT_ASSET_DIR\"\n  rsync -a \"$IGNIT_ASSET_DIR/\" \"$DEST/\"\nelse\n  echo \"Ignit: no asset directory configured; skipping asset copy\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -185,6 +187,9 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
+				IGNIT_ASSET_DIR = "$(SRCROOT)/../Assets";
+				IGNIT_LIB_DIR = "$(SRCROOT)/../target/@@@RUST_TARGET@@@/debug";
+				IGNIT_RUST_TARGET = "@@@RUST_TARGET@@@";
 				INFOPLIST_FILE = "@@@APP_NAME@@@/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = @@@DEPLOYMENT_TARGET@@@;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -217,6 +222,8 @@
 					Security,
 					"-framework",
 					IOKit,
+					"-framework",
+					IOSurface,
 					"-framework",
 					GameController,
 				);
@@ -237,6 +244,9 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
+				IGNIT_ASSET_DIR = "$(SRCROOT)/../Assets";
+				IGNIT_LIB_DIR = "$(SRCROOT)/../target/@@@RUST_TARGET@@@/release";
+				IGNIT_RUST_TARGET = "@@@RUST_TARGET@@@";
 				INFOPLIST_FILE = "@@@APP_NAME@@@/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = @@@DEPLOYMENT_TARGET@@@;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -269,6 +279,8 @@
 					Security,
 					"-framework",
 					IOKit,
+					"-framework",
+					IOSurface,
 					"-framework",
 					GameController,
 				);

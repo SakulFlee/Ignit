@@ -191,12 +191,24 @@ impl AppContext {
         instance: &Instance,
         surface: &Surface,
     ) -> Result<Adapter, RequestAdapterError> {
-        block_on(instance.request_adapter(&RequestAdapterOptions {
+        let adapter = block_on(instance.request_adapter(&RequestAdapterOptions {
             power_preference: PowerPreference::HighPerformance,
             force_fallback_adapter: false,
             compatible_surface: Some(surface),
             apply_limit_buckets: false,
-        }))
+        }));
+
+        if adapter.is_err() {
+            let available = block_on(instance.enumerate_adapters(Backends::all()));
+            if available.is_empty() {
+                log::error!(
+                    "No GPU adapter is available. macOS and iOS render through Metal; \
+                     virtual machines without GPU acceleration cannot present a frame."
+                );
+            }
+        }
+
+        adapter
     }
 
     fn make_device_and_queue(adapter: &Adapter) -> Result<(Device, Queue), RequestDeviceError> {

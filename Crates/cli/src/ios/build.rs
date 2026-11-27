@@ -43,7 +43,7 @@ pub fn build(package_name: Option<&str>, release: bool, features: &CargoFeatures
     // natively, so an Intel Mac needs x86_64-apple-ios and an Apple Silicon Mac
     // needs aarch64-apple-ios-sim. Using the device target here produces a
     // static library Xcode cannot link into a simulator app.
-    let rust_target = simulator_target()?;
+    let rust_target = super::simulator_target()?;
     ensure_ios_target(rust_target)?;
 
     println!("\nBuilding Rust static library...");
@@ -112,7 +112,7 @@ pub fn build(package_name: Option<&str>, release: bool, features: &CargoFeatures
         "generic/platform=iOS Simulator".to_string(),
         format!("SYMROOT={}", build_root.join("Products").display()),
         format!("OBJROOT={}", build_root.join("Intermediates").display()),
-        format!("ARCHS={}", simulator_arch()?),
+        format!("ARCHS={}", super::simulator_arch()?),
         "ONLY_ACTIVE_ARCH=YES".to_string(),
         "CODE_SIGNING_ALLOWED=NO".to_string(),
         "CODE_SIGNING_REQUIRED=NO".to_string(),
@@ -150,32 +150,6 @@ pub fn build(package_name: Option<&str>, release: bool, features: &CargoFeatures
     println!("  Run: ignit run ios");
 
     Ok(())
-}
-
-/// The Rust target triple for the host's iOS simulator.
-fn simulator_target() -> Result<&'static str> {
-    match std::env::consts::ARCH {
-        "x86_64" => Ok("x86_64-apple-ios"),
-        "aarch64" => Ok("aarch64-apple-ios-sim"),
-        other => anyhow::bail!(
-            "Unsupported macOS host architecture '{}'. iOS simulator builds \
-             need an x86_64 or aarch64 Mac.",
-            other
-        ),
-    }
-}
-
-/// The architecture name Xcode expects for the simulator slice.
-fn simulator_arch() -> Result<&'static str> {
-    match std::env::consts::ARCH {
-        "x86_64" => Ok("x86_64"),
-        "aarch64" => Ok("arm64"),
-        other => anyhow::bail!(
-            "Unsupported macOS host architecture '{}'. iOS simulator builds \
-             need an x86_64 or aarch64 Mac.",
-            other
-        ),
-    }
 }
 
 /// Ensure a Rust target is installed, installing it through rustup if needed.
