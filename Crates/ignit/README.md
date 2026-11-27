@@ -60,7 +60,7 @@ The goal of this project is to bridge well established industry-standard techniq
 - ✅ **macOS**: Full support
 - ⚠️ **Web**: Theoretically possible but not currently supported
 - ⚠️ **Android**: Works but requires frequent updates to keep compatible
-- ⚠️ **iOS**: Compiles but untested — boilerplate provided, community testing welcome
+- ⚠️ **iOS**: Simulator builds run through `ignit build ios` / `ignit run ios`; rendering needs a Metal-capable host, and physical-device signing is not wired up yet
 
 ## Getting Started
 
