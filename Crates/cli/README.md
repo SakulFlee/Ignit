@@ -61,7 +61,7 @@ The goal of this project is to bridge well established industry-standard techniq
 - ✅ **macOS**: Full support
 - ⚠️ **Web**: Theoretically possible but not currently supported
 - ⚠️ **Android**: Works but requires frequent updates to keep compatible
-- ⚠️ **iOS**: Simulator builds run through `ignit build ios` / `ignit run ios`; rendering needs a Metal-capable host, and physical-device signing is not wired up yet
+- ⚠️ **iOS**: Simulator build, install, and launch work through `ignit build ios` / `ignit run ios`. Engine rendering is not verified yet and needs a Metal-capable Mac; physical-device builds and signing are not wired up.
 
 ## Getting Started
 
@@ -97,33 +97,6 @@ helmet, and the animated Fox gallery it uses in `Examples/all-in-one/Assets/`.
 [`docs/ui/README.md`](docs/ui/README.md) for authoring, themes, RON documents,
 hot reload, and the iced migration note.
 
-### iOS
-
-iOS builds require macOS with Xcode. The CLI builds a Rust static library for the
-simulator architecture, generates the Xcode project on first use, and copies the
-project's `Assets/` directory into the app bundle.
-
-```shell
-ignit init my-game --template minimal-3d --ios
-ignit build ios         # simulator, debug
-ignit run ios           # boot, install, launch, and stream stdout
-```
-
-`ignit init` no longer prompts for platform setup. Pass `--android` and/or
-`--ios` to generate those native projects immediately; `ignit build android` and
-`ignit build ios` generate them on demand otherwise. When a platform project is
-created lazily, the CLI asks for the missing SDK values in a terminal (or uses
-defaults in CI) and writes them back to `Ignit.toml`. Android SDK/NDK/JDK setup
-still happens during the Android build; iOS uses Xcode's SDK and prompts for the
-deployment target. `init-ios` remains available for an existing project.
-
-Inside the engine workspace, pass the package explicitly, for example
-`ignit build ios --package template_minimal_3d`.
-
-The iOS Simulator renders through Metal, so it needs a Metal-capable Mac; there
-is no software Metal fallback. Physical-device builds and code signing are not
-wired up yet.
-
 Install the CLI from crates.io and create a standalone project:
 
 ```shell
@@ -147,6 +120,36 @@ repository instead:
 ```toml
 ignit = { git = "https://forgejo.sakul-flee.de/SakulFlee/Ignit.git", branch = "main" }
 ```
+
+### iOS
+
+iOS builds require macOS with Xcode. The CLI builds a Rust static library for the
+simulator architecture, generates the Xcode project on first use, and copies the
+project's `Assets/` directory into the app bundle.
+
+```shell
+ignit init my-game --template minimal-3d --ios   # macOS only
+ignit build ios                                  # simulator, debug
+ignit run ios                                    # boot, install, and launch
+ignit run ios --device <simulator-udid>          # pick a specific simulator
+```
+
+`ignit init` does not ask about platform support. Pass `--android` and/or
+`--ios` to generate those native projects immediately; `ignit build android` and
+`ignit build ios` generate them on demand otherwise. When a platform project is
+created lazily by a build or run command, the CLI asks for the missing SDK
+values in a terminal (or uses defaults in CI) and writes them back to
+`Ignit.toml`. Android SDK/NDK/JDK setup still happens during the Android build;
+iOS uses Xcode's SDK and asks for the deployment target when generating on
+demand. `init-ios` remains available for an existing project, and
+`init-ios --force` regenerates it.
+
+Inside the engine workspace, pass the package explicitly, for example
+`ignit build ios --package template_minimal_3d`.
+
+The iOS Simulator renders through Metal, so it needs a Metal-capable Mac; there
+is no software Metal fallback. Engine rendering inside the app is not verified
+yet, and physical-device builds and code signing are not wired up.
 
 ## Nix
 
