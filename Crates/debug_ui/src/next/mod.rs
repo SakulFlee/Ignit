@@ -14,8 +14,8 @@ use ignit_ecs_bridge::{
     DebugSelectedEntity, FpsStats, FrameTimings, PerformanceLogConfig, TimingsHistoryConfig,
 };
 use ignit_ui::{
-    UiAction, UiBuilder, UiDirty, UiDocumentNode, UiEvent, UiGraphSeries, UiInteraction, UiLayout,
-    UiStyle, UiText, UiView, UiWidget, UiWidgetSpec,
+    UiAction, UiBuilder, UiDirty, UiDocumentNode, UiEvent, UiGraphSeries, UiGraphStyle,
+    UiInteraction, UiLayout, UiStyle, UiText, UiView, UiWidget, UiWidgetSpec,
 };
 use ignit_ui_render::UiTextResource;
 use log::{debug, warn};
@@ -29,10 +29,13 @@ mod ecs;
 mod rendering;
 
 const REFRESH: Duration = Duration::from_millis(33);
+/// Graphs are heavier than the table and stable axes make them readable at a
+/// lower cadence. Values and row highlights still refresh at [`REFRESH`].
+const GRAPH_REFRESH: Duration = Duration::from_millis(100);
 const PANEL_ID: &str = "debug_next_perf_window";
 const ROOT_ID: &str = "debug_next_root";
-/// At most this many graphs are shown at once.
-const GRAPH_SLOTS: usize = 3;
+/// One slot per selectable series, hidden until it is pinned.
+const GRAPH_SLOTS: usize = ignit_ecs_bridge::TIMING_STAGES.len() + 2;
 /// Bars drawn per series. Longer windows are aggregated into this many
 /// buckets so the bars keep their width instead of squeezing more samples in.
 const MAX_GRAPH_SAMPLES: usize = 120;
@@ -41,10 +44,14 @@ const ROLLING_WINDOW_SECS: f64 = 1.0;
 /// Values above this are treated as timestamp-readback garbage.
 const MAX_GRAPH_VALUE: f32 = 10_000.0;
 
-const LAST_COLOR: [f32; 4] = [0.50, 0.90, 0.60, 1.0];
+const GOOD_COLOR: [f32; 4] = [0.50, 0.90, 0.60, 1.0];
+const WARN_COLOR: [f32; 4] = [1.00, 0.80, 0.40, 1.0];
+const BAD_COLOR: [f32; 4] = [1.00, 0.50, 0.45, 1.0];
+
+const LAST_COLOR: [f32; 4] = GOOD_COLOR;
 const AVG_COLOR: [f32; 4] = [0.40, 0.80, 1.00, 1.0];
 const MIN_COLOR: [f32; 4] = [0.45, 0.60, 1.00, 1.0];
-const MAX_COLOR: [f32; 4] = [1.00, 0.80, 0.40, 1.0];
+const MAX_COLOR: [f32; 4] = WARN_COLOR;
 
 const METRICS: [GraphMetric; 5] = [
     GraphMetric::Last,
@@ -52,6 +59,13 @@ const METRICS: [GraphMetric; 5] = [
     GraphMetric::Min,
     GraphMetric::Max,
     GraphMetric::All,
+];
+
+const CHART_STYLES: [UiGraphStyle; 4] = [
+    UiGraphStyle::Bars,
+    UiGraphStyle::Line,
+    UiGraphStyle::Area,
+    UiGraphStyle::Scatter,
 ];
 
 /// New-UI debug overlay. Add after `UiRenderModule`.
@@ -142,6 +156,7 @@ impl Module for DebugUiNextModule {
                 panel: root.panel,
             },
             last_refresh: Instant::now() - REFRESH,
+            last_graph_refresh: Instant::now() - GRAPH_REFRESH,
             last_visible: None,
         })]
     }
@@ -150,6 +165,7 @@ impl Module for DebugUiNextModule {
 struct DebugUiNextSystem {
     state: DebugUiNextRoot,
     last_refresh: Instant,
+    last_graph_refresh: Instant,
     last_visible: Option<bool>,
 }
 
@@ -190,7 +206,11 @@ impl UiSystem for DebugUiNextSystem {
             return;
         }
         self.last_refresh = Instant::now();
-        refresh_performance(world);
+        let graph_due = self.last_graph_refresh.elapsed() >= GRAPH_REFRESH;
+        if graph_due {
+            self.last_graph_refresh = Instant::now();
+        }
+        refresh_performance(world, graph_due);
         console::refresh(world);
         rendering::refresh(world);
         animation::refresh(world);
@@ -314,6 +334,14 @@ fn handle_events(world: &mut World, panel: Entity) {
 }
 
 fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
+    let initial_style = world
+        .get_resource::<DebugUiState>()
+        .map_or_else(UiGraphStyle::default, |state| state.graph_style);
+    let initial_chart = CHART_STYLES
+        .iter()
+        .position(|style| *style == initial_style)
+        .unwrap_or(0);
+
     let mut content = UiDocumentNode::new("debug_next_perf_scroll")
         .layout(
             UiLayout::column()
@@ -396,6 +424,25 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
                 .style(small_style(false)),
         )
         .child(
+            UiDocumentNode::new("debug_perf_chart_label")
+                .text("chart")
+                .style(small_style(true)),
+        )
+        .child(
+            UiDocumentNode::new("debug_perf_chart")
+                .layout(UiLayout::default().width_full().height(38.0).shrink(0.0))
+                .widget(UiWidgetSpec::Dropdown {
+                    options: CHART_STYLES
+                        .iter()
+                        .map(|style| chart_label(*style).to_string())
+                        .collect(),
+                    selected: initial_chart,
+                    open: false,
+                })
+                .focusable()
+                .style(small_style(false)),
+        )
+        .child(
             UiDocumentNode::new("debug_perf_graph_empty")
                 .text("no graphs pinned — click a row")
                 .style(small_style(true)),
@@ -407,7 +454,7 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
                 .layout(
                     UiLayout::column()
                         .width_full()
-                        .height(108.0)
+                        .height(126.0)
                         .gap(2.0)
                         .shrink(0.0),
                 )
@@ -423,7 +470,13 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
                         .widget(UiWidgetSpec::Graph {
                             series: Vec::new(),
                             max: 1.0,
+                            style: initial_style,
                         }),
+                )
+                .child(
+                    UiDocumentNode::new(format!("debug_perf_graph_axis_{slot}"))
+                        .text("0 — 1")
+                        .style(small_style(true)),
                 ),
         );
     }
@@ -455,6 +508,7 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
     );
 
     for index in 0..ignit_ecs_bridge::TIMING_STAGES.len() {
+        let action = format!("debug_perf_series_{index}");
         content = content.child(
             UiDocumentNode::new(format!("debug_perf_stage_row_{index}"))
                 .layout(
@@ -468,7 +522,8 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
                     UiDocumentNode::new(format!("debug_perf_stage_name_{index}"))
                         .layout(UiLayout::default().width_percent(38.0))
                         .text("--")
-                        .style(small_style(true)),
+                        .style(small_style(true))
+                        .action(UiAction::new(action.clone())),
                 )
                 .child(
                     UiDocumentNode::new(format!("debug_perf_stage_{index}"))
@@ -477,9 +532,10 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
                             ..Default::default()
                         })
                         .text("--")
-                        .style(small_style(false)),
+                        .style(small_style(false))
+                        .action(UiAction::new(action.clone())),
                 )
-                .action(UiAction::new(format!("debug_perf_series_{index}")))
+                .action(UiAction::new(action))
                 .focusable(),
         );
     }
@@ -594,11 +650,31 @@ fn metric_label(metric: GraphMetric) -> &'static str {
     }
 }
 
+fn metric_title(metric: GraphMetric) -> &'static str {
+    match metric {
+        GraphMetric::Last => "Last",
+        GraphMetric::Avg => "Avg",
+        GraphMetric::Min => "Min",
+        GraphMetric::Max => "Max",
+        GraphMetric::All => "All",
+    }
+}
+
+fn chart_label(style: UiGraphStyle) -> &'static str {
+    match style {
+        UiGraphStyle::Bars => "Bars",
+        UiGraphStyle::Line => "Line",
+        UiGraphStyle::Area => "Area",
+        UiGraphStyle::Scatter => "Scatter",
+    }
+}
+
 /// One ready-to-paint graph.
 struct GraphPlot {
     title: String,
     series: Vec<UiGraphSeries>,
     max: f32,
+    axis: String,
 }
 
 /// Builds the plotted series for one graph.
@@ -616,30 +692,33 @@ fn graph_plot(
     let pairs = graph_pairs(timings, series, start);
     let times = pairs.iter().map(|(time, _)| *time).collect::<Vec<_>>();
     let values = pairs.iter().map(|(_, value)| *value).collect::<Vec<_>>();
-    let frames = values.len();
 
     let plotted = match metric {
-        GraphMetric::Last => vec![UiGraphSeries::new(
+        GraphMetric::Last => vec![health_series(
+            series,
             downsample(&values, Downsample::Last),
             LAST_COLOR,
         )],
         GraphMetric::Avg => {
             let (average, _, _) = rolling_stats(&times, &values, ROLLING_WINDOW_SECS);
-            vec![UiGraphSeries::new(
+            vec![health_series(
+                series,
                 downsample(&average, Downsample::Mean),
                 AVG_COLOR,
             )]
         }
         GraphMetric::Min => {
             let (_, minimum, _) = rolling_stats(&times, &values, ROLLING_WINDOW_SECS);
-            vec![UiGraphSeries::new(
+            vec![health_series(
+                series,
                 downsample(&minimum, Downsample::Min),
                 MIN_COLOR,
             )]
         }
         GraphMetric::Max => {
             let (_, _, maximum) = rolling_stats(&times, &values, ROLLING_WINDOW_SECS);
-            vec![UiGraphSeries::new(
+            vec![health_series(
+                series,
                 downsample(&maximum, Downsample::Max),
                 MAX_COLOR,
             )]
@@ -647,10 +726,10 @@ fn graph_plot(
         GraphMetric::All => {
             let (average, minimum, maximum) = rolling_stats(&times, &values, ROLLING_WINDOW_SECS);
             vec![
-                UiGraphSeries::new(downsample(&values, Downsample::Last), LAST_COLOR),
-                UiGraphSeries::new(downsample(&average, Downsample::Mean), AVG_COLOR),
-                UiGraphSeries::new(downsample(&minimum, Downsample::Min), MIN_COLOR),
-                UiGraphSeries::new(downsample(&maximum, Downsample::Max), MAX_COLOR),
+                health_series(series, downsample(&values, Downsample::Last), LAST_COLOR),
+                health_series(series, downsample(&average, Downsample::Mean), AVG_COLOR),
+                health_series(series, downsample(&minimum, Downsample::Min), MIN_COLOR),
+                health_series(series, downsample(&maximum, Downsample::Max), MAX_COLOR),
             ]
         }
     };
@@ -660,26 +739,89 @@ fn graph_plot(
         .flat_map(|series| series.values.iter().copied())
         .filter(|value| value.is_finite() && *value >= 0.0)
         .fold(0.0f32, f32::max);
+    let max = graph_axis_max(peak);
+    let unit = graph_unit(series);
 
     GraphPlot {
-        title: graph_title(series, frames, window_secs),
+        title: format!("{} ({})", series_name(series), metric_title(metric)),
         series: plotted,
-        max: (peak * 1.1).max(1.0),
+        max,
+        axis: format!("0 {unit} — {} {unit}", format_axis_value(max)),
     }
 }
 
-fn graph_title(series: GraphSeries, frames: usize, window_secs: f64) -> String {
-    let name = series_name(series);
-    let unit = if matches!(series, GraphSeries::Fps) {
+fn graph_unit(series: GraphSeries) -> &'static str {
+    if matches!(series, GraphSeries::Fps) {
         "fps"
     } else {
         "ms"
+    }
+}
+
+/// Rounds an axis maximum up to a readable 1/1.5/2/... step so small frame
+/// changes do not rescale the graph on every refresh.
+fn graph_axis_max(peak: f32) -> f32 {
+    let target = (peak * 1.1).max(1.0);
+    let magnitude = 10f32.powf(target.log10().floor());
+    let normalized = target / magnitude;
+    let step = [1.0, 1.2, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0]
+        .into_iter()
+        .find(|step| normalized <= *step)
+        .unwrap_or(10.0);
+    (step * magnitude).max(1.0)
+}
+
+fn format_axis_value(value: f32) -> String {
+    if value >= 100.0 {
+        format!("{value:.0}")
+    } else if value >= 10.0 {
+        format!("{value:.1}")
+    } else {
+        format!("{value:.2}")
+    }
+}
+
+fn health_series(series: GraphSeries, values: Vec<f32>, fallback: [f32; 4]) -> UiGraphSeries {
+    let colors = values
+        .iter()
+        .map(|value| graph_health_color(series, *value))
+        .collect();
+    UiGraphSeries::new(values, fallback).with_colors(colors)
+}
+
+/// The same good/warn/bad limits the table uses.
+fn graph_health_color(series: GraphSeries, value: f32) -> [f32; 4] {
+    if !value.is_finite() {
+        return BAD_COLOR;
+    }
+
+    let (good, warn, higher_is_better) = match series {
+        GraphSeries::Fps => (60.0, 30.0, true),
+        GraphSeries::Cdt => (1000.0 / 60.0, 1000.0 / 30.0, false),
+        GraphSeries::Stage(index) => {
+            if index >= ignit_ecs_bridge::GPU_STAGE_START {
+                (2.0, 4.0, false)
+            } else {
+                (1.0, 2.0, false)
+            }
+        }
     };
-    format!(
-        "{name} · {unit} · {:.1}s · {} frames",
-        window_secs.max(0.0),
-        frames
-    )
+
+    if higher_is_better {
+        if value >= good {
+            GOOD_COLOR
+        } else if value >= warn {
+            WARN_COLOR
+        } else {
+            BAD_COLOR
+        }
+    } else if value <= good {
+        GOOD_COLOR
+    } else if value <= warn {
+        WARN_COLOR
+    } else {
+        BAD_COLOR
+    }
 }
 
 fn series_name(series: GraphSeries) -> &'static str {
@@ -957,7 +1099,7 @@ fn toolbar() -> UiDocumentNode {
     )
 }
 
-fn refresh_performance(world: &mut World) {
+fn refresh_performance(world: &mut World, update_graphs: bool) {
     let fps = world.get_resource::<FpsStats>().map_or(0.0, |stats| {
         if stats.fps > 0 {
             stats.fps as f32
@@ -982,13 +1124,14 @@ fn refresh_performance(world: &mut World) {
         format!("Frame: {frame_ms:.2} ms"),
     );
 
-    let (graph_series, metric, window_secs) = world
+    let (graph_series, metric, window_secs, mut chart_style) = world
         .get_resource::<DebugUiState>()
         .map(|state| {
             (
                 state.graph_series.clone(),
                 state.graph_metric,
                 state.graph_window_secs as f64,
+                state.graph_style,
             )
         })
         .unwrap_or_default();
@@ -996,24 +1139,25 @@ fn refresh_performance(world: &mut World) {
     let (plots, rows) = world.get_resource::<FrameTimings>().map_or_else(
         || (Vec::new(), Vec::new()),
         |timings| {
-            let plots = graph_series
-                .iter()
-                .copied()
-                .filter(|series| match series {
-                    GraphSeries::Stage(index) => *index < ignit_ecs_bridge::TIMING_STAGES.len(),
-                    GraphSeries::Fps | GraphSeries::Cdt => true,
-                })
-                .take(GRAPH_SLOTS)
-                .map(|series| graph_plot(&timings, series, metric, window_secs))
-                .collect::<Vec<_>>();
+            let plots = if update_graphs {
+                graph_series
+                    .iter()
+                    .copied()
+                    .filter(|series| match series {
+                        GraphSeries::Stage(index) => *index < ignit_ecs_bridge::TIMING_STAGES.len(),
+                        GraphSeries::Fps | GraphSeries::Cdt => true,
+                    })
+                    .map(|series| graph_plot(&timings, series, metric, window_secs))
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
 
             let rows = timings
                 .samples()
                 .iter()
                 .enumerate()
                 .map(|(index, sample)| {
-                    let gpu = index >= ignit_ecs_bridge::GPU_STAGE_START;
-                    let (good, warn) = if gpu { (2.0, 4.0) } else { (1.0, 2.0) };
                     let (value, color) = match (
                         sane_ms(sample.last_ms),
                         sane_ms(sample.avg_ms),
@@ -1021,15 +1165,9 @@ fn refresh_performance(world: &mut World) {
                     ) {
                         (Some(last), Some(avg), Some(max)) => (
                             format!("{last:>6.2}  {avg:>6.2}  {max:>6.2}"),
-                            if last <= good {
-                                [0.5, 0.9, 0.6, 1.0]
-                            } else if last <= warn {
-                                [1.0, 0.8, 0.4, 1.0]
-                            } else {
-                                [1.0, 0.5, 0.45, 1.0]
-                            },
+                            graph_health_color(GraphSeries::Stage(index), last),
                         ),
-                        _ => ("     --      --      --".to_string(), [1.0, 0.5, 0.45, 1.0]),
+                        _ => ("     --      --      --".to_string(), BAD_COLOR),
                     };
                     let pinned = graph_series.contains(&GraphSeries::Stage(index));
                     (sample.name.to_string(), value, color, pinned)
@@ -1051,27 +1189,44 @@ fn refresh_performance(world: &mut World) {
         .unwrap_or(0);
     poll_metric_dropdown(world, metric_index);
 
-    for slot in 0..GRAPH_SLOTS {
-        let slot_id = format!("debug_perf_graph_slot_{slot}");
-        match plots.get(slot) {
-            Some(plot) => {
-                set_text(
-                    world,
-                    &format!("debug_perf_graph_title_{slot}"),
-                    plot.title.clone(),
-                );
-                set_graph(
-                    world,
-                    &format!("debug_perf_graph_{slot}"),
-                    plot.series.clone(),
-                    plot.max,
-                );
-                set_visible_by_id(world, &slot_id, true);
-            }
-            None => set_visible_by_id(world, &slot_id, false),
-        }
+    let chart_index = CHART_STYLES
+        .iter()
+        .position(|style| *style == chart_style)
+        .unwrap_or(0);
+    poll_chart_dropdown(world, chart_index);
+    if let Some(state) = world.get_resource::<DebugUiState>() {
+        chart_style = state.graph_style;
     }
-    set_visible_by_id(world, "debug_perf_graph_empty", plots.is_empty());
+
+    if update_graphs {
+        for slot in 0..GRAPH_SLOTS {
+            let slot_id = format!("debug_perf_graph_slot_{slot}");
+            match plots.get(slot) {
+                Some(plot) => {
+                    set_text(
+                        world,
+                        &format!("debug_perf_graph_title_{slot}"),
+                        format!("{} · {}", slot + 1, plot.title),
+                    );
+                    set_text(
+                        world,
+                        &format!("debug_perf_graph_axis_{slot}"),
+                        plot.axis.clone(),
+                    );
+                    set_graph(
+                        world,
+                        &format!("debug_perf_graph_{slot}"),
+                        plot.series.clone(),
+                        plot.max,
+                        chart_style,
+                    );
+                    set_visible_by_id(world, &slot_id, true);
+                }
+                None => set_visible_by_id(world, &slot_id, false),
+            }
+        }
+        set_visible_by_id(world, "debug_perf_graph_empty", plots.is_empty());
+    }
 
     set_row_highlight(
         world,
@@ -1187,7 +1342,13 @@ fn set_row_highlight(world: &mut World, id: &str, selected: bool) {
     mark_dirty(world, entity, UiDirty::PAINT);
 }
 
-fn set_graph(world: &mut World, id: &str, series: Vec<UiGraphSeries>, max: f32) {
+fn set_graph(
+    world: &mut World,
+    id: &str,
+    series: Vec<UiGraphSeries>,
+    max: f32,
+    style: UiGraphStyle,
+) {
     let Some(entity) = world
         .get_resource::<ignit_ui::UiForest>()
         .and_then(|forest| forest.find(&id.into()))
@@ -1200,11 +1361,13 @@ fn set_graph(world: &mut World, id: &str, series: Vec<UiGraphSeries>, max: f32) 
         && let UiWidgetSpec::Graph {
             series: current,
             max: current_max,
+            style: current_style,
         } = &mut widget.spec
-        && (*current != series || *current_max != max)
+        && (*current != series || *current_max != max || *current_style != style)
     {
         *current = series;
         *current_max = max;
+        *current_style = style;
         changed = true;
     }
     if changed {
@@ -1230,6 +1393,28 @@ fn set_slider(world: &mut World, id: &str, value: f32) {
     }
     if changed {
         mark_dirty(world, entity, UiDirty::PAINT);
+    }
+}
+
+fn poll_chart_dropdown(world: &mut World, expected: usize) {
+    let Some(entity) = world
+        .get_resource::<ignit_ui::UiForest>()
+        .and_then(|forest| forest.find(&"debug_perf_chart".into()))
+    else {
+        return;
+    };
+    let selected = world
+        .get_component_store::<UiWidget>()
+        .and_then(|store| store.get_component(entity.index).cloned())
+        .and_then(|widget| match widget.spec {
+            UiWidgetSpec::Dropdown { selected, .. } => Some(selected),
+            _ => None,
+        });
+    if let Some(selected) = selected
+        && selected != expected
+        && let Some(style) = CHART_STYLES.get(selected).copied()
+    {
+        crate::handle_debug_message_world(DebugMessage::SetGraphStyle(style), world);
     }
 }
 
@@ -1333,6 +1518,56 @@ mod tests {
             .cloned()
             .unwrap();
         assert_eq!(style.visible, Some(false));
+    }
+
+    #[test]
+    fn performance_panel_exposes_the_persisted_chart_dropdown() {
+        let mut world = World::new();
+        let mut state = DebugUiState::new(KeyCode::F1);
+        state.graph_style = UiGraphStyle::Area;
+        world.insert_resource(state);
+        let _ = build_document(&mut world).expect("document");
+
+        let chart = world
+            .get_resource::<ignit_ui::UiForest>()
+            .and_then(|forest| forest.find(&"debug_perf_chart".into()))
+            .expect("chart dropdown");
+        let spec = world
+            .get_component_store::<UiWidget>()
+            .and_then(|store| store.get_component(chart.index).cloned())
+            .expect("chart widget");
+        let UiWidgetSpec::Dropdown {
+            options, selected, ..
+        } = spec.spec
+        else {
+            panic!("chart selector is a dropdown");
+        };
+        assert_eq!(
+            options,
+            vec![
+                "Bars".to_string(),
+                "Line".into(),
+                "Area".into(),
+                "Scatter".into()
+            ]
+        );
+        assert_eq!(selected, 2);
+
+        let graph = world
+            .get_resource::<ignit_ui::UiForest>()
+            .and_then(|forest| forest.find(&"debug_perf_graph_0".into()))
+            .expect("graph widget");
+        let spec = world
+            .get_component_store::<UiWidget>()
+            .and_then(|store| store.get_component(graph.index).cloned())
+            .expect("graph spec");
+        assert!(matches!(
+            spec.spec,
+            UiWidgetSpec::Graph {
+                style: UiGraphStyle::Area,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -1538,7 +1773,7 @@ mod tests {
                 .expect("All metric");
         }
 
-        refresh_performance(&mut world);
+        refresh_performance(&mut world, true);
 
         assert_eq!(
             world
@@ -1546,6 +1781,116 @@ mod tests {
                 .expect("state")
                 .graph_metric,
             GraphMetric::All
+        );
+    }
+
+    #[test]
+    fn five_selected_series_get_their_own_numbered_slots() {
+        let mut world = World::new();
+        world.insert_resource(DebugUiState::new(KeyCode::F1));
+        let _ = build_document(&mut world).expect("document");
+        world.insert_resource(FrameTimings::new());
+        for index in 0..5 {
+            crate::handle_debug_message_world(
+                DebugMessage::ToggleGraphSeries(GraphSeries::Stage(index)),
+                &mut world,
+            );
+        }
+
+        refresh_performance(&mut world, true);
+
+        for slot in 0..5 {
+            let slot_entity = world
+                .get_resource::<ignit_ui::UiForest>()
+                .and_then(|forest| forest.find(&format!("debug_perf_graph_slot_{slot}").into()))
+                .expect("graph slot");
+            let style = world
+                .get_component_store::<ignit_ui::UiStyle>()
+                .and_then(|store| store.get_component(slot_entity.index).cloned())
+                .expect("slot style");
+            assert_eq!(style.visible, Some(true), "slot {slot} is visible");
+            let title = world
+                .get_resource::<ignit_ui::UiForest>()
+                .and_then(|forest| forest.find(&format!("debug_perf_graph_title_{slot}").into()))
+                .and_then(|entity| {
+                    world
+                        .get_component_store::<UiText>()
+                        .and_then(|store| store.get_component(entity.index).cloned())
+                })
+                .expect("slot title");
+            assert!(
+                title.value.starts_with(&format!("{} · ", slot + 1)),
+                "{}",
+                title.value
+            );
+            assert!(title.value.contains('('), "{}", title.value);
+        }
+
+        let hidden = world
+            .get_resource::<ignit_ui::UiForest>()
+            .and_then(|forest| forest.find(&"debug_perf_graph_slot_5".into()))
+            .and_then(|entity| {
+                world
+                    .get_component_store::<ignit_ui::UiStyle>()
+                    .and_then(|store| store.get_component(entity.index).cloned())
+            })
+            .expect("sixth slot style");
+        assert_eq!(hidden.visible, Some(false));
+
+        let state = world.get_resource::<DebugUiState>().expect("state");
+        assert_eq!(state.graph_series.len(), 5);
+        assert!(!state.graph_series.contains(&GraphSeries::Cdt));
+    }
+
+    #[test]
+    fn chart_dropdown_applies_a_locally_selected_graph_style() {
+        let mut world = World::new();
+        world.insert_resource(DebugUiState::new(KeyCode::F1));
+        let _ = build_document(&mut world).expect("document");
+        world.insert_resource(FrameTimings::new());
+        crate::handle_debug_message_world(
+            DebugMessage::ToggleGraphSeries(GraphSeries::Fps),
+            &mut world,
+        );
+
+        let chart = world
+            .get_resource::<ignit_ui::UiForest>()
+            .and_then(|forest| forest.find(&"debug_perf_chart".into()))
+            .expect("chart dropdown");
+        {
+            let store = world
+                .get_component_store_mut::<UiWidget>()
+                .expect("widgets");
+            let widget = store
+                .get_mut_store()
+                .get_component_mut(chart.index)
+                .expect("chart widget");
+            let UiWidgetSpec::Dropdown { selected, .. } = &mut widget.spec else {
+                panic!("chart selector is a dropdown");
+            };
+            *selected = 1;
+        }
+
+        refresh_performance(&mut world, true);
+
+        let graph = world
+            .get_resource::<ignit_ui::UiForest>()
+            .and_then(|forest| forest.find(&"debug_perf_graph_0".into()))
+            .expect("graph widget");
+        let spec = world
+            .get_component_store::<UiWidget>()
+            .and_then(|store| store.get_component(graph.index).cloned())
+            .expect("graph spec");
+        let UiWidgetSpec::Graph { style, .. } = spec.spec else {
+            panic!("graph slot is a graph");
+        };
+        assert_eq!(style, UiGraphStyle::Line);
+        assert_eq!(
+            world
+                .get_resource::<DebugUiState>()
+                .expect("state")
+                .graph_style,
+            UiGraphStyle::Line
         );
     }
 
@@ -1567,7 +1912,10 @@ mod tests {
             .get_component_store::<ignit_ui::UiComputed>()
             .and_then(|store| store.get_component(row.index).copied())
             .expect("row rect");
-        let pointer = ignit_ui::UiPoint::new(rect.rect.x + 20.0, rect.rect.y + 8.0);
+        let pointer = ignit_ui::UiPoint::new(
+            rect.rect.x + rect.rect.width * 0.8,
+            rect.rect.y + rect.rect.height * 0.5,
+        );
         world.insert_resource(ignit_ui::UiInputState {
             pointer,
             primary_down: true,
@@ -1628,6 +1976,20 @@ mod tests {
     }
 
     #[test]
+    fn graph_axis_max_and_health_colours_are_stable() {
+        assert_eq!(graph_axis_max(0.2), 1.0);
+        assert_eq!(graph_axis_max(15.0), 20.0);
+        assert_eq!(graph_axis_max(120.0), 150.0);
+
+        assert_eq!(graph_health_color(GraphSeries::Fps, 60.0), GOOD_COLOR);
+        assert_eq!(graph_health_color(GraphSeries::Fps, 45.0), WARN_COLOR);
+        assert_eq!(graph_health_color(GraphSeries::Fps, 20.0), BAD_COLOR);
+        assert_eq!(graph_health_color(GraphSeries::Cdt, 16.0), GOOD_COLOR);
+        assert_eq!(graph_health_color(GraphSeries::Cdt, 25.0), WARN_COLOR);
+        assert_eq!(graph_health_color(GraphSeries::Cdt, 40.0), BAD_COLOR);
+    }
+
+    #[test]
     fn graph_plot_builds_the_all_band_from_rolling_stats() {
         let mut timings = FrameTimings::new();
         let config = TimingsHistoryConfig {
@@ -1647,7 +2009,10 @@ mod tests {
         assert_eq!(plot.series[1].values, vec![1.0, 2.0, 2.0, 3.0]);
         assert_eq!(plot.series[2].values, vec![1.0, 1.0, 1.0, 2.0]);
         assert_eq!(plot.series[3].values, vec![1.0, 3.0, 3.0, 4.0]);
-        assert!((plot.max - 4.4).abs() < 1.0e-4, "peak plus ten percent");
+        assert_eq!(plot.series[0].colors.len(), 4, "one health colour per bar");
+        assert!((plot.max - 5.0).abs() < 1.0e-4, "rounded axis maximum");
+        assert!(plot.title.ends_with("(All)"), "{}", plot.title);
+        assert!(plot.axis.contains("ms"), "{}", plot.axis);
     }
 
     #[test]
@@ -1663,7 +2028,7 @@ mod tests {
             console: true,
             csv: false,
         });
-        refresh_performance(&mut world);
+        refresh_performance(&mut world, true);
 
         let text = world
             .get_resource::<ignit_ui::UiForest>()

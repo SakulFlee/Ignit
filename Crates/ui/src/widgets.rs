@@ -30,6 +30,20 @@ pub const MIN_FLOATING_WINDOW_WIDTH: f32 = 240.0;
 /// Smallest height a floating window may be resized to, in logical pixels.
 pub const MIN_FLOATING_WINDOW_HEIGHT: f32 = 160.0;
 
+/// How a [`UiWidgetSpec::Graph`] series is painted.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UiGraphStyle {
+    /// One narrow bar per sample.
+    #[default]
+    Bars,
+    /// A dense one-pixel line.
+    Line,
+    /// A translucent fill below a line.
+    Area,
+    /// Small points at each sample.
+    Scatter,
+}
+
 /// One line of a multi-series [`UiWidgetSpec::Graph`].
 ///
 /// Values are drawn oldest first. A series with a transparent colour falls
@@ -39,12 +53,36 @@ pub struct UiGraphSeries {
     pub values: Vec<f32>,
     #[serde(default)]
     pub color: [f32; 4],
+    /// Optional per-sample colours. Missing or transparent entries fall back
+    /// to [`Self::color`].
+    #[serde(default)]
+    pub colors: Vec<[f32; 4]>,
+    /// Optional per-series override of the graph's style.
+    #[serde(default)]
+    pub style: Option<UiGraphStyle>,
 }
 
 impl UiGraphSeries {
     /// A series drawn in `color`.
     pub fn new(values: Vec<f32>, color: [f32; 4]) -> Self {
-        Self { values, color }
+        Self {
+            values,
+            color,
+            colors: Vec::new(),
+            style: None,
+        }
+    }
+
+    /// A series with one colour per sample.
+    pub fn with_colors(mut self, colors: Vec<[f32; 4]>) -> Self {
+        self.colors = colors;
+        self
+    }
+
+    /// Overrides the graph style for this series.
+    pub fn with_style(mut self, style: UiGraphStyle) -> Self {
+        self.style = Some(style);
+        self
     }
 }
 
@@ -106,10 +144,12 @@ pub enum UiWidgetSpec {
         values: Vec<f32>,
         max: f32,
     },
-    /// Several overlaid series, drawn as narrow bars.
+    /// Several overlaid series, drawn with the requested style.
     Graph {
         series: Vec<UiGraphSeries>,
         max: f32,
+        #[serde(default)]
+        style: UiGraphStyle,
     },
     Tooltip {
         text: String,
@@ -1416,7 +1456,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     });
                 }
             }
-            UiWidgetSpec::Graph { series, max } => {
+            UiWidgetSpec::Graph { series, max, style } => {
                 let samples = series
                     .iter()
                     .map(|series| series.values.len())
@@ -1437,43 +1477,56 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     peak.max(0.001)
                 };
 
-                let step = rect.content.width / samples as f32;
-                let lanes = series.len().max(1) as f32;
-                let grouped = (step - 1.0).max(1.0);
-                let bar = if series.len() > 1 {
-                    (grouped / lanes).clamp(1.0, 3.0)
-                } else {
-                    grouped.clamp(1.0, 3.0)
-                };
-                let group_width = bar * lanes;
-                let offset = ((step - group_width) * 0.5).max(0.0);
-
+                let bar_lanes = series
+                    .iter()
+                    .filter(|series| series.style.unwrap_or(*style) == UiGraphStyle::Bars)
+                    .count()
+                    .max(1) as f32;
+                let mut bar_lane = 0usize;
                 for (series_index, series) in series.iter().enumerate() {
-                    let color = if series.color[3] > 0.0 {
-                        series.color
-                    } else {
-                        graph_palette(series_index)
-                    };
-                    for (index, value) in series.values.iter().enumerate() {
-                        if !value.is_finite() || *value < 0.0 {
-                            continue;
+                    match series.style.unwrap_or(*style) {
+                        UiGraphStyle::Bars => {
+                            paint_graph_bars(
+                                draw,
+                                entity,
+                                rect.content,
+                                series,
+                                series_index,
+                                bar_lane,
+                                bar_lanes,
+                                samples,
+                                max,
+                                clip,
+                            );
+                            bar_lane += 1;
                         }
-                        let height = (value / max).clamp(0.0, 1.0) * rect.content.height;
-                        draw.commands.push(UiDrawCommand::Rect {
+                        UiGraphStyle::Line => paint_graph_line(
+                            draw,
                             entity,
-                            rect: UiRect::new(
-                                rect.content.x
-                                    + index as f32 * step
-                                    + offset
-                                    + series_index as f32 * bar,
-                                rect.content.y + rect.content.height - height,
-                                bar,
-                                height,
-                            ),
-                            color,
-                            radius: [0.0; 4],
+                            rect.content,
+                            series,
+                            series_index,
+                            max,
                             clip,
-                        });
+                        ),
+                        UiGraphStyle::Area => paint_graph_area(
+                            draw,
+                            entity,
+                            rect.content,
+                            series,
+                            series_index,
+                            max,
+                            clip,
+                        ),
+                        UiGraphStyle::Scatter => paint_graph_scatter(
+                            draw,
+                            entity,
+                            rect.content,
+                            series,
+                            series_index,
+                            max,
+                            clip,
+                        ),
                     }
                 }
             }
@@ -1615,6 +1668,185 @@ fn next_word_boundary(text: &str, cursor: usize) -> usize {
         index = next;
     }
     index
+}
+
+fn graph_sample_color(series: &UiGraphSeries, index: usize, series_index: usize) -> [f32; 4] {
+    series
+        .colors
+        .get(index)
+        .copied()
+        .filter(|color| color[3] > 0.0)
+        .unwrap_or_else(|| {
+            if series.color[3] > 0.0 {
+                series.color
+            } else {
+                graph_palette(series_index)
+            }
+        })
+}
+
+fn graph_sample(values: &[f32], t: f32) -> Option<f32> {
+    if values.is_empty() {
+        return None;
+    }
+    let position = t.clamp(0.0, 1.0) * values.len().saturating_sub(1) as f32;
+    let index = position.floor() as usize;
+    let fraction = position - index as f32;
+    let first = values[index];
+    let second = values[(index + 1).min(values.len() - 1)];
+    match (
+        first.is_finite() && first >= 0.0,
+        second.is_finite() && second >= 0.0,
+    ) {
+        (true, true) => Some(first + (second - first) * fraction),
+        (true, false) => Some(first),
+        (false, true) => Some(second),
+        (false, false) => None,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_graph_bars(
+    draw: &mut UiDrawList,
+    entity: Entity,
+    content: UiRect,
+    series: &UiGraphSeries,
+    series_index: usize,
+    lane: usize,
+    lanes: f32,
+    samples: usize,
+    max: f32,
+    clip: Option<UiRect>,
+) {
+    let step = content.width / samples as f32;
+    let grouped = (step - 1.0).max(1.0);
+    let bar = (grouped / lanes).clamp(1.0, 3.0);
+    let offset = ((step - bar * lanes) * 0.5).max(0.0);
+
+    for (index, value) in series.values.iter().enumerate() {
+        if !value.is_finite() || *value < 0.0 {
+            continue;
+        }
+        let height = (value / max).clamp(0.0, 1.0) * content.height;
+        draw.commands.push(UiDrawCommand::Rect {
+            entity,
+            rect: UiRect::new(
+                content.x + index as f32 * step + offset + lane as f32 * bar,
+                content.y + content.height - height,
+                bar,
+                height,
+            ),
+            color: graph_sample_color(series, index, series_index),
+            radius: [0.0; 4],
+            clip,
+        });
+    }
+}
+
+fn paint_graph_line(
+    draw: &mut UiDrawList,
+    entity: Entity,
+    content: UiRect,
+    series: &UiGraphSeries,
+    series_index: usize,
+    max: f32,
+    clip: Option<UiRect>,
+) {
+    let columns = content.width.floor() as usize;
+    let mut previous_y = None;
+    for column in 0..columns {
+        let t = if columns > 1 {
+            column as f32 / (columns - 1) as f32
+        } else {
+            0.0
+        };
+        let Some(value) = graph_sample(&series.values, t) else {
+            previous_y = None;
+            continue;
+        };
+        let y = content.y + content.height - (value / max).clamp(0.0, 1.0) * content.height;
+        let top = previous_y.map_or(y, |previous: f32| previous.min(y));
+        let height = previous_y.map_or(1.0, |previous: f32| (previous - y).abs().max(1.0));
+        let index = ((t * series.values.len().saturating_sub(1) as f32).round() as usize)
+            .min(series.values.len().saturating_sub(1));
+        draw.commands.push(UiDrawCommand::Rect {
+            entity,
+            rect: UiRect::new(content.x + column as f32, top, 1.0, height),
+            color: graph_sample_color(series, index, series_index),
+            radius: [0.0; 4],
+            clip,
+        });
+        previous_y = Some(y);
+    }
+}
+
+fn paint_graph_area(
+    draw: &mut UiDrawList,
+    entity: Entity,
+    content: UiRect,
+    series: &UiGraphSeries,
+    series_index: usize,
+    max: f32,
+    clip: Option<UiRect>,
+) {
+    let columns = content.width.floor() as usize;
+    for column in 0..columns {
+        let t = if columns > 1 {
+            column as f32 / (columns - 1) as f32
+        } else {
+            0.0
+        };
+        let Some(value) = graph_sample(&series.values, t) else {
+            continue;
+        };
+        let height = (value / max).clamp(0.0, 1.0) * content.height;
+        let index = ((t * series.values.len().saturating_sub(1) as f32).round() as usize)
+            .min(series.values.len().saturating_sub(1));
+        draw.commands.push(UiDrawCommand::Rect {
+            entity,
+            rect: UiRect::new(
+                content.x + column as f32,
+                content.y + content.height - height,
+                1.0,
+                height,
+            ),
+            color: with_alpha(graph_sample_color(series, index, series_index), 0.28),
+            radius: [0.0; 4],
+            clip,
+        });
+    }
+    paint_graph_line(draw, entity, content, series, series_index, max, clip);
+}
+
+fn paint_graph_scatter(
+    draw: &mut UiDrawList,
+    entity: Entity,
+    content: UiRect,
+    series: &UiGraphSeries,
+    series_index: usize,
+    max: f32,
+    clip: Option<UiRect>,
+) {
+    let step = if series.values.len() > 1 {
+        content.width / (series.values.len() - 1) as f32
+    } else {
+        0.0
+    };
+    for (index, value) in series.values.iter().enumerate() {
+        if !value.is_finite() || *value < 0.0 {
+            continue;
+        }
+        let height = (value / max).clamp(0.0, 1.0) * content.height;
+        let x = content.x + index as f32 * step;
+        let y = content.y + content.height - height;
+        draw.commands.push(UiDrawCommand::Rect {
+            entity,
+            rect: UiRect::new(x - 1.0, y - 1.0, 2.0, 2.0),
+            color: graph_sample_color(series, index, series_index),
+            radius: [1.0; 4],
+            clip,
+        });
+    }
 }
 
 fn graph_palette(index: usize) -> [f32; 4] {

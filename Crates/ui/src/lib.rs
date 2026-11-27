@@ -67,8 +67,8 @@ pub use style::{
     UiTheme, UiThemes,
 };
 pub use widgets::{
-    MIN_FLOATING_WINDOW_HEIGHT, MIN_FLOATING_WINDOW_WIDTH, UiGraphSeries, UiWidget, UiWidgetSpec,
-    UiWindowOrder, append_widget_commands, update_widgets,
+    MIN_FLOATING_WINDOW_HEIGHT, MIN_FLOATING_WINDOW_WIDTH, UiGraphSeries, UiGraphStyle, UiWidget,
+    UiWidgetSpec, UiWindowOrder, append_widget_commands, update_widgets,
 };
 
 use std::time::Instant;

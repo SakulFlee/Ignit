@@ -1241,6 +1241,7 @@ fn graph_widget_paints_every_series_with_distinct_colours() {
                 ignit_ui::UiGraphSeries::new(vec![100.0, 50.0, 0.0], [1.0, 0.8, 0.4, 1.0]),
             ],
             max: 100.0,
+            style: ignit_ui::UiGraphStyle::Bars,
         },
     );
     let mut text = ignit_ui::UiFallbackTextMeasure;
@@ -1275,6 +1276,99 @@ fn graph_widget_paints_every_series_with_distinct_colours() {
 }
 
 #[test]
+fn graph_widget_styles_paint_lines_areas_and_scatter_points() {
+    let colours = [
+        [0.5, 0.9, 0.6, 1.0],
+        [1.0, 0.8, 0.4, 1.0],
+        [1.0, 0.5, 0.45, 1.0],
+    ];
+
+    for style in [ignit_ui::UiGraphStyle::Line, ignit_ui::UiGraphStyle::Area] {
+        let mut world = World::new();
+        init(&mut world);
+        let entity = build(
+            &mut world,
+            "graph_style",
+            UiWidgetSpec::Graph {
+                series: vec![ignit_ui::UiGraphSeries::new(
+                    vec![0.0, 50.0, 100.0],
+                    colours[0],
+                )],
+                max: 100.0,
+                style,
+            },
+        );
+        let mut text = ignit_ui::UiFallbackTextMeasure;
+        update(&mut world, &mut text);
+
+        let draw = world.get_resource::<UiDrawList>().unwrap();
+        let rects = draw
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                UiDrawCommand::Rect {
+                    entity: command_entity,
+                    rect,
+                    ..
+                } if *command_entity == entity => Some(*rect),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(!rects.is_empty());
+        assert!(
+            rects.iter().all(|rect| rect.width == 1.0),
+            "line and area use dense one-pixel columns"
+        );
+        if style == ignit_ui::UiGraphStyle::Area {
+            assert!(rects.len() > 240, "the area adds a fill under the line");
+        }
+    }
+
+    let mut world = World::new();
+    init(&mut world);
+    let entity = build(
+        &mut world,
+        "graph_scatter",
+        UiWidgetSpec::Graph {
+            series: vec![
+                ignit_ui::UiGraphSeries::new(vec![0.0, 50.0, 100.0], colours[0])
+                    .with_colors(colours.to_vec()),
+            ],
+            max: 100.0,
+            style: ignit_ui::UiGraphStyle::Scatter,
+        },
+    );
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+
+    let draw = world.get_resource::<UiDrawList>().unwrap();
+    let points = draw
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            UiDrawCommand::Rect {
+                entity: command_entity,
+                rect,
+                color,
+                ..
+            } if *command_entity == entity => Some((*rect, *color)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(points.len(), 3, "one point per sample");
+    assert!(
+        points
+            .iter()
+            .all(|(rect, _)| rect.width == 2.0 && rect.height == 2.0)
+    );
+    assert_eq!(
+        points.iter().map(|(_, color)| *color).collect::<Vec<_>>(),
+        colours,
+        "scatter uses the per-sample colours"
+    );
+}
+
+#[test]
 fn graph_widget_ignores_empty_series() {
     let mut world = World::new();
     init(&mut world);
@@ -1284,6 +1378,7 @@ fn graph_widget_ignores_empty_series() {
         UiWidgetSpec::Graph {
             series: vec![ignit_ui::UiGraphSeries::default()],
             max: 1.0,
+            style: ignit_ui::UiGraphStyle::Bars,
         },
     );
     let mut text = ignit_ui::UiFallbackTextMeasure;

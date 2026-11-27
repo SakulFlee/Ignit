@@ -8,6 +8,7 @@ use ignit_debug_render::BoundsMode;
 use ignit_ecs::Entity;
 use ignit_ecs_bridge::{ShadowPcf, SkinningMode, TIMING_STAGES, VolumetricQuality};
 use ignit_renderer::{AntiAliasing, DebugView, SmaaQuality};
+use ignit_ui::UiGraphStyle;
 
 /// The Iced renderer type the panels draw with.
 ///
@@ -34,6 +35,8 @@ pub enum DebugMessage {
     ToggleGraphSeries(GraphSeries),
     /// Choose which statistic the performance graphs plot.
     SetGraphMetric(GraphMetric),
+    /// Choose how the performance graphs are painted.
+    SetGraphStyle(UiGraphStyle),
     /// Set the graph history window from the slider.
     SetGraphWindow(f32),
     /// Update the exact graph window text without applying it yet.
@@ -333,6 +336,8 @@ pub struct DebugUiState {
     pub graph_series: BTreeSet<GraphSeries>,
     /// Which statistic those graphs plot.
     pub graph_metric: GraphMetric,
+    /// How those graphs are painted.
+    pub graph_style: UiGraphStyle,
     /// How many seconds of graph history to retain, in seconds.
     pub graph_window_secs: f32,
     /// Uncommitted exact text for the graph window.
@@ -377,8 +382,9 @@ impl DebugUiState {
             animation_entity: None,
             expanded: HashSet::new(),
             filter: String::new(),
-            graph_series: BTreeSet::from([GraphSeries::Cdt]),
+            graph_series: BTreeSet::new(),
             graph_metric: GraphMetric::Last,
+            graph_style: UiGraphStyle::default(),
             graph_window_secs: DEFAULT_GRAPH_WINDOW_SECS,
             graph_window_input: format_seconds(DEFAULT_GRAPH_WINDOW_SECS),
             graph_window_error: None,
@@ -517,6 +523,10 @@ impl DebugUiState {
             }
             DebugMessage::SetGraphMetric(metric) => {
                 self.graph_metric = *metric;
+                self.dirty = true;
+            }
+            DebugMessage::SetGraphStyle(style) => {
+                self.graph_style = *style;
                 self.dirty = true;
             }
             DebugMessage::SetGraphWindow(seconds) => {
@@ -758,7 +768,10 @@ mod tests {
     #[test]
     fn graph_series_toggle_and_ignore_out_of_range_stages() {
         let mut state = DebugUiState::new(winit::keyboard::KeyCode::F1);
-        assert!(state.graph_series.contains(&GraphSeries::Cdt));
+        assert!(
+            state.graph_series.is_empty(),
+            "no series is pinned by default"
+        );
 
         state.apply(&DebugMessage::ToggleGraphSeries(GraphSeries::Stage(2)));
         assert!(state.graph_series.contains(&GraphSeries::Stage(2)));
@@ -818,6 +831,15 @@ mod tests {
 
         state.apply(&DebugMessage::SetGraphMetric(GraphMetric::All));
         assert_eq!(state.graph_metric, GraphMetric::All);
+    }
+
+    #[test]
+    fn graph_style_defaults_to_bars_and_can_change() {
+        let mut state = DebugUiState::new(winit::keyboard::KeyCode::F1);
+        assert_eq!(state.graph_style, UiGraphStyle::Bars);
+
+        state.apply(&DebugMessage::SetGraphStyle(UiGraphStyle::Area));
+        assert_eq!(state.graph_style, UiGraphStyle::Area);
     }
 
     #[test]
