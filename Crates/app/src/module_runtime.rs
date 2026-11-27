@@ -15,7 +15,6 @@ use gilrs::Gilrs;
 use ignit_core::logging::{self, debug, error, info, warn};
 use ignit_ecs::Schedule;
 use ignit_input::{InputEvent, InputState};
-use log::trace;
 use wgpu::CurrentSurfaceTexture;
 use wgpu::TextureViewDescriptor;
 use winit::{

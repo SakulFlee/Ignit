@@ -73,7 +73,9 @@ pub fn build(package_name: Option<&str>, release: bool, features: &CargoFeatures
     }
 
     let profile = if release { "release" } else { "debug" };
-    let lib_dir = project_root.join("target").join(rust_target).join(profile);
+    let lib_dir = cargo_target_dir(&project_root)
+        .join(rust_target)
+        .join(profile);
 
     let lib_path = lib_dir.join(format!("lib{}.a", lib_name));
     if !lib_path.exists() {
@@ -150,6 +152,21 @@ pub fn build(package_name: Option<&str>, release: bool, features: &CargoFeatures
     println!("  Run: ignit run ios");
 
     Ok(())
+}
+
+/// Resolve Cargo's target directory, honoring `CARGO_TARGET_DIR`.
+fn cargo_target_dir(project_root: &Path) -> PathBuf {
+    match std::env::var_os("CARGO_TARGET_DIR") {
+        Some(dir) => {
+            let dir = PathBuf::from(dir);
+            if dir.is_absolute() {
+                dir
+            } else {
+                project_root.join(dir)
+            }
+        }
+        None => project_root.join("target"),
+    }
 }
 
 /// Ensure a Rust target is installed, installing it through rustup if needed.

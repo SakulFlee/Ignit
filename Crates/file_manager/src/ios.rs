@@ -69,6 +69,12 @@ impl IosAssetSource {
     }
 }
 
+impl Default for IosAssetSource {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AssetSource for IosAssetSource {
     fn read_bytes(&self, path: &str) -> Result<Vec<u8>, FsError> {
         self.inner.read_bytes(path)
@@ -103,6 +109,12 @@ impl IosStorage {
         Self {
             inner: DirStorage::with_cache_dir(docs.clone(), cache),
         }
+    }
+}
+
+impl Default for IosStorage {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
