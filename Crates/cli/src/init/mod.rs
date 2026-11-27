@@ -113,5 +113,8 @@ pub fn run(
         println!("  ignit build");
     }
 
+    #[cfg(target_os = "macos")]
+    println!("  ignit build ios");
+
     Ok(())
 }

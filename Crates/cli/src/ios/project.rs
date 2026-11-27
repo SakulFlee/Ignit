@@ -188,7 +188,9 @@ const MAIN_SWIFT: &str = r#"import Foundation
 // winit owns `UIApplicationMain` on iOS, so the engine has to be started from
 // top-level code rather than from an `@main` app delegate. The C declaration
 // comes from Ignit-Bridging-Header.h.
-ios_main()
+autoreleasepool {
+    ios_main()
+}
 "#;
 
 const BRIDGING_HEADER: &str = r#"#ifndef IGNIT_BRIDGING_HEADER_H
