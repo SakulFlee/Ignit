@@ -48,7 +48,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use crate::panels::{
     animation_panel, console_panel, ecs_panel, edit, performance_panel, rendering_panel,
 };
-use crate::state::{DebugMessage, DebugUiState, PanelId};
+use crate::state::{DebugMessage, DebugUiState, MAX_GRAPH_WINDOW_SECS, PanelId};
 
 pub use next::DebugUiNextModule;
 
@@ -136,14 +136,17 @@ pub fn sys_debug_ui_toggle(input: Res<InputSnapshot>, mut ui: ResMut<DebugUiStat
 /// The history is retained whenever the overlay is visible. On a large display
 /// only the Performance window needs it, but the same overlay can switch to the
 /// tabbed layout when the viewport shrinks, and that layout shows Performance
-/// from a tab without touching the per-panel visibility flags. Retaining a few
-/// hundred samples while the (on-demand) overlay is open is cheap.
+/// from a tab without touching the per-panel visibility flags.
+///
+/// Retain the longest selectable window so shrinking the graph window can use
+/// data that was already recorded, and widening it does not wait for history to
+/// refill. `FrameTimings::HISTORY_LEN` still bounds the allocation.
 pub fn sys_sync_timings_history(
     state: Res<DebugUiState>,
     mut config: ResMut<TimingsHistoryConfig>,
 ) {
     config.enabled = state.visible;
-    config.window_secs = state.graph_window_secs as f64;
+    config.window_secs = MAX_GRAPH_WINDOW_SECS as f64;
 }
 
 /// Registers the debug panels with the runtime.

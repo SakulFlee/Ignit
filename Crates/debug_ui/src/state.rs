@@ -37,6 +37,8 @@ pub enum DebugMessage {
     SetGraphMetric(GraphMetric),
     /// Choose how the performance graphs are painted.
     SetGraphStyle(UiGraphStyle),
+    /// Leave a visible gap between bars instead of packing them.
+    SetGraphBarGap(bool),
     /// Set the graph history window from the slider.
     SetGraphWindow(f32),
     /// Update the exact graph window text without applying it yet.
@@ -338,7 +340,9 @@ pub struct DebugUiState {
     pub graph_metric: GraphMetric,
     /// How those graphs are painted.
     pub graph_style: UiGraphStyle,
-    /// How many seconds of graph history to retain, in seconds.
+    /// Whether bars keep a visible gap instead of packing together.
+    pub graph_bar_gap: bool,
+    /// How many seconds of history the graphs display.
     pub graph_window_secs: f32,
     /// Uncommitted exact text for the graph window.
     pub graph_window_input: String,
@@ -385,6 +389,7 @@ impl DebugUiState {
             graph_series: BTreeSet::new(),
             graph_metric: GraphMetric::Last,
             graph_style: UiGraphStyle::default(),
+            graph_bar_gap: true,
             graph_window_secs: DEFAULT_GRAPH_WINDOW_SECS,
             graph_window_input: format_seconds(DEFAULT_GRAPH_WINDOW_SECS),
             graph_window_error: None,
@@ -527,6 +532,10 @@ impl DebugUiState {
             }
             DebugMessage::SetGraphStyle(style) => {
                 self.graph_style = *style;
+                self.dirty = true;
+            }
+            DebugMessage::SetGraphBarGap(gap) => {
+                self.graph_bar_gap = *gap;
                 self.dirty = true;
             }
             DebugMessage::SetGraphWindow(seconds) => {
@@ -840,6 +849,10 @@ mod tests {
 
         state.apply(&DebugMessage::SetGraphStyle(UiGraphStyle::Area));
         assert_eq!(state.graph_style, UiGraphStyle::Area);
+
+        assert!(state.graph_bar_gap);
+        state.apply(&DebugMessage::SetGraphBarGap(false));
+        assert!(!state.graph_bar_gap);
     }
 
     #[test]

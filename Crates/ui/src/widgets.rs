@@ -42,6 +42,14 @@ pub enum UiGraphStyle {
     Area,
     /// Small points at each sample.
     Scatter,
+    /// Translucent fills stacked by series.
+    StackedArea,
+    /// Cumulative lines stacked by series.
+    StackedLine,
+}
+
+fn default_bar_gap() -> bool {
+    true
 }
 
 /// One line of a multi-series [`UiWidgetSpec::Graph`].
@@ -150,6 +158,12 @@ pub enum UiWidgetSpec {
         max: f32,
         #[serde(default)]
         style: UiGraphStyle,
+        /// Leave a visible gap between bars instead of packing them.
+        #[serde(default = "default_bar_gap")]
+        bar_gap: bool,
+        /// Bottom-to-top Y axis labels, e.g. `["0 ms", "10 ms", "20 ms"]`.
+        #[serde(default)]
+        y_labels: Vec<String>,
     },
     Tooltip {
         text: String,
@@ -1456,7 +1470,13 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     });
                 }
             }
-            UiWidgetSpec::Graph { series, max, style } => {
+            UiWidgetSpec::Graph {
+                series,
+                max,
+                style: graph_style,
+                bar_gap,
+                y_labels,
+            } => {
                 let samples = series
                     .iter()
                     .map(|series| series.values.len())
@@ -1477,58 +1497,93 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                     peak.max(0.001)
                 };
 
-                let bar_lanes = series
-                    .iter()
-                    .filter(|series| series.style.unwrap_or(*style) == UiGraphStyle::Bars)
-                    .count()
-                    .max(1) as f32;
-                let mut bar_lane = 0usize;
-                for (series_index, series) in series.iter().enumerate() {
-                    match series.style.unwrap_or(*style) {
-                        UiGraphStyle::Bars => {
-                            paint_graph_bars(
-                                draw,
-                                entity,
-                                rect.content,
-                                series,
-                                series_index,
-                                bar_lane,
-                                bar_lanes,
-                                samples,
-                                max,
-                                clip,
-                            );
-                            bar_lane += 1;
+                paint_graph_grid(draw, entity, rect.content, clip);
+
+                match *graph_style {
+                    UiGraphStyle::StackedArea => {
+                        paint_graph_stacked(draw, entity, rect.content, series, max, true, clip)
+                    }
+                    UiGraphStyle::StackedLine => {
+                        paint_graph_stacked(draw, entity, rect.content, series, max, false, clip)
+                    }
+                    _ => {
+                        let bar_lanes = series
+                            .iter()
+                            .filter(|series| {
+                                series.style.unwrap_or(*graph_style) == UiGraphStyle::Bars
+                            })
+                            .count()
+                            .max(1) as f32;
+                        let mut bar_lane = 0usize;
+                        for (series_index, series) in series.iter().enumerate() {
+                            match series.style.unwrap_or(*graph_style) {
+                                UiGraphStyle::Bars => {
+                                    paint_graph_bars(
+                                        draw,
+                                        entity,
+                                        rect.content,
+                                        series,
+                                        series_index,
+                                        bar_lane,
+                                        bar_lanes,
+                                        samples,
+                                        max,
+                                        *bar_gap,
+                                        clip,
+                                    );
+                                    bar_lane += 1;
+                                }
+                                UiGraphStyle::Line => paint_graph_line(
+                                    draw,
+                                    entity,
+                                    rect.content,
+                                    series,
+                                    series_index,
+                                    max,
+                                    clip,
+                                ),
+                                UiGraphStyle::Area => paint_graph_area(
+                                    draw,
+                                    entity,
+                                    rect.content,
+                                    series,
+                                    series_index,
+                                    max,
+                                    clip,
+                                ),
+                                UiGraphStyle::Scatter => paint_graph_scatter(
+                                    draw,
+                                    entity,
+                                    rect.content,
+                                    series,
+                                    series_index,
+                                    max,
+                                    clip,
+                                ),
+                                UiGraphStyle::StackedArea => paint_graph_area(
+                                    draw,
+                                    entity,
+                                    rect.content,
+                                    series,
+                                    series_index,
+                                    max,
+                                    clip,
+                                ),
+                                UiGraphStyle::StackedLine => paint_graph_line(
+                                    draw,
+                                    entity,
+                                    rect.content,
+                                    series,
+                                    series_index,
+                                    max,
+                                    clip,
+                                ),
+                            }
                         }
-                        UiGraphStyle::Line => paint_graph_line(
-                            draw,
-                            entity,
-                            rect.content,
-                            series,
-                            series_index,
-                            max,
-                            clip,
-                        ),
-                        UiGraphStyle::Area => paint_graph_area(
-                            draw,
-                            entity,
-                            rect.content,
-                            series,
-                            series_index,
-                            max,
-                            clip,
-                        ),
-                        UiGraphStyle::Scatter => paint_graph_scatter(
-                            draw,
-                            entity,
-                            rect.content,
-                            series,
-                            series_index,
-                            max,
-                            clip,
-                        ),
                     }
                 }
+
+                paint_graph_y_labels(draw, entity, rect.content, y_labels, &style, theme, clip);
             }
             UiWidgetSpec::Divider => {
                 draw.commands.push(UiDrawCommand::Line {
@@ -1716,12 +1771,21 @@ fn paint_graph_bars(
     lanes: f32,
     samples: usize,
     max: f32,
+    bar_gap: bool,
     clip: Option<UiRect>,
 ) {
     let step = content.width / samples as f32;
-    let grouped = (step - 1.0).max(1.0);
-    let bar = (grouped / lanes).clamp(1.0, 3.0);
-    let offset = ((step - bar * lanes) * 0.5).max(0.0);
+    let bar = if bar_gap {
+        (step - 1.0).max(1.0) / lanes
+    } else {
+        step / lanes
+    }
+    .clamp(1.0, 3.0);
+    let offset = if bar_gap {
+        ((step - bar * lanes) * 0.5).max(0.0)
+    } else {
+        0.0
+    };
 
     for (index, value) in series.values.iter().enumerate() {
         if !value.is_finite() || *value < 0.0 {
@@ -1844,6 +1908,133 @@ fn paint_graph_scatter(
             rect: UiRect::new(x - 1.0, y - 1.0, 2.0, 2.0),
             color: graph_sample_color(series, index, series_index),
             radius: [1.0; 4],
+            clip,
+        });
+    }
+}
+
+fn paint_graph_stacked(
+    draw: &mut UiDrawList,
+    entity: Entity,
+    content: UiRect,
+    series: &[UiGraphSeries],
+    max: f32,
+    fill: bool,
+    clip: Option<UiRect>,
+) {
+    if series.is_empty() {
+        return;
+    }
+    let columns = content.width.floor() as usize;
+    let samples = series
+        .iter()
+        .map(|series| series.values.len())
+        .max()
+        .unwrap_or(0);
+    if columns == 0 || samples == 0 {
+        return;
+    }
+
+    let mut previous = vec![None::<f32>; series.len()];
+    for column in 0..columns {
+        let t = if columns > 1 {
+            column as f32 / (columns - 1) as f32
+        } else {
+            0.0
+        };
+        let sample_index = ((t * samples.saturating_sub(1) as f32).round() as usize)
+            .min(samples.saturating_sub(1));
+        let mut lower = 0.0f32;
+        for (series_index, series) in series.iter().enumerate() {
+            let value = graph_sample(&series.values, t).unwrap_or(0.0).max(0.0);
+            let upper = lower + value;
+            let y_lower =
+                content.y + content.height - (lower / max).clamp(0.0, 1.0) * content.height;
+            let y_upper =
+                content.y + content.height - (upper / max).clamp(0.0, 1.0) * content.height;
+            let color = if series.values.is_empty() {
+                if series.color[3] > 0.0 {
+                    series.color
+                } else {
+                    graph_palette(series_index)
+                }
+            } else {
+                graph_sample_color(
+                    series,
+                    sample_index.min(series.values.len() - 1),
+                    series_index,
+                )
+            };
+
+            if fill {
+                let top = y_lower.min(y_upper);
+                let height = (y_lower - y_upper).abs();
+                if height > 0.0 {
+                    draw.commands.push(UiDrawCommand::Rect {
+                        entity,
+                        rect: UiRect::new(content.x + column as f32, top, 1.0, height),
+                        color: with_alpha(color, 0.32),
+                        radius: [0.0; 4],
+                        clip,
+                    });
+                }
+            }
+
+            let (top, height) = previous[series_index].map_or((y_upper, 1.0), |previous| {
+                (previous.min(y_upper), (previous - y_upper).abs().max(1.0))
+            });
+            draw.commands.push(UiDrawCommand::Rect {
+                entity,
+                rect: UiRect::new(content.x + column as f32, top, 1.0, height),
+                color,
+                radius: [0.0; 4],
+                clip,
+            });
+            previous[series_index] = Some(y_upper);
+            lower = upper;
+        }
+    }
+}
+
+fn paint_graph_grid(draw: &mut UiDrawList, entity: Entity, content: UiRect, clip: Option<UiRect>) {
+    for row in 0..3 {
+        let y = content.y + content.height * row as f32 * 0.5;
+        draw.commands.push(UiDrawCommand::Line {
+            entity,
+            rect: UiRect::new(content.x, y, content.width, 1.0),
+            color: [0.75, 0.80, 0.92, 0.08],
+            clip,
+        });
+    }
+}
+
+fn paint_graph_y_labels(
+    draw: &mut UiDrawList,
+    entity: Entity,
+    content: UiRect,
+    labels: &[String],
+    style: &UiResolvedStyle,
+    theme: Option<&UiThemes>,
+    clip: Option<UiRect>,
+) {
+    let mut text_style = style.text.clone().unwrap_or_else(|| default_text(theme));
+    text_style.size = 9.5;
+    text_style.color = token_color(theme, "text_muted", [0.60, 0.64, 0.74, 1.0]);
+    text_style.wrap = UiTextWrap::NoWrap;
+
+    for (index, label) in labels.iter().take(3).enumerate() {
+        let y = match index {
+            0 => content.y + content.height - 12.0,
+            1 => content.y + content.height * 0.5 - 5.0,
+            _ => content.y + 2.0,
+        };
+        draw.commands.push(UiDrawCommand::Text {
+            entity,
+            rect: UiRect::new(content.x + 4.0, y, content.width - 8.0, 12.0),
+            text: label.clone(),
+            style: text_style.clone(),
+            caret: None,
+            selection: None,
             clip,
         });
     }
