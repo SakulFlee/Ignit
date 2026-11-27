@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
+use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize)]
@@ -216,6 +218,249 @@ pub fn load_android_config() -> Result<AndroidConfig> {
 pub fn load_ios_config() -> Result<IosConfig> {
     let config = load_config()?;
     Ok(config.ios.unwrap_or_default())
+}
+
+/// Ensure Android setup values exist, prompting for missing ones in a terminal.
+///
+/// Called lazily when an Android project is about to be generated. Non-
+/// interactive environments get the defaults so CI never blocks.
+pub fn ensure_android_config(interactive: bool) -> Result<AndroidConfig> {
+    let project_root = find_project_root()?;
+    let parsed = load_config()?;
+    let section_present = parsed.android.is_some();
+
+    let mut android = if section_present {
+        parsed.android.unwrap()
+    } else {
+        AndroidConfig {
+            package: None,
+            min_sdk: None,
+            target_sdk: None,
+            ..AndroidConfig::default()
+        }
+    };
+
+    let interactive = interactive && std::io::stdin().is_terminal();
+    let mut changes: Vec<(&'static str, String)> = Vec::new();
+
+    if android.package.is_none() {
+        let default = default_platform_package(&project_root);
+        let value = prompt_text("Android package", &default, interactive)?;
+        android.package = Some(value.clone());
+        changes.push(("package", toml_quote(&value)));
+    }
+
+    if android.min_sdk.is_none() {
+        let value = prompt_u32("Android min SDK", 21, interactive)?;
+        android.min_sdk = Some(value);
+        changes.push(("min_sdk", value.to_string()));
+    }
+
+    if android.target_sdk.is_none() {
+        let value = prompt_u32("Android target SDK", 34, interactive)?;
+        android.target_sdk = Some(value);
+        changes.push(("target_sdk", value.to_string()));
+    }
+
+    if !changes.is_empty() {
+        write_config_values(&project_root, "android", section_present, &changes)?;
+    }
+
+    Ok(android)
+}
+
+/// Ensure iOS setup values exist, prompting for missing ones in a terminal.
+///
+/// The deployment target is the iOS equivalent of Android's SDK versions and
+/// is written on the first iOS project generation.
+pub fn ensure_ios_config(interactive: bool) -> Result<IosConfig> {
+    let project_root = find_project_root()?;
+    let parsed = load_config()?;
+    let section_present = parsed.ios.is_some();
+
+    let mut ios = if section_present {
+        parsed.ios.unwrap()
+    } else {
+        IosConfig {
+            bundle_id: None,
+            deployment_target: None,
+            app_name: None,
+        }
+    };
+
+    let interactive = interactive && std::io::stdin().is_terminal();
+    let mut changes: Vec<(&'static str, String)> = Vec::new();
+
+    if ios.bundle_id.is_none() {
+        let default = default_platform_package(&project_root);
+        let value = prompt_text("iOS bundle ID", &default, interactive)?;
+        ios.bundle_id = Some(value.clone());
+        changes.push(("bundle_id", toml_quote(&value)));
+    }
+
+    if ios.deployment_target.is_none() {
+        let value = prompt_text("iOS deployment target", "16.0", interactive)?;
+        ios.deployment_target = Some(value.clone());
+        changes.push(("deployment_target", toml_quote(&value)));
+    }
+
+    if ios.app_name.is_none() {
+        let default = read_cargo_package_name(&project_root).unwrap_or_else(|| "Ignit".to_string());
+        let value = prompt_text("iOS app name", &default, interactive)?;
+        ios.app_name = Some(value.clone());
+        changes.push(("app_name", toml_quote(&value)));
+    }
+
+    if !changes.is_empty() {
+        write_config_values(&project_root, "ios", section_present, &changes)?;
+    }
+
+    Ok(ios)
+}
+
+/// Default platform package/bundle identifier derived from the Cargo package.
+fn default_platform_package(project_root: &Path) -> String {
+    let name = read_cargo_package_name(project_root).unwrap_or_else(|| "ignit_game".to_string());
+    format!("com.example.{}", name.replace('-', "_"))
+}
+
+/// Reads the `[package] name` from a project's Cargo.toml.
+fn read_cargo_package_name(project_root: &Path) -> Option<String> {
+    let content = fs::read_to_string(project_root.join("Cargo.toml")).ok()?;
+    let mut in_package = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        if trimmed == "[package]" {
+            in_package = true;
+            continue;
+        }
+
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_package = false;
+            continue;
+        }
+
+        if in_package
+            && let Some((key, value)) = trimmed.split_once('=')
+            && key.trim() == "name"
+        {
+            return Some(value.trim().trim_matches('"').to_string());
+        }
+    }
+
+    None
+}
+
+fn prompt_text(label: &str, default: &str, interactive: bool) -> Result<String> {
+    if !interactive {
+        return Ok(default.to_string());
+    }
+
+    let value = inquire::Text::new(&format!("{label}:"))
+        .with_default(default)
+        .prompt()?;
+
+    let value = value.trim();
+    Ok(if value.is_empty() {
+        default.to_string()
+    } else {
+        value.to_string()
+    })
+}
+
+fn prompt_u32(label: &str, default: u32, interactive: bool) -> Result<u32> {
+    if !interactive {
+        return Ok(default);
+    }
+
+    let value = inquire::Text::new(&format!("{label}:"))
+        .with_default(&default.to_string())
+        .prompt()?;
+
+    Ok(value.trim().parse().unwrap_or(default))
+}
+
+fn toml_quote(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// Writes missing keys into a platform section, appending the section if needed.
+fn write_config_values(
+    project_root: &Path,
+    section: &str,
+    section_present: bool,
+    values: &[(&str, String)],
+) -> Result<()> {
+    let path = project_root.join("Ignit.toml");
+    let mut content =
+        fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
+
+    if section_present {
+        for (key, value) in values {
+            if !set_toml_key(&mut content, section, key, value) {
+                anyhow::bail!(
+                    "Could not find the [{}] section in {}",
+                    section,
+                    path.display()
+                );
+            }
+        }
+    } else {
+        if !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push_str(&format!("\n[{}]\n", section));
+        for (key, value) in values {
+            content.push_str(&format!("{} = {}\n", key, value));
+        }
+    }
+
+    fs::write(&path, content).with_context(|| format!("Failed to write {}", path.display()))?;
+    Ok(())
+}
+
+/// Replaces or inserts a key inside an existing TOML section.
+fn set_toml_key(content: &mut String, section: &str, key: &str, value: &str) -> bool {
+    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+
+    let Some(start) = lines
+        .iter()
+        .position(|line| is_section_header(line, section))
+    else {
+        return false;
+    };
+
+    let end = lines[start + 1..]
+        .iter()
+        .position(|line| line.trim_start().starts_with('['))
+        .map_or(lines.len(), |offset| start + 1 + offset);
+
+    let existing = (start + 1..end).find(|&index| {
+        lines[index]
+            .split_once('=')
+            .map(|(name, _)| name.trim() == key)
+            .unwrap_or(false)
+    });
+
+    let replacement = format!("{} = {}", key, value);
+    match existing {
+        Some(index) => lines[index] = replacement,
+        None => lines.insert(end, replacement),
+    }
+
+    let mut joined = lines.join("\n");
+    joined.push('\n');
+    *content = joined;
+    true
+}
+
+fn is_section_header(line: &str, section: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.starts_with('[')
+        && trimmed.ends_with(']')
+        && trimmed[1..trimmed.len() - 1].trim() == section
 }
 
 /// Valid values for the `android:screenOrientation` manifest attribute.
@@ -499,7 +744,7 @@ pub fn find_package_lib_name(package_name: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::AndroidConfig;
+    use super::{AndroidConfig, set_toml_key};
 
     #[test]
     fn android_defaults_to_sensor_landscape() {
@@ -517,5 +762,27 @@ mod tests {
         };
 
         assert_eq!(config.screen_orientation(), "portrait");
+    }
+
+    #[test]
+    fn toml_key_updates_stay_inside_their_section() {
+        let mut content =
+            "[ignit]\n\n[android]\npackage = \"com.example.demo\"\n\n[ios]\napp_name = \"demo\"\n"
+                .to_string();
+
+        assert!(set_toml_key(&mut content, "android", "min_sdk", "21"));
+        assert!(set_toml_key(&mut content, "android", "min_sdk", "22"));
+        assert!(set_toml_key(
+            &mut content,
+            "ios",
+            "deployment_target",
+            "\"16.0\""
+        ));
+
+        assert!(content.contains("[android]\npackage = \"com.example.demo\""));
+        assert!(content.contains("min_sdk = 22"));
+        assert!(!content.contains("min_sdk = 21"));
+        assert!(content.contains("[ios]\napp_name = \"demo\""));
+        assert!(content.contains("deployment_target = \"16.0\""));
     }
 }

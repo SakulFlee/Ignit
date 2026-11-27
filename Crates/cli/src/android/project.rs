@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use crate::config;
@@ -13,6 +14,8 @@ pub fn init() -> Result<()> {
         return Ok(());
     }
 
+    let interactive = std::io::stdin().is_terminal();
+    config::ensure_android_config(interactive)?;
     let android_config = config::load_android_config()?;
 
     println!("Generating Android project...");

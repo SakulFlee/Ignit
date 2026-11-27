@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use crate::config;
@@ -8,6 +9,8 @@ pub fn init(package_name: Option<&str>, force: bool) -> Result<()> {
     let project_root = config::find_project_root()?;
     let ios_dir = project_root.join("iOS");
 
+    let interactive = std::io::stdin().is_terminal();
+    config::ensure_ios_config(interactive)?;
     let ios_config = config::load_ios_config()?;
     let lib_name = config::resolve_lib_name(package_name)?;
 

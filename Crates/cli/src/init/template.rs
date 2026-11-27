@@ -168,16 +168,12 @@ fn generate_cargo_toml(project_dir: &Path, config: &ProjectConfig) -> Result<()>
 }
 
 fn generate_ignit_toml(project_dir: &Path, config: &ProjectConfig) -> Result<()> {
-    let android = crate::config::AndroidConfig::default();
-    let ios = crate::config::IosConfig::default();
-
     let content = format!(
         r#"[ignit]
 
+# Android SDK versions are filled in on the first `ignit build android`.
 [android]
 package = "{package}"
-min_sdk = {min_sdk}
-target_sdk = {target_sdk}
 targets = ["arm64-v8a", "armeabi-v7a", "x86_64", "x86"]
 apk_mode = "multiarch"
 ndk_version = "26.2.11394342"
@@ -190,15 +186,12 @@ screen_orientation = "sensorLandscape"
 # key_alias = "your_key_alias"
 # key_password = "your_key_password"
 
+# The iOS deployment target is filled in on the first `ignit build ios`.
 [ios]
 bundle_id = "{package}"
-deployment_target = "{deployment_target}"
 app_name = "{app_name}"
 "#,
         package = config.package_name,
-        min_sdk = android.min_sdk(),
-        target_sdk = android.target_sdk(),
-        deployment_target = ios.deployment_target(),
         app_name = config.project_name,
     );
 

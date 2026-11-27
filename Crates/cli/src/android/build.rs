@@ -16,6 +16,9 @@ pub fn build(package_name: Option<&str>, release: bool, features: &CargoFeatures
     let project_root = config::find_project_root()?;
     let android_dir = project_root.join("Android");
 
+    let interactive = std::io::stdin().is_terminal();
+    config::ensure_android_config(interactive)?;
+
     if !android_dir.exists() {
         println!("Android/ directory not found. Generating project first...");
         super::project::init()?;

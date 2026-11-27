@@ -110,9 +110,11 @@ ignit run ios           # boot, install, launch, and stream stdout
 
 `ignit init` no longer prompts for platform setup. Pass `--android` and/or
 `--ios` to generate those native projects immediately; `ignit build android` and
-`ignit build ios` generate them on demand otherwise. Android SDK/NDK setup and
-the values in `Ignit.toml` are applied when the Android build runs. `init-ios`
-remains available for an existing project.
+`ignit build ios` generate them on demand otherwise. When a platform project is
+created lazily, the CLI asks for the missing SDK values in a terminal (or uses
+defaults in CI) and writes them back to `Ignit.toml`. Android SDK/NDK/JDK setup
+still happens during the Android build; iOS uses Xcode's SDK and prompts for the
+deployment target. `init-ios` remains available for an existing project.
 
 Inside the engine workspace, pass the package explicitly, for example
 `ignit build ios --package template_minimal_3d`.

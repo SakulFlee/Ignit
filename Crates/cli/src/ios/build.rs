@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -16,6 +17,9 @@ pub fn build(package_name: Option<&str>, release: bool, features: &CargoFeatures
 
     let project_root = config::find_project_root()?;
     let ios_dir = project_root.join("iOS");
+
+    let interactive = std::io::stdin().is_terminal();
+    config::ensure_ios_config(interactive)?;
     let ios_config = config::load_ios_config()?;
 
     let package_root = match package_name {

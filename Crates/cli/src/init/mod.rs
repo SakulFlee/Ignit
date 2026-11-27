@@ -117,6 +117,7 @@ fn generate_platform_projects(project_dir: &Path, config: &prompt::ProjectConfig
     let result = (|| -> Result<()> {
         if config.generate_android {
             println!("\nInitializing Android project...");
+            crate::config::ensure_android_config(false)?;
             crate::android::project::init()?;
         }
 
@@ -124,6 +125,7 @@ fn generate_platform_projects(project_dir: &Path, config: &prompt::ProjectConfig
             #[cfg(target_os = "macos")]
             {
                 println!("\nInitializing iOS project...");
+                crate::config::ensure_ios_config(false)?;
                 crate::ios::project::init(None, false)?;
             }
 
