@@ -86,7 +86,7 @@ pub fn run(
 
     println!("\nProject '{}' created successfully!", config.project_name);
 
-    generate_platform_projects(&project_dir, &config)?;
+    generate_platform_projects(&project_dir, &config, !yes)?;
 
     println!("\nNext steps:");
     println!("  cd {}", project_dir.display());
@@ -97,16 +97,28 @@ pub fn run(
     }
 
     println!("  ignit build");
-    println!("  ignit build android");
+
+    if config.generate_android {
+        println!("  ignit build android");
+    }
 
     #[cfg(target_os = "macos")]
-    println!("  ignit build ios");
+    if config.generate_ios {
+        println!("  ignit build ios");
+    }
 
     Ok(())
 }
 
 /// Generates any platform projects requested with `--android` or `--ios`.
-fn generate_platform_projects(project_dir: &Path, config: &prompt::ProjectConfig) -> Result<()> {
+///
+/// `interactive` mirrors the `init` prompt mode: interactive runs ask for
+/// missing platform values, `--yes` runs fill them with defaults.
+fn generate_platform_projects(
+    project_dir: &Path,
+    config: &prompt::ProjectConfig,
+    interactive: bool,
+) -> Result<()> {
     if !config.generate_android && !config.generate_ios {
         return Ok(());
     }
@@ -117,7 +129,7 @@ fn generate_platform_projects(project_dir: &Path, config: &prompt::ProjectConfig
     let result = (|| -> Result<()> {
         if config.generate_android {
             println!("\nInitializing Android project...");
-            crate::config::ensure_android_config(false)?;
+            crate::config::ensure_android_config(interactive)?;
             crate::android::project::init()?;
         }
 
@@ -125,7 +137,7 @@ fn generate_platform_projects(project_dir: &Path, config: &prompt::ProjectConfig
             #[cfg(target_os = "macos")]
             {
                 println!("\nInitializing iOS project...");
-                crate::config::ensure_ios_config(false)?;
+                crate::config::ensure_ios_config(interactive)?;
                 crate::ios::project::init(None, false)?;
             }
 

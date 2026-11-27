@@ -144,7 +144,7 @@ enum Commands {
         /// Package to run (optional in standalone projects)
         #[arg(short, long)]
         package: Option<String>,
-        /// Device serial or AVD name to run on
+        /// Device serial, AVD name, or iOS simulator UDID
         #[arg(short, long)]
         device: Option<String>,
         /// Run in release mode

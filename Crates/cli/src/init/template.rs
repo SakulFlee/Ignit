@@ -171,8 +171,8 @@ fn generate_ignit_toml(project_dir: &Path, config: &ProjectConfig) -> Result<()>
     let content = format!(
         r#"[ignit]
 
-# Android SDK versions are filled in on the first `ignit build android`.
 [android]
+# SDK versions are filled in on the first `ignit build android`.
 package = "{package}"
 targets = ["arm64-v8a", "armeabi-v7a", "x86_64", "x86"]
 apk_mode = "multiarch"
@@ -186,8 +186,8 @@ screen_orientation = "sensorLandscape"
 # key_alias = "your_key_alias"
 # key_password = "your_key_password"
 
-# The iOS deployment target is filled in on the first `ignit build ios`.
 [ios]
+# The deployment target is filled in on the first `ignit build ios`.
 bundle_id = "{package}"
 app_name = "{app_name}"
 "#,

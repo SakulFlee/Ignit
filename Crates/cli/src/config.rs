@@ -432,12 +432,18 @@ fn set_toml_key(content: &mut String, section: &str, key: &str, value: &str) -> 
         return false;
     };
 
-    let end = lines[start + 1..]
+    let next_section = lines[start + 1..]
         .iter()
         .position(|line| line.trim_start().starts_with('['))
         .map_or(lines.len(), |offset| start + 1 + offset);
 
-    let existing = (start + 1..end).find(|&index| {
+    // Keep the blank lines that separate this section from the next one.
+    let mut end = next_section;
+    while end > start + 1 && lines[end - 1].trim().is_empty() {
+        end -= 1;
+    }
+
+    let existing = (start + 1..next_section).find(|&index| {
         lines[index]
             .split_once('=')
             .map(|(name, _)| name.trim() == key)
@@ -781,6 +787,7 @@ mod tests {
 
         assert!(content.contains("[android]\npackage = \"com.example.demo\""));
         assert!(content.contains("min_sdk = 22"));
+        assert!(content.contains("min_sdk = 22\n\n[ios]"));
         assert!(!content.contains("min_sdk = 21"));
         assert!(content.contains("[ios]\napp_name = \"demo\""));
         assert!(content.contains("deployment_target = \"16.0\""));

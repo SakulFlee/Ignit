@@ -198,14 +198,14 @@ impl AppContext {
             apply_limit_buckets: false,
         }));
 
-        if adapter.is_err() {
+        if let Err(error) = &adapter {
             let available = block_on(instance.enumerate_adapters(Backends::all()));
-            if available.is_empty() {
-                log::error!(
-                    "No GPU adapter is available. macOS and iOS render through Metal; \
-                     virtual machines without GPU acceleration cannot present a frame."
-                );
-            }
+            log::error!(
+                "Failed to request a GPU adapter ({error:?}); {} adapter(s) are available. \
+                 macOS and iOS render through Metal; virtual machines without GPU acceleration \
+                 cannot present a frame.",
+                available.len()
+            );
         }
 
         adapter

@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::io::IsTerminal;
 use std::process::Command;
 
 use crate::config;
@@ -22,6 +23,10 @@ pub fn run(
     if !skip_build {
         super::build::build(package_name, release, features)?;
     }
+
+    // `build` already did this; repeat it so `--skip-build` still resolves the
+    // app name and bundle ID for projects whose Ignit.toml is missing them.
+    config::ensure_ios_config(std::io::stdin().is_terminal())?;
 
     let ios_config = config::load_ios_config()?;
     let bundle_id = ios_config.bundle_id();

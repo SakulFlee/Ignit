@@ -136,6 +136,7 @@ fn prompt_engine_source(config: &config::IgnitGeneral) -> Result<EngineSource> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn interactive(
     name: Option<String>,
     package: Option<String>,
@@ -209,6 +210,7 @@ pub fn interactive(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn non_interactive(
     name: Option<String>,
     package: Option<String>,

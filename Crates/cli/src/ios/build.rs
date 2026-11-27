@@ -125,6 +125,7 @@ pub fn build(package_name: Option<&str>, release: bool, features: &CargoFeatures
         "IGNIT_SKIP_RUST_BUILD=1".to_string(),
         format!("IGNIT_LIB_DIR={}", lib_dir.display()),
         format!("IGNIT_LIB_NAME={}", lib_name),
+        format!("IGNIT_RUST_TARGET={}", rust_target),
         format!(
             "IGNIT_ASSET_DIR={}",
             asset_dir
