@@ -33,11 +33,9 @@ pub const MIN_FLOATING_WINDOW_HEIGHT: f32 = 160.0;
 /// How a [`UiWidgetSpec::Graph`] series is painted.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UiGraphStyle {
-    /// Packed bars with no gap between samples.
+    /// Packed bars with touching sample edges.
     #[default]
     Bars,
-    /// Bars with a visible gap between samples.
-    BarsGapped,
     /// A dense one-pixel line.
     Line,
     /// A translucent fill below a line.
@@ -1525,12 +1523,7 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 } else {
                     let bar_lanes = series
                         .iter()
-                        .filter(|series| {
-                            matches!(
-                                series.style.unwrap_or(*graph_style),
-                                UiGraphStyle::Bars | UiGraphStyle::BarsGapped
-                            )
-                        })
+                        .filter(|series| series.style.unwrap_or(*graph_style) == UiGraphStyle::Bars)
                         .count()
                         .max(1) as f32;
                     let mut bar_lane = 0usize;
@@ -1547,23 +1540,6 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                                     bar_lanes,
                                     samples,
                                     max,
-                                    false,
-                                    clip,
-                                );
-                                bar_lane += 1;
-                            }
-                            UiGraphStyle::BarsGapped => {
-                                paint_graph_bars(
-                                    draw,
-                                    entity,
-                                    plot,
-                                    series,
-                                    series_index,
-                                    bar_lane,
-                                    bar_lanes,
-                                    samples,
-                                    max,
-                                    true,
                                     clip,
                                 );
                                 bar_lane += 1;
@@ -1797,34 +1773,24 @@ fn paint_graph_bars(
     lanes: f32,
     samples: usize,
     max: f32,
-    bar_gap: bool,
     clip: Option<UiRect>,
 ) {
     let step = content.width / samples as f32;
-    let bar = if bar_gap {
-        ((step - 1.0).max(1.0) / lanes).clamp(1.0, 3.0)
-    } else {
-        (step / lanes).max(1.0)
-    };
-    let offset = if bar_gap {
-        ((step - bar * lanes) * 0.5).max(0.0)
-    } else {
-        0.0
-    };
 
     for (index, value) in series.values.iter().enumerate() {
         if !value.is_finite() || *value < 0.0 {
             continue;
         }
         let height = (value / max).clamp(0.0, 1.0) * content.height;
+        let group_start = content.x + index as f32 * step;
+        let group_end = content.x + (index + 1) as f32 * step;
+        let lane_start = group_start + (group_end - group_start) * lane as f32 / lanes;
+        let lane_end = group_start + (group_end - group_start) * (lane + 1) as f32 / lanes;
+        let x = lane_start.round();
+        let width = (lane_end.round() - x).max(1.0);
         draw.commands.push(UiDrawCommand::Rect {
             entity,
-            rect: UiRect::new(
-                content.x + index as f32 * step + offset + lane as f32 * bar,
-                content.y + content.height - height,
-                bar,
-                height,
-            ),
+            rect: UiRect::new(x, content.y + content.height - height, width, height),
             color: graph_sample_color(series, index, series_index),
             radius: [0.0; 4],
             clip,

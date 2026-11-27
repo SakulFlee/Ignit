@@ -3,10 +3,13 @@ use std::sync::{Arc, Mutex};
 use ignit::app::{App, AppSettings, Module, UiSystem};
 use ignit::cgmath::{Point3, Rad};
 use ignit::ecs::{System, World};
-use ignit::ecs_bridge::{ActiveCamera, CameraDescriptor, Position, Rotation};
+use ignit::ecs_bridge::{
+    ActiveCamera, CameraDescriptor, EnvironmentDescriptorResource, Position, Rotation,
+};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use ignit::logging;
 use ignit::logging::{debug, error, info, trace, warn};
+use ignit::resources::WorldEnvironmentDescriptor;
 use ignit::ui::{
     UiAction, UiBuilder, UiColor, UiDimension, UiDocument, UiDocumentNode, UiEdges, UiEvent,
     UiGraphSeries, UiGraphStyle, UiLayout, UiLengthPercentage, UiNotification,
@@ -68,6 +71,8 @@ impl Module for UiDemoModule {
             notifications.max_visible = 6;
         }
 
+        disable_world_environment(ecs);
+
         let camera = ecs.spawn_entity();
         ecs.attach_component(
             &camera,
@@ -97,6 +102,14 @@ impl Module for UiDemoModule {
     }
 }
 
+/// The UI showcase does not need a 3D backdrop. Explicitly opt out of the
+/// default generated skybox/IBL environment.
+fn disable_world_environment(world: &mut World) {
+    world.insert_resource(EnvironmentDescriptorResource(Some(
+        WorldEnvironmentDescriptor::None,
+    )));
+}
+
 fn install_themes(world: &mut World) {
     let dark = UiTheme::dark();
     let light = UiTheme::light();
@@ -107,18 +120,16 @@ fn install_themes(world: &mut World) {
 }
 
 fn build_showcase(world: &mut World) {
-    let mut root = UiDocumentNode::new("demo_root")
+    let content = UiDocumentNode::new("demo_content")
         .layout(
             UiLayout::column()
-                .size(1280.0, 720.0)
+                .width_full()
+                .height_full()
                 .padding(24.0)
-                .gap(12.0),
+                .gap(12.0)
+                .shrink(0.0),
         )
-        .style(
-            UiStyle::default()
-                .background(UiColor::Token("bg".into()))
-                .class("panel"),
-        )
+        .scroll()
         .child(UiDocumentNode::new("title").text("Ignit UI widgets").style(
             UiStyle::default().padding_text(UiTextStyle {
                 size: 28.0,
@@ -406,7 +417,7 @@ fn build_showcase(world: &mut World) {
             UiDocumentNode::new("scroll_panel")
                 .layout(
                     UiLayout::column()
-                        .width(520.0)
+                        .width_full()
                         .height(220.0)
                         .padding(8.0)
                         .gap(6.0),
@@ -438,61 +449,70 @@ fn build_showcase(world: &mut World) {
                         }),
                 ),
         )
-        .child(
-            UiDocumentNode::new("floating")
-                .layout(
-                    UiLayout::column()
-                        .width(300.0)
-                        .height(140.0)
-                        .padding_edges(UiEdges {
-                            left: UiLengthPercentage::Length(10.0),
-                            right: UiLengthPercentage::Length(10.0),
-                            top: UiLengthPercentage::Length(36.0),
-                            bottom: UiLengthPercentage::Length(10.0),
-                        })
-                        .absolute()
-                        .inset(UiEdges {
-                            left: UiDimension::Length(940.0),
-                            right: UiDimension::Auto,
-                            top: UiDimension::Length(24.0),
-                            bottom: UiDimension::Auto,
-                        }),
-                )
-                .widget(UiWidgetSpec::FloatingWindow {
-                    title: "Floating window".into(),
-                    open: true,
-                })
-                .style(UiStyle::default().class("panel"))
-                .child(
-                    UiDocumentNode::new("floating_body")
-                        .text("Floating panels overlay the scene. Docking is v1.8."),
-                ),
-        )
-        .child(
-            UiDocumentNode::new("modal")
-                .layout(
-                    UiLayout::column()
-                        .width(420.0)
-                        .height(220.0)
-                        .padding(18.0)
-                        .gap(10.0)
-                        .absolute()
-                        .inset(UiEdges {
-                            left: UiDimension::Length(430.0),
-                            right: UiDimension::Auto,
-                            top: UiDimension::Length(250.0),
-                            bottom: UiDimension::Auto,
-                        }),
-                )
-                .widget(UiWidgetSpec::Modal { open: false })
-                .style(UiStyle::default().class("panel").visible(false))
-                .child(UiDocumentNode::new("modal_title").text("Modal scope"))
-                .child(
-                    UiDocumentNode::new("modal_body")
-                        .text("Focus is trapped in this modal while it is open."),
-                ),
-        )
         .child(graph_showcase());
+
+    let floating = UiDocumentNode::new("floating")
+        .layout(
+            UiLayout::column()
+                .width(300.0)
+                .height(140.0)
+                .padding_edges(UiEdges {
+                    left: UiLengthPercentage::Length(10.0),
+                    right: UiLengthPercentage::Length(10.0),
+                    top: UiLengthPercentage::Length(36.0),
+                    bottom: UiLengthPercentage::Length(10.0),
+                })
+                .absolute()
+                .inset(UiEdges {
+                    left: UiDimension::Auto,
+                    right: UiDimension::Length(24.0),
+                    top: UiDimension::Length(24.0),
+                    bottom: UiDimension::Auto,
+                }),
+        )
+        .widget(UiWidgetSpec::FloatingWindow {
+            title: "Floating window".into(),
+            open: true,
+        })
+        .style(UiStyle::default().class("panel"))
+        .child(
+            UiDocumentNode::new("floating_body")
+                .text("Floating panels overlay the scene. Docking is v1.8."),
+        );
+
+    let modal = UiDocumentNode::new("modal")
+        .layout(
+            UiLayout::column()
+                .width(420.0)
+                .height(220.0)
+                .padding(18.0)
+                .gap(10.0)
+                .absolute()
+                .inset(UiEdges {
+                    left: UiDimension::Length(430.0),
+                    right: UiDimension::Auto,
+                    top: UiDimension::Length(250.0),
+                    bottom: UiDimension::Auto,
+                }),
+        )
+        .widget(UiWidgetSpec::Modal { open: false })
+        .style(UiStyle::default().class("panel").visible(false))
+        .child(UiDocumentNode::new("modal_title").text("Modal scope"))
+        .child(
+            UiDocumentNode::new("modal_body")
+                .text("Focus is trapped in this modal while it is open."),
+        );
+
+    let mut root = UiDocumentNode::new("demo_root")
+        .layout(UiLayout::column().width_full().height_full())
+        .style(
+            UiStyle::default()
+                .background(UiColor::Token("bg".into()))
+                .class("panel"),
+        )
+        .child(content)
+        .child(floating)
+        .child(modal);
     root.view = Some(UiView::new(1280.0, 720.0));
     UiBuilder::new().root(root).build(world).unwrap();
 
@@ -536,10 +556,11 @@ fn graph_card(id: &str, title: &str, style: UiGraphStyle, phase_offset: f32) -> 
     UiDocumentNode::new(format!("{id}_card"))
         .layout(
             UiLayout::column()
-                .width(320.0)
+                .width_percent(31.0)
                 .height(166.0)
                 .padding(8.0)
-                .gap(6.0),
+                .gap(6.0)
+                .shrink(0.0),
         )
         .style(UiStyle::default().class("panel"))
         .child(
@@ -568,16 +589,10 @@ fn graph_showcase() -> UiDocumentNode {
     UiDocumentNode::new("demo_graphs")
         .layout(
             UiLayout::row()
-                .width(1010.0)
+                .width_full()
                 .height(180.0)
                 .gap(12.0)
-                .absolute()
-                .inset(UiEdges {
-                    left: UiDimension::Length(24.0),
-                    right: UiDimension::Auto,
-                    top: UiDimension::Length(520.0),
-                    bottom: UiDimension::Auto,
-                }),
+                .shrink(0.0),
         )
         .child(graph_card(
             "demo_graph_bars",
@@ -796,6 +811,50 @@ mod tests {
         assert!(forest.find(&"demo_graph_bars".into()).is_some());
         assert!(forest.find(&"demo_graph_line".into()).is_some());
         assert!(forest.find(&"demo_graph_area".into()).is_some());
+    }
+
+    #[test]
+    fn graph_section_does_not_overlap_the_scroll_list() {
+        let mut world = World::new();
+        ignit::ui::init(&mut world);
+        build_showcase(&mut world);
+        let mut text = ignit::ui::UiFallbackTextMeasure;
+        ignit::ui::update(&mut world, &mut text);
+
+        let forest = world.get_resource::<ignit::ui::UiForest>().unwrap();
+        let scroll = forest.find(&"scroll_panel".into()).unwrap();
+        let graphs = forest.find(&"demo_graphs".into()).unwrap();
+        let computed = world
+            .get_component_store::<ignit::ui::UiComputed>()
+            .unwrap();
+        let scroll = computed.get_component(scroll.index).unwrap().rect;
+        let graphs = computed.get_component(graphs.index).unwrap().rect;
+        assert!(
+            graphs.y >= scroll.y + scroll.height,
+            "graphs {:?} overlap scroll panel {:?}",
+            graphs,
+            scroll
+        );
+
+        let root = forest.find(&"demo_root".into()).unwrap();
+        let layout = world
+            .get_component_store::<ignit::ui::UiLayout>()
+            .unwrap()
+            .get_component(root.index)
+            .cloned()
+            .unwrap();
+        assert_eq!(layout.width, UiDimension::FULL);
+        assert_eq!(layout.height, UiDimension::FULL);
+    }
+
+    #[test]
+    fn ui_demo_disables_the_world_environment() {
+        let mut world = World::new();
+        disable_world_environment(&mut world);
+        let descriptor = world
+            .get_resource::<EnvironmentDescriptorResource>()
+            .and_then(|resource| resource.0.clone());
+        assert!(matches!(descriptor, Some(WorldEnvironmentDescriptor::None)));
     }
 
     #[test]

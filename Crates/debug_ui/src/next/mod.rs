@@ -67,9 +67,8 @@ const METRICS: [GraphMetric; 5] = [
     GraphMetric::All,
 ];
 
-const CHART_STYLES: [UiGraphStyle; 5] = [
+const CHART_STYLES: [UiGraphStyle; 4] = [
     UiGraphStyle::Bars,
-    UiGraphStyle::BarsGapped,
     UiGraphStyle::Line,
     UiGraphStyle::Area,
     UiGraphStyle::Scatter,
@@ -388,6 +387,12 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
                         .width_full()
                         .height(24.0)
                         .gap(6.0)
+                        .padding_edges(ignit_ui::UiEdges {
+                            left: ignit_ui::UiLengthPercentage::Zero,
+                            right: ignit_ui::UiLengthPercentage::Length(8.0),
+                            top: ignit_ui::UiLengthPercentage::Zero,
+                            bottom: ignit_ui::UiLengthPercentage::Zero,
+                        })
                         .shrink(0.0),
                 )
                 .child(
@@ -672,7 +677,6 @@ fn metric_title(metric: GraphMetric) -> &'static str {
 fn chart_label(style: UiGraphStyle) -> &'static str {
     match style {
         UiGraphStyle::Bars => "Bars",
-        UiGraphStyle::BarsGapped => "Bars gapped",
         UiGraphStyle::Line => "Line",
         UiGraphStyle::Area => "Area",
         UiGraphStyle::Scatter => "Scatter",
@@ -1680,13 +1684,12 @@ mod tests {
             options,
             vec![
                 "Bars".to_string(),
-                "Bars gapped".into(),
                 "Line".into(),
                 "Area".into(),
                 "Scatter".into()
             ]
         );
-        assert_eq!(selected, 3);
+        assert_eq!(selected, 2);
 
         let graph = world
             .get_resource::<ignit_ui::UiForest>()
@@ -2003,7 +2006,7 @@ mod tests {
             let UiWidgetSpec::Dropdown { selected, .. } = &mut widget.spec else {
                 panic!("chart selector is a dropdown");
             };
-            *selected = 2;
+            *selected = 1;
         }
 
         refresh_performance(&mut world, true);

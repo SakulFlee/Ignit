@@ -1241,7 +1241,7 @@ fn graph_widget_paints_every_series_with_distinct_colours() {
                 ignit_ui::UiGraphSeries::new(vec![100.0, 50.0, 0.0], [1.0, 0.8, 0.4, 1.0]),
             ],
             max: 100.0,
-            style: ignit_ui::UiGraphStyle::BarsGapped,
+            style: ignit_ui::UiGraphStyle::Bars,
             y_labels: Vec::new(),
             x_labels: Vec::new(),
         },
@@ -1265,11 +1265,7 @@ fn graph_widget_paints_every_series_with_distinct_colours() {
         .collect::<Vec<_>>();
 
     assert_eq!(bars.len(), 6, "one bar per sample per series");
-    assert!(
-        bars.iter()
-            .all(|(rect, _)| (1.0..=3.0).contains(&rect.width)),
-        "bars stay between one and three pixels wide"
-    );
+    assert!(bars.iter().all(|(rect, _)| rect.width >= 1.0));
     assert!(
         bars.iter().any(|(_, color)| *color == [0.5, 0.9, 0.6, 1.0])
             && bars.iter().any(|(_, color)| *color == [1.0, 0.8, 0.4, 1.0]),
@@ -1434,44 +1430,44 @@ fn graph_widget_stacks_series_and_draws_axis_labels() {
 }
 
 #[test]
-fn graph_widget_packed_bars_touch_and_gapped_bars_do_not() {
-    fn bars(style: ignit_ui::UiGraphStyle) -> Vec<ignit_ui::UiRect> {
-        let mut world = World::new();
-        init(&mut world);
-        let entity = build(
-            &mut world,
-            "graph_bars",
-            UiWidgetSpec::Graph {
-                series: vec![ignit_ui::UiGraphSeries::new(
-                    (0..100).map(|index| index as f32).collect(),
-                    [0.5, 0.9, 0.6, 1.0],
-                )],
-                max: 100.0,
-                style,
-                y_labels: Vec::new(),
-                x_labels: Vec::new(),
-            },
+fn graph_widget_packed_bars_have_no_seams() {
+    let mut world = World::new();
+    init(&mut world);
+    let entity = build(
+        &mut world,
+        "graph_bars",
+        UiWidgetSpec::Graph {
+            series: vec![ignit_ui::UiGraphSeries::new(
+                (0..100).map(|index| index as f32).collect(),
+                [0.5, 0.9, 0.6, 1.0],
+            )],
+            max: 100.0,
+            style: ignit_ui::UiGraphStyle::Bars,
+            y_labels: Vec::new(),
+            x_labels: Vec::new(),
+        },
+    );
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    let draw = world.get_resource::<UiDrawList>().unwrap();
+    let bars = draw
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            UiDrawCommand::Rect {
+                entity: e, rect, ..
+            } if *e == entity => Some(*rect),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(bars.len() > 2);
+    for pair in bars.windows(2) {
+        assert_eq!(
+            pair[1].x,
+            pair[0].x + pair[0].width,
+            "adjacent packed bars touch exactly"
         );
-        let mut text = ignit_ui::UiFallbackTextMeasure;
-        update(&mut world, &mut text);
-        let draw = world.get_resource::<UiDrawList>().unwrap();
-        draw.commands
-            .iter()
-            .filter_map(|command| match command {
-                UiDrawCommand::Rect {
-                    entity: e, rect, ..
-                } if *e == entity => Some(*rect),
-                _ => None,
-            })
-            .collect()
     }
-
-    let packed = bars(ignit_ui::UiGraphStyle::Bars);
-    let gapped = bars(ignit_ui::UiGraphStyle::BarsGapped);
-    assert!(packed.len() > 2 && gapped.len() > 2);
-    assert!((packed[1].x - (packed[0].x + packed[0].width)).abs() < 1.0e-4);
-    assert!(gapped[0].x > packed[0].x, "gapped bars are inset");
-    assert!(gapped[0].width < packed[0].width);
 }
 
 #[test]
