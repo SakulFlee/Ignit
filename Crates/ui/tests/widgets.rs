@@ -1241,9 +1241,9 @@ fn graph_widget_paints_every_series_with_distinct_colours() {
                 ignit_ui::UiGraphSeries::new(vec![100.0, 50.0, 0.0], [1.0, 0.8, 0.4, 1.0]),
             ],
             max: 100.0,
-            style: ignit_ui::UiGraphStyle::Bars,
-            bar_gap: true,
+            style: ignit_ui::UiGraphStyle::BarsGapped,
             y_labels: Vec::new(),
+            x_labels: Vec::new(),
         },
     );
     let mut text = ignit_ui::UiFallbackTextMeasure;
@@ -1298,8 +1298,8 @@ fn graph_widget_styles_paint_lines_areas_and_scatter_points() {
                 )],
                 max: 100.0,
                 style,
-                bar_gap: true,
                 y_labels: Vec::new(),
+                x_labels: Vec::new(),
             },
         );
         let mut text = ignit_ui::UiFallbackTextMeasure;
@@ -1340,8 +1340,8 @@ fn graph_widget_styles_paint_lines_areas_and_scatter_points() {
             ],
             max: 100.0,
             style: ignit_ui::UiGraphStyle::Scatter,
-            bar_gap: true,
             y_labels: Vec::new(),
+            x_labels: Vec::new(),
         },
     );
     let mut text = ignit_ui::UiFallbackTextMeasure;
@@ -1376,10 +1376,7 @@ fn graph_widget_styles_paint_lines_areas_and_scatter_points() {
 
 #[test]
 fn graph_widget_stacks_series_and_draws_axis_labels() {
-    for style in [
-        ignit_ui::UiGraphStyle::StackedLine,
-        ignit_ui::UiGraphStyle::StackedArea,
-    ] {
+    for style in [ignit_ui::UiGraphStyle::Line, ignit_ui::UiGraphStyle::Area] {
         let mut world = World::new();
         init(&mut world);
         let entity = build(
@@ -1392,8 +1389,8 @@ fn graph_widget_stacks_series_and_draws_axis_labels() {
                 ],
                 max: 50.0,
                 style,
-                bar_gap: true,
                 y_labels: vec!["0 ms".into(), "25 ms".into(), "50 ms".into()],
+                x_labels: vec!["-10s".into(), "-5s".into(), "now".into()],
             },
         );
         let mut text = ignit_ui::UiFallbackTextMeasure;
@@ -1418,8 +1415,9 @@ fn graph_widget_stacks_series_and_draws_axis_labels() {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert_eq!(labels, vec!["0 ms", "25 ms", "50 ms"]);
-        if style == ignit_ui::UiGraphStyle::StackedArea {
+        assert_eq!(&labels[..3], &["0 ms", "25 ms", "50 ms"]);
+        assert_eq!(&labels[3..], &["-10s", "-5s", "now"]);
+        if style == ignit_ui::UiGraphStyle::Area {
             assert!(
                 draw.commands.iter().any(|command| matches!(
                     command,
@@ -1429,15 +1427,15 @@ fn graph_widget_stacks_series_and_draws_axis_labels() {
                         ..
                     } if *e == entity && color[3] < 0.9
                 )),
-                "stacked area adds translucent fills"
+                "area adds translucent stacked fills"
             );
         }
     }
 }
 
 #[test]
-fn graph_widget_bar_gap_packs_the_bars() {
-    fn first_bar_x(bar_gap: bool) -> f32 {
+fn graph_widget_packed_bars_touch_and_gapped_bars_do_not() {
+    fn bars(style: ignit_ui::UiGraphStyle) -> Vec<ignit_ui::UiRect> {
         let mut world = World::new();
         init(&mut world);
         let entity = build(
@@ -1445,13 +1443,13 @@ fn graph_widget_bar_gap_packs_the_bars() {
             "graph_bars",
             UiWidgetSpec::Graph {
                 series: vec![ignit_ui::UiGraphSeries::new(
-                    vec![10.0, 20.0, 30.0],
+                    (0..100).map(|index| index as f32).collect(),
                     [0.5, 0.9, 0.6, 1.0],
                 )],
                 max: 100.0,
-                style: ignit_ui::UiGraphStyle::Bars,
-                bar_gap,
+                style,
                 y_labels: Vec::new(),
+                x_labels: Vec::new(),
             },
         );
         let mut text = ignit_ui::UiFallbackTextMeasure;
@@ -1459,18 +1457,71 @@ fn graph_widget_bar_gap_packs_the_bars() {
         let draw = world.get_resource::<UiDrawList>().unwrap();
         draw.commands
             .iter()
-            .find_map(|command| match command {
+            .filter_map(|command| match command {
                 UiDrawCommand::Rect {
                     entity: e, rect, ..
-                } if *e == entity => Some(rect.x),
+                } if *e == entity => Some(*rect),
                 _ => None,
             })
-            .expect("bar")
+            .collect()
     }
 
+    let packed = bars(ignit_ui::UiGraphStyle::Bars);
+    let gapped = bars(ignit_ui::UiGraphStyle::BarsGapped);
+    assert!(packed.len() > 2 && gapped.len() > 2);
+    assert!((packed[1].x - (packed[0].x + packed[0].width)).abs() < 1.0e-4);
+    assert!(gapped[0].x > packed[0].x, "gapped bars are inset");
+    assert!(gapped[0].width < packed[0].width);
+}
+
+#[test]
+fn bar_graph_reserves_a_left_gutter_for_axis_labels() {
+    let mut world = World::new();
+    init(&mut world);
+    let entity = build(
+        &mut world,
+        "graph_axis",
+        UiWidgetSpec::Graph {
+            series: vec![ignit_ui::UiGraphSeries::new(
+                (0..60).map(|index| index as f32 % 20.0).collect(),
+                [0.5, 0.9, 0.6, 1.0],
+            )],
+            max: 20.0,
+            style: ignit_ui::UiGraphStyle::Bars,
+            y_labels: vec!["0 ms".into(), "10 ms".into(), "20 ms".into()],
+            x_labels: vec!["-5s".into(), "now".into()],
+        },
+    );
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+
+    let draw = world.get_resource::<UiDrawList>().unwrap();
+    let bar_x = draw
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            UiDrawCommand::Rect {
+                entity: e, rect, ..
+            } if *e == entity => Some(rect.x),
+            _ => None,
+        })
+        .fold(f32::INFINITY, f32::min);
+    let label_right = draw
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            UiDrawCommand::Text {
+                entity: e,
+                rect,
+                text,
+                ..
+            } if *e == entity && text.ends_with("ms") => Some(rect.x + rect.width),
+            _ => None,
+        })
+        .fold(0.0f32, f32::max);
     assert!(
-        first_bar_x(true) > first_bar_x(false),
-        "visible gaps inset the first bar"
+        label_right <= bar_x,
+        "axis labels stay left of the bars ({label_right} > {bar_x})"
     );
 }
 
@@ -1485,8 +1536,8 @@ fn graph_widget_ignores_empty_series() {
             series: vec![ignit_ui::UiGraphSeries::default()],
             max: 1.0,
             style: ignit_ui::UiGraphStyle::Bars,
-            bar_gap: true,
             y_labels: Vec::new(),
+            x_labels: Vec::new(),
         },
     );
     let mut text = ignit_ui::UiFallbackTextMeasure;

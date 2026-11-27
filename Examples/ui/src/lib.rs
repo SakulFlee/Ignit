@@ -9,8 +9,9 @@ use ignit::logging;
 use ignit::logging::{debug, error, info, trace, warn};
 use ignit::ui::{
     UiAction, UiBuilder, UiColor, UiDimension, UiDocument, UiDocumentNode, UiEdges, UiEvent,
-    UiLayout, UiLengthPercentage, UiNotification, UiNotificationSeverity, UiNotifications, UiStyle,
-    UiTextStyle, UiTextWrap, UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec,
+    UiGraphSeries, UiGraphStyle, UiLayout, UiLengthPercentage, UiNotification,
+    UiNotificationSeverity, UiNotifications, UiStyle, UiTextStyle, UiTextWrap, UiTheme, UiThemes,
+    UiView, UiWidget, UiWidgetSpec,
 };
 use ignit::ui_render::UiRenderModule;
 use ignit::ui_text::TextEngine;
@@ -490,7 +491,8 @@ fn build_showcase(world: &mut World) {
                     UiDocumentNode::new("modal_body")
                         .text("Focus is trapped in this modal while it is open."),
                 ),
-        );
+        )
+        .child(graph_showcase());
     root.view = Some(UiView::new(1280.0, 720.0));
     UiBuilder::new().root(root).build(world).unwrap();
 
@@ -500,9 +502,107 @@ fn build_showcase(world: &mut World) {
     }
 }
 
+const DEMO_GRAPH_SAMPLES: usize = 64;
+const DEMO_GRAPH_COLORS: [[f32; 4]; 3] = [
+    [0.20, 0.85, 1.00, 1.0],
+    [0.72, 0.45, 1.00, 1.0],
+    [1.00, 0.55, 0.25, 1.0],
+];
+
+fn demo_graph_value(phase: f32, series: usize, index: usize) -> f32 {
+    let x = index as f32;
+    let offset = series as f32 * 0.85;
+    let value = 0.48
+        + 0.24 * (x * 0.22 + phase + offset).sin()
+        + 0.12 * (x * 0.61 - phase * 1.7 + offset * 0.4).cos()
+        + 0.06 * (x * 1.4 + phase * 2.3).sin();
+    value.clamp(0.02, 1.0)
+}
+
+fn demo_graph_series(phase: f32, phase_offset: f32) -> Vec<UiGraphSeries> {
+    (0..DEMO_GRAPH_COLORS.len())
+        .map(|series| {
+            UiGraphSeries::new(
+                (0..DEMO_GRAPH_SAMPLES)
+                    .map(|index| demo_graph_value(phase + phase_offset, series, index))
+                    .collect(),
+                DEMO_GRAPH_COLORS[series],
+            )
+        })
+        .collect()
+}
+
+fn graph_card(id: &str, title: &str, style: UiGraphStyle, phase_offset: f32) -> UiDocumentNode {
+    UiDocumentNode::new(format!("{id}_card"))
+        .layout(
+            UiLayout::column()
+                .width(320.0)
+                .height(166.0)
+                .padding(8.0)
+                .gap(6.0),
+        )
+        .style(UiStyle::default().class("panel"))
+        .child(
+            UiDocumentNode::new(format!("{id}_title"))
+                .text(title)
+                .style(UiStyle::default().padding_text(UiTextStyle {
+                    size: 13.0,
+                    weight: 600,
+                    ..Default::default()
+                })),
+        )
+        .child(
+            UiDocumentNode::new(id)
+                .layout(UiLayout::default().width_full().height(120.0).shrink(0.0))
+                .widget(UiWidgetSpec::Graph {
+                    series: demo_graph_series(0.0, phase_offset),
+                    max: 1.0,
+                    style,
+                    y_labels: vec!["0.0".into(), "0.5".into(), "1.0".into()],
+                    x_labels: vec!["-10s".into(), "-5s".into(), "now".into()],
+                }),
+        )
+}
+
+fn graph_showcase() -> UiDocumentNode {
+    UiDocumentNode::new("demo_graphs")
+        .layout(
+            UiLayout::row()
+                .width(1010.0)
+                .height(180.0)
+                .gap(12.0)
+                .absolute()
+                .inset(UiEdges {
+                    left: UiDimension::Length(24.0),
+                    right: UiDimension::Auto,
+                    top: UiDimension::Length(520.0),
+                    bottom: UiDimension::Auto,
+                }),
+        )
+        .child(graph_card(
+            "demo_graph_bars",
+            "Bars · packed",
+            UiGraphStyle::Bars,
+            0.0,
+        ))
+        .child(graph_card(
+            "demo_graph_line",
+            "Line · stacked",
+            UiGraphStyle::Line,
+            0.7,
+        ))
+        .child(graph_card(
+            "demo_graph_area",
+            "Area · stacked",
+            UiGraphStyle::Area,
+            1.4,
+        ))
+}
+
 struct DemoSystem {
     dark: bool,
     notices: u32,
+    phase: f32,
 }
 
 impl DemoSystem {
@@ -510,6 +610,7 @@ impl DemoSystem {
         Self {
             dark: true,
             notices: 0,
+            phase: 0.0,
         }
     }
 
@@ -635,6 +736,37 @@ impl DemoSystem {
             }
         }
     }
+
+    fn update_graphs(&mut self, world: &mut World) {
+        self.phase += 0.06;
+        let phase = self.phase;
+        for (id, phase_offset) in [
+            ("demo_graph_bars", 0.0),
+            ("demo_graph_line", 0.7),
+            ("demo_graph_area", 1.4),
+        ] {
+            let Some(entity) = world
+                .get_resource::<ignit::ui::UiForest>()
+                .and_then(|forest| forest.find(&id.into()))
+            else {
+                continue;
+            };
+            let Some(store) = world.get_component_store_mut::<UiWidget>() else {
+                continue;
+            };
+            let Some(widget) = store.get_mut_store().get_component_mut(entity.index) else {
+                continue;
+            };
+            let UiWidgetSpec::Graph { series, .. } = &mut widget.spec else {
+                continue;
+            };
+            for (series_index, series) in series.iter_mut().enumerate() {
+                for (index, value) in series.values.iter_mut().enumerate() {
+                    *value = demo_graph_value(phase + phase_offset, series_index, index);
+                }
+            }
+        }
+    }
 }
 
 impl UiSystem for DemoSystem {
@@ -644,6 +776,7 @@ impl UiSystem for DemoSystem {
 
     fn run(&mut self, world: &mut World) {
         self.apply_events(world);
+        self.update_graphs(world);
     }
 }
 
@@ -660,6 +793,48 @@ mod tests {
         assert!(forest.find(&"row_00".into()).is_some());
         assert!(forest.find(&"row_17".into()).is_some());
         assert!(forest.find(&"ron_title".into()).is_some());
+        assert!(forest.find(&"demo_graph_bars".into()).is_some());
+        assert!(forest.find(&"demo_graph_line".into()).is_some());
+        assert!(forest.find(&"demo_graph_area".into()).is_some());
+    }
+
+    #[test]
+    fn showcase_graphs_animate() {
+        let mut world = World::new();
+        ignit::ui::init(&mut world);
+        build_showcase(&mut world);
+        let mut system = DemoSystem::new();
+        let graph = world
+            .get_resource::<ignit::ui::UiForest>()
+            .unwrap()
+            .find(&"demo_graph_line".into())
+            .unwrap();
+        let first = match world
+            .get_component_store::<UiWidget>()
+            .unwrap()
+            .get_component(graph.index)
+            .cloned()
+            .unwrap()
+            .spec
+        {
+            UiWidgetSpec::Graph { series, .. } => series[0].values[0],
+            _ => panic!("demo graph missing"),
+        };
+
+        system.update_graphs(&mut world);
+
+        let second = match world
+            .get_component_store::<UiWidget>()
+            .unwrap()
+            .get_component(graph.index)
+            .cloned()
+            .unwrap()
+            .spec
+        {
+            UiWidgetSpec::Graph { series, .. } => series[0].values[0],
+            _ => panic!("demo graph missing"),
+        };
+        assert_ne!(first, second, "demo graphs animate every frame");
     }
 }
 
