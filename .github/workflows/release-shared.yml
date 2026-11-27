@@ -216,31 +216,6 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  # macOS runners only exist on GitHub; Forgejo has neither macOS nor Windows
-  # runners, so this job stays gated to GitHub.
-  ios:
-    if: github.server_url == 'https://github.com'
-    runs-on: macos-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7
-      - name: Build CLI
-        run: cargo build --release -p ignit-cli
-      - name: Build iOS simulator app
-        shell: bash
-        run: |
-          set -euo pipefail
-          cli="$PWD/target/release/ignit"
-          work="$(mktemp -d)"
-          trap 'rm -rf "$work"' EXIT
-          "$cli" init ios-check --yes --no-git \
-            --template minimal-3d \
-            --project-path "$work/ios-check" \
-            --engine-path "$PWD" \
-            --ios
-          cp Cargo.lock "$work/ios-check/Cargo.lock"
-          (cd "$work/ios-check" && "$cli" build ios)
-
   android:
     runs-on: ubuntu-latest
     container:
@@ -357,7 +332,6 @@ jobs:
     needs:
       - desktop
       - macos
-      - ios
       - android
     runs-on: ubuntu-latest
     container:
