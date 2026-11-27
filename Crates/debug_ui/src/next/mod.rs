@@ -33,8 +33,8 @@ const PANEL_ID: &str = "debug_next_perf_window";
 const ROOT_ID: &str = "debug_next_root";
 /// At most this many graphs are shown at once.
 const GRAPH_SLOTS: usize = 3;
-/// Points drawn per series. The UI is refreshed at ~30 Hz and the panel is
-/// small, so retaining more would only add work to the paint pass.
+/// Bars drawn per series. Longer windows are aggregated into this many
+/// buckets so the bars keep their width instead of squeezing more samples in.
 const MAX_GRAPH_SAMPLES: usize = 120;
 /// Rolling window used by the average/min/max metrics, in seconds.
 const ROLLING_WINDOW_SECS: f64 = 1.0;
@@ -455,34 +455,33 @@ fn build_document(world: &mut World) -> Option<(Entity, Entity)> {
     );
 
     for index in 0..ignit_ecs_bridge::TIMING_STAGES.len() {
-        content = content
-            .child(
-                UiDocumentNode::new(format!("debug_perf_stage_row_{index}"))
-                    .layout(
-                        UiLayout::row()
-                            .width_full()
-                            .height(16.0)
-                            .gap(4.0)
-                            .shrink(0.0),
-                    )
-                    .child(
-                        UiDocumentNode::new(format!("debug_perf_stage_name_{index}"))
-                            .layout(UiLayout::default().width_percent(38.0))
-                            .text("--")
-                            .style(small_style(true)),
-                    )
-                    .child(
-                        UiDocumentNode::new(format!("debug_perf_stage_{index}"))
-                            .layout(UiLayout {
-                                flex_grow: 1.0,
-                                ..Default::default()
-                            })
-                            .text("--")
-                            .style(small_style(false)),
-                    ),
-            )
-            .action(UiAction::new(format!("debug_perf_series_{index}")))
-            .focusable();
+        content = content.child(
+            UiDocumentNode::new(format!("debug_perf_stage_row_{index}"))
+                .layout(
+                    UiLayout::row()
+                        .width_full()
+                        .height(16.0)
+                        .gap(4.0)
+                        .shrink(0.0),
+                )
+                .child(
+                    UiDocumentNode::new(format!("debug_perf_stage_name_{index}"))
+                        .layout(UiLayout::default().width_percent(38.0))
+                        .text("--")
+                        .style(small_style(true)),
+                )
+                .child(
+                    UiDocumentNode::new(format!("debug_perf_stage_{index}"))
+                        .layout(UiLayout {
+                            flex_grow: 1.0,
+                            ..Default::default()
+                        })
+                        .text("--")
+                        .style(small_style(false)),
+                )
+                .action(UiAction::new(format!("debug_perf_series_{index}")))
+                .focusable(),
+        );
     }
 
     content = content
@@ -620,26 +619,38 @@ fn graph_plot(
     let frames = values.len();
 
     let plotted = match metric {
-        GraphMetric::Last => vec![UiGraphSeries::new(tail(values), LAST_COLOR)],
+        GraphMetric::Last => vec![UiGraphSeries::new(
+            downsample(&values, Downsample::Last),
+            LAST_COLOR,
+        )],
         GraphMetric::Avg => {
             let (average, _, _) = rolling_stats(&times, &values, ROLLING_WINDOW_SECS);
-            vec![UiGraphSeries::new(tail(average), AVG_COLOR)]
+            vec![UiGraphSeries::new(
+                downsample(&average, Downsample::Mean),
+                AVG_COLOR,
+            )]
         }
         GraphMetric::Min => {
             let (_, minimum, _) = rolling_stats(&times, &values, ROLLING_WINDOW_SECS);
-            vec![UiGraphSeries::new(tail(minimum), MIN_COLOR)]
+            vec![UiGraphSeries::new(
+                downsample(&minimum, Downsample::Min),
+                MIN_COLOR,
+            )]
         }
         GraphMetric::Max => {
             let (_, _, maximum) = rolling_stats(&times, &values, ROLLING_WINDOW_SECS);
-            vec![UiGraphSeries::new(tail(maximum), MAX_COLOR)]
+            vec![UiGraphSeries::new(
+                downsample(&maximum, Downsample::Max),
+                MAX_COLOR,
+            )]
         }
         GraphMetric::All => {
             let (average, minimum, maximum) = rolling_stats(&times, &values, ROLLING_WINDOW_SECS);
             vec![
-                UiGraphSeries::new(tail(values), LAST_COLOR),
-                UiGraphSeries::new(tail(average), AVG_COLOR),
-                UiGraphSeries::new(tail(minimum), MIN_COLOR),
-                UiGraphSeries::new(tail(maximum), MAX_COLOR),
+                UiGraphSeries::new(downsample(&values, Downsample::Last), LAST_COLOR),
+                UiGraphSeries::new(downsample(&average, Downsample::Mean), AVG_COLOR),
+                UiGraphSeries::new(downsample(&minimum, Downsample::Min), MIN_COLOR),
+                UiGraphSeries::new(downsample(&maximum, Downsample::Max), MAX_COLOR),
             ]
         }
     };
@@ -723,12 +734,38 @@ fn sane_graph_value(value: f32) -> Option<f32> {
     (value.is_finite() && (0.0..=MAX_GRAPH_VALUE).contains(&value)).then_some(value)
 }
 
-fn tail(mut values: Vec<f32>) -> Vec<f32> {
-    if values.len() > MAX_GRAPH_SAMPLES {
-        let excess = values.len() - MAX_GRAPH_SAMPLES;
-        values.drain(..excess);
+#[derive(Clone, Copy)]
+enum Downsample {
+    Last,
+    Mean,
+    Min,
+    Max,
+}
+
+/// Aggregates a whole history window into at most [`MAX_GRAPH_SAMPLES`] bars.
+///
+/// The window is never truncated: every selected frame contributes to a
+/// bucket, so a longer window shows more history at the same bar width.
+fn downsample(values: &[f32], mode: Downsample) -> Vec<f32> {
+    if values.len() <= MAX_GRAPH_SAMPLES {
+        return values.to_vec();
     }
-    values
+
+    let mut buckets = Vec::with_capacity(MAX_GRAPH_SAMPLES);
+    for bucket in 0..MAX_GRAPH_SAMPLES {
+        let start = bucket * values.len() / MAX_GRAPH_SAMPLES;
+        let end = (bucket + 1) * values.len() / MAX_GRAPH_SAMPLES;
+        let slice = &values[start..end];
+        let value = match mode {
+            Downsample::Last => *slice.last().unwrap_or(&0.0),
+            Downsample::Mean => slice.iter().copied().sum::<f32>() / slice.len().max(1) as f32,
+            Downsample::Min => slice.iter().copied().fold(f32::INFINITY, f32::min),
+            Downsample::Max => slice.iter().copied().fold(f32::NEG_INFINITY, f32::max),
+        };
+        buckets.push(value);
+    }
+
+    buckets
 }
 
 /// Rolling mean/min/max over a time window, one sample per input frame.
@@ -1509,6 +1546,84 @@ mod tests {
                 .expect("state")
                 .graph_metric,
             GraphMetric::All
+        );
+    }
+
+    #[test]
+    fn clicking_a_stage_row_toggles_that_rows_series() {
+        let mut world = World::new();
+        world.insert_resource(DebugUiState::new(KeyCode::F1));
+        let (root, panel) = build_document(&mut world).expect("document");
+        set_visible(&mut world, root, true);
+        let mut text = ignit_ui::UiFallbackTextMeasure;
+        ignit_ui::update(&mut world, &mut text);
+
+        let index = 3;
+        let row = world
+            .get_resource::<ignit_ui::UiForest>()
+            .and_then(|forest| forest.find(&format!("debug_perf_stage_row_{index}").into()))
+            .expect("stage row");
+        let rect = world
+            .get_component_store::<ignit_ui::UiComputed>()
+            .and_then(|store| store.get_component(row.index).copied())
+            .expect("row rect");
+        let pointer = ignit_ui::UiPoint::new(rect.rect.x + 20.0, rect.rect.y + 8.0);
+        world.insert_resource(ignit_ui::UiInputState {
+            pointer,
+            primary_down: true,
+            primary_pressed: true,
+            ..Default::default()
+        });
+        ignit_ui::update(&mut world, &mut text);
+        let mut input = world
+            .get_resource::<ignit_ui::UiInputState>()
+            .expect("input")
+            .clone();
+        input.primary_down = false;
+        input.primary_pressed = false;
+        input.primary_released = true;
+        world.insert_resource(input);
+        ignit_ui::update(&mut world, &mut text);
+        handle_events(&mut world, panel);
+
+        let state = world.get_resource::<DebugUiState>().expect("state");
+        assert!(state.graph_series.contains(&GraphSeries::Stage(index)));
+        assert!(
+            !state.graph_series.contains(&GraphSeries::Stage(
+                ignit_ecs_bridge::TIMING_STAGES.len() - 1
+            )),
+            "the bottom row must not be toggled"
+        );
+    }
+
+    #[test]
+    fn graph_plot_samples_the_selected_window_instead_of_truncating_it() {
+        let mut timings = FrameTimings::new();
+        let config = TimingsHistoryConfig {
+            enabled: true,
+            window_secs: 150.0,
+        };
+        let mut durations = vec![0.0; ignit_ecs_bridge::TIMING_STAGES.len()];
+        for index in 0..300 {
+            durations[0] = index as f64;
+            timings.record_at(&durations, index as f64 * 0.5, 16.0, config);
+        }
+
+        let wide = graph_plot(&timings, GraphSeries::Stage(0), GraphMetric::Last, 150.0);
+        assert_eq!(wide.series[0].values.len(), MAX_GRAPH_SAMPLES);
+        assert!(
+            (wide.series[0].values[0] - 1.0).abs() < 1.0e-4,
+            "the first bucket keeps the last raw frame it contains"
+        );
+
+        let narrow = graph_plot(&timings, GraphSeries::Stage(0), GraphMetric::Last, 10.0);
+        assert!(
+            narrow.series[0].values.len() < MAX_GRAPH_SAMPLES,
+            "a short window keeps its own sample count"
+        );
+        assert!(
+            (narrow.series[0].values[0] - 279.0).abs() < 1.0e-4,
+            "the short window starts at the window cutoff"
         );
     }
 

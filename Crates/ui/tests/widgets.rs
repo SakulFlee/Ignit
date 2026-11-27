@@ -1,7 +1,7 @@
 use ignit_ecs::{Entity, World};
 use ignit_ui::{
-    UiBuilder, UiClipboardResource, UiComputed, UiDimension, UiDocumentNode, UiDrawCommand,
-    UiDrawList, UiFocusState, UiInputState, UiLayout, UiPoint, UiRect, UiSize, UiText,
+    UiBuilder, UiClipboardResource, UiColor, UiComputed, UiDimension, UiDocumentNode, UiDrawCommand,
+    UiDrawList, UiFocusState, UiInputState, UiLayout, UiPoint, UiRect, UiSize, UiStyle, UiText,
     UiTextMeasure, UiTextStyle, UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec, init, update,
 };
 
@@ -1297,6 +1297,101 @@ fn graph_widget_ignores_empty_series() {
             ..
         } if *command_entity == entity
     )));
+}
+
+#[test]
+fn open_dropdown_paints_an_opaque_popup_above_following_content() {
+    let mut world = World::new();
+    init(&mut world);
+    let mut root = UiDocumentNode::new("root")
+        .layout(UiLayout::column().size(400.0, 300.0).padding(20.0).gap(8.0))
+        .child(
+            UiDocumentNode::new("dropdown")
+                .layout(UiLayout::default().size(240.0, 38.0))
+                .widget(UiWidgetSpec::Dropdown {
+                    options: vec!["one".into(), "two".into(), "three".into()],
+                    selected: 0,
+                    open: false,
+                })
+                .focusable(),
+        )
+        .child(
+            UiDocumentNode::new("below")
+                .layout(UiLayout::default().size(240.0, 80.0))
+                .style(UiStyle::default().background(UiColor::rgba([1.0, 0.0, 0.0, 1.0]))),
+        );
+    root.view = Some(UiView::new(400.0, 300.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let dropdown = world
+        .get_resource::<ignit_ui::UiForest>()
+        .unwrap()
+        .find(&"dropdown".into())
+        .unwrap();
+    let below = world
+        .get_resource::<ignit_ui::UiForest>()
+        .unwrap()
+        .find(&"below".into())
+        .unwrap();
+
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+    let header = rect(&world, dropdown);
+    world.insert_resource(UiInputState {
+        pointer: UiPoint::new(header.rect.x + 5.0, header.rect.y + 5.0),
+        primary_down: true,
+        primary_pressed: true,
+        ..Default::default()
+    });
+    update(&mut world, &mut text);
+    let mut input = world.get_resource::<UiInputState>().unwrap().clone();
+    input.primary_down = false;
+    input.primary_pressed = false;
+    input.primary_released = true;
+    world.insert_resource(input);
+    update(&mut world, &mut text);
+    update(&mut world, &mut text);
+
+    let open = rect(&world, dropdown);
+    let draw = world.get_resource::<UiDrawList>().unwrap();
+    let popup_background = draw
+        .commands
+        .iter()
+        .enumerate()
+        .find_map(|(index, command)| match command {
+            UiDrawCommand::Rect {
+                entity,
+                rect,
+                color,
+                ..
+            } if *entity == dropdown
+                && rect.y >= open.rect.y + 38.0
+                && rect.height >= 72.0
+                && color[3] >= 0.99 =>
+            {
+                Some(index)
+            }
+            _ => None,
+        })
+        .expect("opaque popup background");
+    let below_background = draw
+        .commands
+        .iter()
+        .position(|command| {
+            matches!(
+                command,
+                UiDrawCommand::Rect {
+                    entity,
+                    color,
+                    ..
+                } if *entity == below && *color == [1.0, 0.0, 0.0, 1.0]
+            )
+        })
+        .expect("following content background");
+
+    assert!(
+        popup_background > below_background,
+        "the popup paints above later siblings"
+    );
 }
 
 #[test]

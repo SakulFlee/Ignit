@@ -1103,6 +1103,50 @@ pub fn append_widget_commands(world: &World, draw: &mut UiDrawList) {
                 selected,
                 open,
             } => {
+                // Dropdowns are often unstyled or translucent. Give the header
+                // and the open option list an opaque surface so later content
+                // cannot bleed through the popup.
+                let popup_color = style
+                    .background
+                    .filter(|color| color[3] >= 0.99)
+                    .unwrap_or_else(|| token_color(theme, "surface", [0.085, 0.10, 0.14, 1.0]));
+                if style.background.is_none_or(|color| color[3] < 0.99) {
+                    draw.commands.push(UiDrawCommand::Rect {
+                        entity,
+                        rect: rect.rect,
+                        color: popup_color,
+                        radius: [6.0; 4],
+                        clip,
+                    });
+                }
+
+                let popup = UiRect::new(
+                    rect.rect.x,
+                    rect.rect.y + 38.0,
+                    rect.rect.width,
+                    options.len() as f32 * 24.0,
+                );
+                if *open {
+                    draw.commands.push(UiDrawCommand::Rect {
+                        entity,
+                        rect: popup,
+                        color: popup_color,
+                        radius: [0.0, 0.0, 6.0, 6.0],
+                        clip,
+                    });
+                    draw.commands.push(UiDrawCommand::Border {
+                        entity,
+                        rect: popup,
+                        width: 1.0,
+                        color: style.border.as_ref().map_or_else(
+                            || token_color(theme, "border", [0.22, 0.25, 0.33, 1.0]),
+                            |border| border.color,
+                        ),
+                        radius: [0.0, 0.0, 6.0, 6.0],
+                        clip,
+                    });
+                }
+
                 let arrow = UiRect::new(
                     rect.rect.x + rect.rect.width - 22.0,
                     rect.rect.y + 15.0,
