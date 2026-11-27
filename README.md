@@ -93,6 +93,25 @@ helmet, and the animated Fox gallery it uses in `Examples/all-in-one/Assets/`.
 [`docs/ui/README.md`](docs/ui/README.md) for authoring, themes, RON documents,
 hot reload, and the iced migration note.
 
+### iOS
+
+iOS builds require macOS with Xcode. The CLI builds a Rust static library for the
+simulator architecture, generates the Xcode project on first use, and copies the
+project's `Assets/` directory into the app bundle.
+
+```shell
+ignit init-ios          # optional; `ignit build ios` generates it on demand
+ignit build ios         # simulator, debug
+ignit run ios           # boot, install, launch, and stream stdout
+```
+
+Inside the engine workspace, pass the package explicitly, for example
+`ignit build ios --package template_minimal_3d`.
+
+The iOS Simulator renders through Metal, so it needs a Metal-capable Mac; there
+is no software Metal fallback. Physical-device builds and code signing are not
+wired up yet.
+
 Install the CLI from crates.io and create a standalone project:
 
 ```shell
