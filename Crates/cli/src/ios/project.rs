@@ -1,26 +1,38 @@
 use anyhow::{Context, Result};
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use crate::config;
 
-pub fn init() -> Result<()> {
+pub fn init(package_name: Option<&str>, force: bool) -> Result<()> {
     let project_root = config::find_project_root()?;
     let ios_dir = project_root.join("iOS");
 
-    if ios_dir.exists() {
-        println!("iOS/ directory already exists. Skipping generation.");
+    let interactive = std::io::stdin().is_terminal();
+    config::ensure_ios_config(interactive)?;
+    let ios_config = config::load_ios_config()?;
+    let lib_name = config::resolve_lib_name(package_name)?;
+
+    let project_file = ios_dir
+        .join(format!("{}.xcodeproj", ios_config.app_name()))
+        .join("project.pbxproj");
+
+    if ios_dir.exists() && project_file.exists() && !force {
+        println!(
+            "iOS project already exists at {}. Use --force to regenerate it.",
+            ios_dir.display()
+        );
         return Ok(());
     }
-
-    let ios_config = config::load_ios_config()?;
 
     println!("Generating iOS project...");
     println!("  Bundle ID: {}", ios_config.bundle_id());
     println!("  Deployment Target: {}", ios_config.deployment_target());
     println!("  App Name: {}", ios_config.app_name());
+    println!("  Library: {}", lib_name);
 
-    generate_project(&ios_dir, &ios_config)?;
+    generate_project(&ios_dir, &ios_config, &lib_name, package_name)?;
 
     println!(
         "\niOS project generated successfully at {}",
@@ -32,54 +44,48 @@ pub fn init() -> Result<()> {
     Ok(())
 }
 
-fn generate_project(ios_dir: &Path, config: &config::IosConfig) -> Result<()> {
-    let replacements = create_replacements(config);
+fn generate_project(
+    ios_dir: &Path,
+    config: &config::IosConfig,
+    lib_name: &str,
+    package_name: Option<&str>,
+) -> Result<()> {
+    let replacements = create_replacements(config, lib_name, package_name);
+    let app_dir = ios_dir.join(config.app_name());
 
     // Create directory structure
-    fs::create_dir_all(ios_dir.join("Ignit.xcodeproj"))
+    fs::create_dir_all(ios_dir.join(format!("{}.xcodeproj", config.app_name())))
         .context("Failed to create xcodeproj directory")?;
-    fs::create_dir_all(ios_dir.join("Ignit").join("Assets.xcassets"))
+    fs::create_dir_all(app_dir.join("Assets.xcassets").join("AppIcon.appiconset"))
         .context("Failed to create Assets.xcassets directory")?;
-    fs::create_dir_all(
-        ios_dir
-            .join("Ignit")
-            .join("Assets.xcassets")
-            .join("AppIcon.appiconset"),
-    )
-    .context("Failed to create AppIcon.appiconset directory")?;
 
     // Write template files
     write_template_file(
-        ios_dir.join("Ignit.xcodeproj").join("project.pbxproj"),
+        ios_dir
+            .join(format!("{}.xcodeproj", config.app_name()))
+            .join("project.pbxproj"),
         PROJECT_PBXPROJ,
         &replacements,
     )?;
+    write_template_file(app_dir.join("Info.plist"), INFO_PLIST, &replacements)?;
+    write_template_file(app_dir.join("main.swift"), MAIN_SWIFT, &replacements)?;
     write_template_file(
-        ios_dir.join("Ignit").join("Info.plist"),
-        INFO_PLIST,
+        app_dir.join("Ignit-Bridging-Header.h"),
+        BRIDGING_HEADER,
         &replacements,
     )?;
     write_template_file(
-        ios_dir.join("Ignit").join("AppDelegate.swift"),
-        APP_DELEGATE_SWIFT,
-        &replacements,
-    )?;
-    write_template_file(
-        ios_dir.join("Ignit").join("LaunchScreen.storyboard"),
+        app_dir.join("LaunchScreen.storyboard"),
         LAUNCH_SCREEN_STORYBOARD,
         &replacements,
     )?;
     write_template_file(
-        ios_dir
-            .join("Ignit")
-            .join("Assets.xcassets")
-            .join("Contents.json"),
+        app_dir.join("Assets.xcassets").join("Contents.json"),
         ASSETS_CONTENTS_JSON,
         &replacements,
     )?;
     write_template_file(
-        ios_dir
-            .join("Ignit")
+        app_dir
             .join("Assets.xcassets")
             .join("AppIcon.appiconset")
             .join("Contents.json"),
@@ -87,10 +93,22 @@ fn generate_project(ios_dir: &Path, config: &config::IosConfig) -> Result<()> {
         &replacements,
     )?;
 
+    // The old template used an @main AppDelegate. Remove it when regenerating
+    // so a stale delegate cannot compete with `main.swift` for the entry point.
+    let legacy_delegate = app_dir.join("AppDelegate.swift");
+    if legacy_delegate.exists() {
+        fs::remove_file(&legacy_delegate)
+            .with_context(|| format!("Failed to remove {}", legacy_delegate.display()))?;
+    }
+
     Ok(())
 }
 
-fn create_replacements(config: &config::IosConfig) -> Vec<(String, String)> {
+fn create_replacements(
+    config: &config::IosConfig,
+    lib_name: &str,
+    package_name: Option<&str>,
+) -> Vec<(String, String)> {
     vec![
         (
             "@@@BUNDLE_ID@@@".to_string(),
@@ -101,6 +119,17 @@ fn create_replacements(config: &config::IosConfig) -> Vec<(String, String)> {
             config.deployment_target().to_string(),
         ),
         ("@@@APP_NAME@@@".to_string(), config.app_name().to_string()),
+        ("@@@LIB_NAME@@@".to_string(), lib_name.to_string()),
+        (
+            "@@@PACKAGE@@@".to_string(),
+            package_name.unwrap_or_default().to_string(),
+        ),
+        (
+            "@@@RUST_TARGET@@@".to_string(),
+            super::simulator_target()
+                .unwrap_or("aarch64-apple-ios-sim")
+                .to_string(),
+        ),
     ]
 }
 
@@ -132,6 +161,8 @@ const INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>@@@APP_NAME@@@</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -152,18 +183,8 @@ const INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
-	<key>UIApplicationSceneManifest</key>
-	<dict>
-		<key>UIApplicationSupportsMultipleScenes</key>
-		<false/>
-	</dict>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
-	<key>UIRequiredDeviceCapabilities</key>
-	<array>
-		<string>arm64</string>
-		<string>metal</string>
-	</array>
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UISupportedInterfaceOrientations</key>
@@ -172,30 +193,33 @@ const INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 	</array>
 	<key>UIStatusBarHidden</key>
 	<false/>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 </dict>
 </plist>
 "#;
 
-const APP_DELEGATE_SWIFT: &str = r#"import UIKit
+const MAIN_SWIFT: &str = r#"import Foundation
 
-@main
-class AppDelegate: UIResponder, UIApplicationDelegate {
-    var window: UIWindow?
-
-    func application(
-        _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
-    ) -> Bool {
-        window = UIWindow(frame: UIScreen.main.bounds)
-        window?.rootViewController = UIViewController()
-        window?.makeKeyAndVisible()
-        return true
-    }
+// winit owns `UIApplicationMain` on iOS, so the engine has to be started from
+// top-level code rather than from an `@main` app delegate. The C declaration
+// comes from Ignit-Bridging-Header.h.
+autoreleasepool {
+    ios_main()
 }
 "#;
 
+const BRIDGING_HEADER: &str = r#"#ifndef IGNIT_BRIDGING_HEADER_H
+#define IGNIT_BRIDGING_HEADER_H
+
+// Entry point generated by `#[ignit::main]` for the iOS static library.
+void ios_main(void);
+
+#endif
+"#;
+
 const LAUNCH_SCREEN_STORYBOARD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="21701" targetRuntime="AppleSDK" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="01J-lp-oVM">
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="21701" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="01J-lp-oVM">
     <scenes>
         <scene sceneID="EHf-IW-A2E">
             <objects>

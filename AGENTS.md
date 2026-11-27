@@ -117,7 +117,7 @@ Workspace members are `Examples/*` and `Crates/*` (see `Cargo.toml`).
 | `Crates/iced` | Legacy iced panel integration (`IcedBridgeModule`, `IcedLayerRenderer`, `IcedState`); debug UI only until #1222/#1223. |
 | `Crates/touch_ui`, `Crates/debug_render` | Touch controls and debug overlays. |
 | `Crates/importer_gltf` | glTF 2.0 importer with `KHR_lights_punctual`, async rayon tasks. |
-| `Crates/cli` | `ignit-cli` package with the `ignit` binary. Project scaffolding (`init`, `init-android`), templates, desktop/Android/iOS build and run, and `Ignit.toml` handling. |
+| `Crates/cli` | `ignit-cli` package with the `ignit` binary. Project scaffolding (`init`, `init-android`, `init-ios`), templates, desktop/Android/iOS build and run, and `Ignit.toml` handling. |
 | `ignit-iced` (external) | Forked iced sub-crates (`iced`, `iced_core`, `iced_widget`, `iced_wgpu`, `iced_winit`, …), consumed as Cargo `git` dependencies from `SakulFlee/ignit-iced`. Not the same as `ignit_iced`. |
 | `Examples/` | Official templates as runnable workspace example crates. |
 | `Images/` | README screenshots. |
@@ -246,19 +246,23 @@ cargo run -p ignit-cli -- --help
 
 # Scaffold a project
 ignit init my-game --template all-in-one
+ignit init my-game --template all-in-one --android --ios
 
-# Add Android support to an existing project
+# Add Android or iOS support to an existing project
 ignit init-android
+ignit init-ios
 
 # Build and run (desktop is the default)
 ignit build
 ignit build android --release
+ignit build ios
 ignit run --release
-ignit run ios --device "<device>"
+ignit run ios --device "<simulator-udid>"
 ```
 
-- `init` supports the `minimal-3d`, `all-in-one`, and `minimal-2d` templates and defaults to the published `ignit` crate. The interactive engine-source menu also offers Forgejo `main`, the GitHub mirror `main`, a custom git repository, and a local checkout; `--engine-repo`, `--engine-branch`, and `--engine-path` override the menu.
-- The CLI writes `Ignit.toml` for Android and iOS packaging/deployment settings. The engine source is recorded in the generated `Cargo.toml`; the optional engine fields in `Ignit.toml` are only defaults for `init`.
+- `init` supports the `minimal-3d`, `all-in-one`, and `minimal-2d` templates and defaults to the published `ignit` crate. The interactive engine-source menu also offers Forgejo `main`, the GitHub mirror `main`, a custom git repository, and a local checkout; `--engine-repo`, `--engine-branch`, and `--engine-path` override the menu. `--android` and `--ios` generate the native projects during `init`; otherwise `ignit build`/`ignit run` for those platforms generates them on demand.
+- The CLI writes `Ignit.toml` for Android and iOS packaging/deployment settings. Missing SDK and deployment-target values are filled in when `build`/`run` generates a platform project (asked for in a terminal, defaults in non-interactive runs) and written back to `Ignit.toml`. The engine source is recorded in the generated `Cargo.toml`; the optional engine fields in `Ignit.toml` are only defaults for `init`.
+- iOS support is simulator-only: `ignit build ios` targets the simulator, `ignit run ios --device` selects a simulator UDID, and physical-device builds and signing are not wired up. Generated iOS app crates need `staticlib` in the `[lib] crate-type`.
 - Template app sources live in `Examples/`; publishable copies live in `Crates/cli/src/template/app/` and are checked by `test-templates.sh`. The generators live in `Crates/cli/src/init/`. Platform scaffolding lives in `Crates/cli/src/template/`.
 - Generated projects are plain Cargo projects; there is no generated dev shell or direnv setup.
 - When changing CLI behavior or templates, test the generated project end to end, not only the CLI crate.
@@ -288,15 +292,15 @@ Keep the flake minimal. If the pinned git dependencies or toolchain drift, prefe
 
 | System | Files | Lint/test behavior |
 |--------|-------|--------------------|
-| Forgejo | `.forgejo/workflows/` | `cargo fmt --all -- --check`, `cargo clippy -- -D warnings` on PRs and pushes to `main`; PRs may auto-fix and push a `[ci]` commit. Tests run for all PRs: directly changed crates only, with the full suite for pushes to `main`, PRs targeting `release/**`, and manual runs. Release tags use `.forgejo/workflows/release.yml`, which only builds release artifacts. Forgejo write-isolates `pull_request` caches, so the full `main` run seeds the shared cache that PRs restore. |
-| GitHub | `.github/workflows/main.yml`, `.github/workflows/release.yml` | `main.yml` runs `cargo fmt --all -- --check`, `cargo clippy -- -D warnings`, and `cargo test --no-fail-fast` for branches and PRs. Release tags use `release.yml`, which builds and publishes artifacts. |
+| Forgejo | `.forgejo/workflows/` | `cargo fmt --all -- --check`, `cargo clippy -- -D warnings` on PRs and pushes to `main`; PRs may auto-fix and push a `[ci]` commit. Tests run for all PRs: directly changed crates only, with the full suite for pushes to `main`, PRs targeting `release/**`, and manual runs. Release tags use `.forgejo/workflows/release.yml`, which calls `.github/workflows/release-shared.yml` and builds Linux/Windows/Android artifacts only. Forgejo write-isolates `pull_request` caches, so the full `main` run seeds the shared cache that PRs restore. |
+| GitHub | `.github/workflows/main.yml`, `.github/workflows/release.yml`, `.github/workflows/release-github.yml` | `main.yml` runs `cargo fmt --all -- --check`, `cargo clippy -- -D warnings`, `cargo test --no-fail-fast`, and a `macos-latest` iOS simulator check for branches and PRs. Release tags use `release.yml`, which calls `release-github.yml` to build and publish artifacts, build the desktop macOS targets, and validate an iOS simulator build on a macOS runner. |
 | TeamCity | `.teamcity/settings.kts` | `cargo fmt --all -- --check`, `cargo clippy -- -D warnings`, `cargo test --no-fail-fast`. |
 
 All CI systems use the toolchain pinned in `rust-toolchain.toml` through rustup.
 
 ### Release artifacts
 
-Release tags (`v*`) run the shared `.github/workflows/release-shared.yml` from both forges. Release builds do not run lint or tests; those stay in the PR/`main` pipelines. A release publishes:
+Release tags (`v*`) run `.github/workflows/release-github.yml` on GitHub and `.github/workflows/release-shared.yml` from Forgejo. Release builds do not run lint or tests; those stay in the PR/`main` pipelines. GitHub also builds the desktop macOS targets and validates an iOS simulator build, while Forgejo skips those jobs because it has no macOS runners. A release publishes:
 
 - raw `ignit-cli-<version>-<target>` binaries
 - one `ignit-examples-<version>-<target>.tar.gz` (Unix) or `.zip` (Windows) per desktop target containing every example; only `template_all_in_one` carries its runtime assets
@@ -348,8 +352,9 @@ Treat the current WASM status as unverified: `Crates/ecs/src/system/runner.rs` u
 - **`ignit_ecs` lives in `Crates/ecs`.**
 - **Examples own their assets.** There is no repository-wide `Assets/` tree; the all-in-one example keeps its scene and models under `Examples/all-in-one/Assets/`.
 - **The shadow depth shader is embedded.** It lives in `Crates/shadow/src/shadow_depth.wgsl`.
+- **iOS is simulator-only.** `ignit build ios` builds for the iOS Simulator, and `ignit run ios --device` takes a simulator UDID, not a physical device. Device builds and code signing are not wired up; macOS with Xcode is required and engine rendering on iOS is not verified yet. iOS app crates need `staticlib` in `[lib] crate-type`.
 - **`App` state hooks.** `CombinedModule` forwards `setup` and `register_overlays`, but not per-module `save_state`/`restore_state`/`clear_state`.
-- **CI coverage is uneven.** Linux is the primary target; Windows/macOS/Android/iOS paths exist but are not equally covered.
+- **CI coverage is uneven.** Linux is the primary target; Windows/macOS/Android/iOS paths exist but are not equally covered. GitHub runs the macOS desktop and iOS simulator checks; Forgejo has no macOS or Windows runners and cannot run them.
 
 ---
 
@@ -365,6 +370,7 @@ Treat the current WASM status as unverified: `Crates/ecs/src/system/runner.rs` u
 | `Crates/cli/src/main.rs` | CLI commands and desktop/Android/iOS dispatch. |
 | `Crates/cli/src/init/mod.rs` | Project scaffolding flow. |
 | `Crates/cli/src/init/template.rs` | Generated project files (Cargo, config, sources). |
+| `Crates/cli/src/ios/project.rs` | iOS Xcode project generation from `Crates/cli/src/template/ios/project.pbxproj`. |
 | `Ignit.toml` | Engine, Android, and iOS project configuration for the CLI. |
 | `Crates/app/src/module.rs` | `Module` lifecycle, including the `ui_systems` hook. |
 | `Crates/app/src/module_runtime.rs` | Frame loop, schedules, realization, overlays. |
@@ -393,9 +399,10 @@ Treat the current WASM status as unverified: `Crates/ecs/src/system/runner.rs` u
 | `Crates/importer_gltf/src/lib.rs` | Async glTF importer. |
 | `Crates/iced/src/bridge.rs` | Iced panel/module bridge. |
 | `.forgejo/workflows/lint.yml` | Strict Forgejo fmt/clippy. |
-| `.forgejo/workflows/release.yml` | Forgejo release entry point. |
-| `.github/workflows/release.yml` | GitHub release entry point. |
-| `.github/workflows/release-shared.yml` | Shared release build, packaging, and publish workflow. |
+| `.forgejo/workflows/release.yml` | Forgejo release entry point (calls `.github/workflows/release-shared.yml`). |
+| `.github/workflows/release.yml` | GitHub release entry point (calls `release-github.yml`). |
+| `.github/workflows/release-github.yml` | GitHub release build, packaging, macOS desktop build, iOS simulator check, and publish workflow. |
+| `.github/workflows/release-shared.yml` | Forgejo release build, packaging, and publish workflow. |
 | `.github/workflows/main.yml` | GitHub lint/test. |
 | `.teamcity/settings.kts` | TeamCity configuration. |
 | `Examples/all-in-one/Assets/Scenes/procgeo_demo.ron` | Procedural scene used by the all-in-one example. |

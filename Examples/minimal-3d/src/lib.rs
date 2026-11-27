@@ -7,7 +7,9 @@ use ignit::ecs_bridge::{
     ActiveCamera, CameraDescriptor, CursorGrabConfig, EnvironmentDescriptorResource,
     LightDescriptor, LightDirty, ModelDescriptor, ModelDirty, ModelInstances, Position, Rotation,
 };
-use ignit::logging::{self, error, info};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use ignit::logging;
+use ignit::logging::{error, info};
 use ignit::procgeo::scene::{
     EntityDescriptor, SceneBuilder, SceneMaterial, SceneShape, TransformDef,
 };

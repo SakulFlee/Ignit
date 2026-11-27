@@ -32,3 +32,23 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y pkg-config libudev-dev libwayland-dev libxkbcommon-dev libvulkan-dev mesa-vulkan-drivers
       - name: 🧪 Test
         run: cargo test --no-fail-fast
+  # GitHub-only: Forgejo has no macOS runners.
+  ios:
+    if: github.server_url == 'https://github.com'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select iOS simulator target
+        id: target
+        run: |
+          case "$(uname -m)" in
+            arm64) triple=aarch64-apple-ios-sim ;;
+            x86_64) triple=x86_64-apple-ios ;;
+            *) echo "Unsupported host architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          echo "triple=$triple" >> "$GITHUB_OUTPUT"
+      - name: Install Rust target
+        run: rustup target add "${{ steps.target.outputs.triple }}"
+      - name: Check iOS simulator build
+        run: cargo check -p template_minimal_3d --lib --target "${{ steps.target.outputs.triple }}"

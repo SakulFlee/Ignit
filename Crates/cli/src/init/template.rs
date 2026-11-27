@@ -39,6 +39,10 @@ fn generate_gitignore(project_dir: &Path) -> Result<()> {
 # Generated Android project
 /Android/
 
+# Generated iOS project and Xcode build output
+/iOS/
+/Build/
+
 # Cargo state
 /.cargo/
 
@@ -145,7 +149,7 @@ path = "src/main.rs"
 
 [lib]
 name = "{lib_name}"
-crate-type = ["cdylib", "lib"]
+crate-type = ["cdylib", "staticlib", "lib"]
 
 [dependencies]
 {ignit_dep}
@@ -168,9 +172,8 @@ fn generate_ignit_toml(project_dir: &Path, config: &ProjectConfig) -> Result<()>
         r#"[ignit]
 
 [android]
+# SDK versions are filled in on the first `ignit build android`.
 package = "{package}"
-min_sdk = {min_sdk}
-target_sdk = {target_sdk}
 targets = ["arm64-v8a", "armeabi-v7a", "x86_64", "x86"]
 apk_mode = "multiarch"
 ndk_version = "26.2.11394342"
@@ -182,10 +185,14 @@ screen_orientation = "sensorLandscape"
 # keystore_password = "your_keystore_password"
 # key_alias = "your_key_alias"
 # key_password = "your_key_password"
+
+[ios]
+# The deployment target is filled in on the first `ignit build ios`.
+bundle_id = "{package}"
+app_name = "{app_name}"
 "#,
         package = config.package_name,
-        min_sdk = config.min_sdk,
-        target_sdk = config.target_sdk,
+        app_name = config.project_name,
     );
 
     fs::write(project_dir.join("Ignit.toml"), content).context("Failed to write Ignit.toml")?;
@@ -260,10 +267,9 @@ mod tests {
         ProjectConfig {
             project_name: "demo".to_string(),
             package_name: "com.example.demo".to_string(),
-            min_sdk: 21,
-            target_sdk: 34,
             template: "minimal-3d".to_string(),
             generate_android: false,
+            generate_ios: false,
             engine_source,
         }
     }

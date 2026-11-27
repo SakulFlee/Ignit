@@ -6,12 +6,14 @@ use ignit_ui::{UiKey, UiModifiers};
 
 use crate::shape::ShapedText;
 
-/// `arboard`-backed clipboard. Construction may fail without a display; the
-/// editor still works with copy/cut/paste as no-ops.
+/// Desktop clipboard backed by `arboard`. Construction may fail without a
+/// display; the editor still works with copy/cut/paste as no-ops.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub struct SystemClipboard {
     inner: Option<arboard::Clipboard>,
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl SystemClipboard {
     pub fn new() -> Self {
         Self {
@@ -20,12 +22,14 @@ impl SystemClipboard {
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl Default for SystemClipboard {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl UiClipboard for SystemClipboard {
     fn get_text(&mut self) -> Option<String> {
         self.inner.as_mut()?.get_text().ok()
@@ -35,6 +39,33 @@ impl UiClipboard for SystemClipboard {
         if let Some(clipboard) = self.inner.as_mut() {
             let _ = clipboard.set_text(text);
         }
+    }
+}
+
+/// Mobile clipboard fallback. `arboard` has no Android or iOS backend, so the
+/// editor uses a process-local buffer until a native clipboard integration is
+/// added.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[derive(Default)]
+pub struct SystemClipboard {
+    inner: ignit_ui::UiMemoryClipboard,
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+impl SystemClipboard {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+impl UiClipboard for SystemClipboard {
+    fn get_text(&mut self) -> Option<String> {
+        self.inner.get_text()
+    }
+
+    fn set_text(&mut self, text: String) {
+        self.inner.set_text(text);
     }
 }
 

@@ -75,8 +75,16 @@ pub fn boot_simulator(udid: &str) -> Result<()> {
         anyhow::bail!("Failed to boot simulator {}", udid);
     }
 
-    // Wait for boot
-    std::thread::sleep(std::time::Duration::from_secs(3));
+    // Wait until SpringBoard is ready instead of guessing with a fixed sleep.
+    let status = Command::new("xcrun")
+        .args(["simctl", "bootstatus", udid, "-b"])
+        .status()
+        .context("Failed to wait for simulator boot")?;
+
+    if !status.success() {
+        anyhow::bail!("Simulator {} did not finish booting", udid);
+    }
+
     println!("Simulator '{}' booted.", sim.name);
 
     Ok(())

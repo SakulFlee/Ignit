@@ -89,9 +89,12 @@ enum Commands {
         /// Template to use (minimal-3d, all-in-one, minimal-2d)
         #[arg(short, long)]
         template: Option<String>,
-        /// Enable Android support
+        /// Generate the Android project during init
         #[arg(long)]
-        android: Option<bool>,
+        android: bool,
+        /// Generate the iOS project during init (macOS only)
+        #[arg(long)]
+        ios: bool,
         /// Custom engine git repository (overrides the source menu)
         #[arg(long, conflicts_with = "engine_path")]
         engine_repo: Option<String>,
@@ -110,6 +113,15 @@ enum Commands {
     },
     /// Initialize Android project for existing Ignit project
     InitAndroid,
+    /// Initialize an Xcode project for an existing Ignit project
+    InitIos {
+        /// Package to generate the project for (workspace projects only)
+        #[arg(short, long)]
+        package: Option<String>,
+        /// Regenerate the Xcode project, overwriting the current one
+        #[arg(long)]
+        force: bool,
+    },
     /// Build for a platform (defaults to desktop)
     Build {
         /// Platform to build for (defaults to desktop)
@@ -132,7 +144,7 @@ enum Commands {
         /// Package to run (optional in standalone projects)
         #[arg(short, long)]
         package: Option<String>,
-        /// Device serial or AVD name to run on
+        /// Device serial, AVD name, or iOS simulator UDID
         #[arg(short, long)]
         device: Option<String>,
         /// Run in release mode
@@ -167,6 +179,7 @@ fn main() -> Result<()> {
             package,
             template,
             android,
+            ios,
             engine_repo,
             engine_branch,
             engine_path,
@@ -179,6 +192,7 @@ fn main() -> Result<()> {
             package,
             template,
             android,
+            ios,
             engine_repo,
             engine_branch,
             engine_path,
@@ -186,6 +200,7 @@ fn main() -> Result<()> {
             no_git,
         ),
         Commands::InitAndroid => android::project::init(),
+        Commands::InitIos { package, force } => ios::project::init(package.as_deref(), force),
         Commands::Build {
             platform,
             package,
@@ -259,6 +274,24 @@ mod tests {
         features.apply(&mut args);
         assert_eq!(args, ["run"]);
         assert!(features.is_empty());
+    }
+
+    #[test]
+    fn init_accepts_platform_generation_flags() {
+        let cli = Cli::try_parse_from(["ignit", "init", "demo", "--android", "--ios"])
+            .expect("init flags parse");
+        let Commands::Init { android, ios, .. } = cli.command else {
+            panic!("expected init");
+        };
+        assert!(android);
+        assert!(ios);
+
+        let cli = Cli::try_parse_from(["ignit", "init", "demo"]).expect("init parse");
+        let Commands::Init { android, ios, .. } = cli.command else {
+            panic!("expected init");
+        };
+        assert!(!android);
+        assert!(!ios);
     }
 
     #[test]

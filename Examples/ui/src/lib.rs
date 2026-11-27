@@ -4,7 +4,9 @@ use ignit::app::{App, AppSettings, Module, UiSystem};
 use ignit::cgmath::{Point3, Rad};
 use ignit::ecs::{System, World};
 use ignit::ecs_bridge::{ActiveCamera, CameraDescriptor, Position, Rotation};
-use ignit::logging::{self, debug, error, info, trace, warn};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use ignit::logging;
+use ignit::logging::{debug, error, info, trace, warn};
 use ignit::ui::{
     UiAction, UiBuilder, UiColor, UiDimension, UiDocument, UiDocumentNode, UiEdges, UiEvent,
     UiLayout, UiLengthPercentage, UiNotification, UiNotificationSeverity, UiNotifications, UiStyle,

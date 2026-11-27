@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use inquire::{Confirm, Select};
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -22,6 +23,10 @@ pub fn run(
 
     let project_root = config::find_project_root()?;
     let android_dir = project_root.join("Android");
+
+    // `build` already did this; repeat it so `--skip-build` still resolves the
+    // package name for projects whose Ignit.toml is missing it.
+    config::ensure_android_config(std::io::stdin().is_terminal())?;
 
     let android_config = config::load_android_config()?;
     // The applicationId is exactly the [android] package value (see init).

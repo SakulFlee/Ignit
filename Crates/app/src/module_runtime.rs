@@ -15,7 +15,6 @@ use gilrs::Gilrs;
 use ignit_core::logging::{self, debug, error, info, warn};
 use ignit_ecs::Schedule;
 use ignit_input::{InputEvent, InputState};
-use log::trace;
 use wgpu::CurrentSurfaceTexture;
 use wgpu::TextureViewDescriptor;
 use winit::{
@@ -1935,8 +1934,7 @@ impl ApplicationHandler for ModuleRuntime {
                     (Arc::new(Mutex::new(ctx)), config)
                 }
                 Err(e) => {
-                    error!("Critical error: Failed to acquire context while resuming app!");
-                    trace!("Error: {:?}", e);
+                    error!("Critical error: Failed to acquire context while resuming app: {e:?}");
                     self.state = AppState::Starting;
                     return;
                 }

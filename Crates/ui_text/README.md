@@ -11,7 +11,8 @@ Text shaping, an alpha glyph atlas, and editing for Ignit UI.
 - `UiTextMeasure` implementation for the Taffy layout bridge.
 - `TextEditState` with caret/selection, keyboard navigation, clipboard
   copy/cut/paste, and Enter submission.
-- `SystemClipboard` uses `arboard`; `UiClipboard` lets tests run headless.
+- `SystemClipboard` uses `arboard` on desktop and an in-memory clipboard on
+  Android and iOS; `UiClipboard` lets tests run headless.
 
 ```rust
 use ignit_ui_text::{FontStack, TextEngine, TextEditState};

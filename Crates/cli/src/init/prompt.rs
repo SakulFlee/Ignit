@@ -1,5 +1,5 @@
 use anyhow::{Result, bail};
-use inquire::{Confirm, Select, Text};
+use inquire::{Select, Text};
 use std::path::Path;
 
 use crate::config;
@@ -63,10 +63,9 @@ impl EngineSource {
 pub struct ProjectConfig {
     pub project_name: String,
     pub package_name: String,
-    pub min_sdk: u32,
-    pub target_sdk: u32,
     pub template: String,
     pub generate_android: bool,
+    pub generate_ios: bool,
     pub engine_source: EngineSource,
 }
 
@@ -137,11 +136,13 @@ fn prompt_engine_source(config: &config::IgnitGeneral) -> Result<EngineSource> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn interactive(
     name: Option<String>,
     package: Option<String>,
     template: Option<String>,
-    android: Option<bool>,
+    android: bool,
+    ios: bool,
     engine_repo: Option<String>,
     engine_branch: Option<String>,
     engine_path: Option<String>,
@@ -154,51 +155,16 @@ pub fn interactive(
         None => Text::new("Project name:").prompt()?,
     };
 
-    // 2. Android support (ask FIRST)
-    let generate_android = match android {
-        Some(a) => a,
-        None => Confirm::new("Do you need Android support?")
-            .with_default(true)
+    // 2. Package name. This is also the Android package and iOS bundle ID.
+    let default_package = format!("com.example.{}", project_name.replace('-', "_"));
+    let package_name = match package {
+        Some(p) => p,
+        None => Text::new("Package name:")
+            .with_default(&default_package)
             .prompt()?,
     };
 
-    // 3. Package name (only if Android, otherwise use default for Cargo.toml)
-    let package_name = if generate_android {
-        let default_package = format!("com.example.{}", project_name.replace('-', "_"));
-        match package {
-            Some(p) => p,
-            None => Text::new("Package name:")
-                .with_default(&default_package)
-                .prompt()?,
-        }
-    } else {
-        // Still need a package name for Cargo.toml
-        match package {
-            Some(p) => p,
-            None => format!("com.example.{}", project_name.replace('-', "_")),
-        }
-    };
-
-    // 4. SDK versions (only if Android)
-    let (min_sdk, target_sdk) = if generate_android {
-        let min_sdk: u32 = Text::new("Android min SDK:")
-            .with_default("21")
-            .prompt()?
-            .parse()
-            .unwrap_or(21);
-
-        let target_sdk: u32 = Text::new("Android target SDK:")
-            .with_default("34")
-            .prompt()?
-            .parse()
-            .unwrap_or(34);
-
-        (min_sdk, target_sdk)
-    } else {
-        (21, 34)
-    };
-
-    // 5. Template selection (minimal-3d, all-in-one, or minimal-2d)
+    // 3. Template selection (minimal-3d, all-in-one, or minimal-2d)
     let template_name = match template {
         Some(t) => t,
         None => {
@@ -209,7 +175,7 @@ pub fn interactive(
         }
     };
 
-    // 6. Engine source
+    // 4. Engine source
     let engine_source = if let Some(path) = engine_path {
         if engine_repo.is_some() {
             bail!("--engine-path and --engine-repo are mutually exclusive");
@@ -237,19 +203,20 @@ pub fn interactive(
     Ok(ProjectConfig {
         project_name,
         package_name,
-        min_sdk,
-        target_sdk,
         template: template_name,
-        generate_android,
+        generate_android: android,
+        generate_ios: ios,
         engine_source,
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn non_interactive(
     name: Option<String>,
     package: Option<String>,
     template: Option<String>,
     android: bool,
+    ios: bool,
     engine_repo: Option<String>,
     engine_branch: Option<String>,
     engine_path: Option<String>,
@@ -305,10 +272,9 @@ pub fn non_interactive(
     Ok(ProjectConfig {
         project_name,
         package_name,
-        min_sdk: 21,
-        target_sdk: 34,
         template: template_name,
         generate_android: android,
+        generate_ios: ios,
         engine_source,
     })
 }
