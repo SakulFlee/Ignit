@@ -67,7 +67,7 @@ pub(super) fn build() -> UiDocumentNode {
                     UiLayout::row()
                         .width_full()
                         .height(24.0)
-                        .gap(6.0)
+                        .gap(10.0)
                         .shrink(0.0),
                 )
                 .child(
@@ -152,7 +152,28 @@ pub(super) fn build() -> UiDocumentNode {
                 .gap(8.0),
         )
         .child(left)
-        .child(right);
+        .child(right)
+        .child(
+            UiDocumentNode::new("debug_anim_empty")
+                .layout(
+                    UiLayout::default()
+                        .width_full()
+                        .height(60.0)
+                        .absolute()
+                        .inset(ignit_ui::UiEdges {
+                            left: UiDimension::Length(12.0),
+                            right: UiDimension::Length(12.0),
+                            top: UiDimension::Length(70.0),
+                            bottom: UiDimension::Auto,
+                        }),
+                )
+                .text("No animations in this scene")
+                .style(UiStyle::default().padding_text(UiTextStyle {
+                    size: 15.0,
+                    color: UiColor::token("text_muted"),
+                    ..Default::default()
+                })),
+        );
 
     UiDocumentNode::new(WINDOW_ID)
         .layout(
@@ -229,6 +250,16 @@ fn selected_entity(world: &World) -> Option<Entity> {
 
 pub(super) fn refresh(world: &mut World) {
     let entities = animated_entities(world);
+    let empty = entities.is_empty();
+    if let Some(entity) = find(world, "debug_anim_entities") {
+        super::set_visible(world, entity, !empty);
+    }
+    if let Some(entity) = find(world, "debug_anim_right") {
+        super::set_visible(world, entity, !empty);
+    }
+    if let Some(entity) = find(world, "debug_anim_empty") {
+        super::set_visible(world, entity, empty);
+    }
     let selected = selected_entity(world);
     for index in 0..ROWS {
         let id = format!("{ENTITY_PREFIX}{index}");
@@ -332,7 +363,11 @@ pub(super) fn refresh(world: &mut World) {
     super::set_text(
         world,
         "debug_anim_clip_heading",
-        format!("Clips ({})", clips.len()),
+        if clips.is_empty() {
+            "Clips (0) — none".to_string()
+        } else {
+            format!("Clips ({})", clips.len())
+        },
     );
 
     let open = world
