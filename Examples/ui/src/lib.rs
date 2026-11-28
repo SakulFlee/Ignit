@@ -345,7 +345,7 @@ fn build_showcase(world: &mut World) {
         )
         .child(
             UiDocumentNode::new("tabs")
-                .layout(UiLayout::default().width(420.0).height(44.0))
+                .layout(UiLayout::default().width(420.0).height(44.0).shrink(0.0))
                 .widget(UiWidgetSpec::Tabs {
                     tabs: vec!["Overview".into(), "Rendering".into(), "Console".into()],
                     active: 0,
@@ -358,19 +358,19 @@ fn build_showcase(world: &mut World) {
         )
         .child(
             UiDocumentNode::new("tab_overview")
-                .layout(UiLayout::column().height(44.0).padding(8.0))
+                .layout(UiLayout::column().height(44.0).padding(8.0).shrink(0.0))
                 .style(UiStyle::default().class("panel"))
                 .child(UiDocumentNode::new("tab_overview_text").text("Overview content")),
         )
         .child(
             UiDocumentNode::new("tab_rendering")
-                .layout(UiLayout::column().height(44.0).padding(8.0))
+                .layout(UiLayout::column().height(44.0).padding(8.0).shrink(0.0))
                 .style(UiStyle::default().class("panel").visible(false))
                 .child(UiDocumentNode::new("tab_rendering_text").text("Rendering content")),
         )
         .child(
             UiDocumentNode::new("tab_console")
-                .layout(UiLayout::column().height(44.0).padding(8.0))
+                .layout(UiLayout::column().height(44.0).padding(8.0).shrink(0.0))
                 .style(UiStyle::default().class("panel").visible(false))
                 .child(UiDocumentNode::new("tab_console_text").text("Console content")),
         )
