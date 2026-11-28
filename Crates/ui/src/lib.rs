@@ -13,6 +13,7 @@ pub mod clipboard;
 pub mod document;
 pub mod draw;
 pub mod events;
+pub mod floating;
 pub mod focus;
 pub mod forest;
 pub mod geometry;
@@ -35,6 +36,7 @@ pub use document::{
 };
 pub use draw::{UiDrawCommand, UiDrawList, UiStats, build_draw_list};
 pub use events::UiEvent;
+pub use floating::{clamp_floating_rect, clamp_floating_window};
 pub use focus::{UiDirection, UiFocusState, blur, focus_direction, focus_entity, focus_next};
 pub use forest::{UiForest, UiIndex};
 pub use geometry::{UiPoint, UiRect, UiSize};

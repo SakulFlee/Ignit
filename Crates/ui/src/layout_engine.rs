@@ -7,6 +7,7 @@ use ignit_ecs::{Entity, World};
 use taffy::AvailableSpace as TaffyAvailable;
 use taffy::prelude::*;
 
+use crate::floating::clamp_floating_window;
 use crate::forest::UiForest;
 use crate::geometry::{UiRect, UiSize};
 use crate::layout::{UiDimension, UiLayout};
@@ -245,10 +246,6 @@ impl UiLayoutEngine {
             return false;
         }
 
-        self.taffy = TaffyTree::new();
-        self.node_ids.clear();
-        self.roots.clear();
-
         let forest_roots = world
             .get_resource::<UiForest>()
             .map(|forest| forest.roots().to_vec())
@@ -258,76 +255,103 @@ impl UiLayoutEngine {
             .map(|forest| forest.revision())
             .unwrap_or(0);
 
-        {
-            let world_ref: &World = &*world;
-            let themes = world_ref.get_resource::<UiThemes>();
-            for root_entity in forest_roots {
-                let view = world_ref
-                    .get_component_store::<UiView>()
-                    .and_then(|store| store.get_component(root_entity.index).copied());
-                let Some(view) = view else {
-                    continue;
-                };
-                if !view.visible {
-                    continue;
+        let mut passes = 0;
+        loop {
+            passes += 1;
+            self.taffy = TaffyTree::new();
+            self.node_ids.clear();
+            self.roots.clear();
+
+            {
+                let world_ref: &World = &*world;
+                let themes = world_ref.get_resource::<UiThemes>();
+                for &root_entity in &forest_roots {
+                    let view = world_ref
+                        .get_component_store::<UiView>()
+                        .and_then(|store| store.get_component(root_entity.index).copied());
+                    let Some(view) = view else {
+                        continue;
+                    };
+                    if !view.visible {
+                        continue;
+                    }
+                    let Some(root_node) =
+                        self.build_node(world_ref, root_entity, themes.as_deref())
+                    else {
+                        continue;
+                    };
+                    self.roots.push((root_entity, root_node, view.order));
+                    self.taffy
+                        .compute_layout_with_measure(
+                            root_node,
+                            Size {
+                                width: TaffyAvailable::Definite(view.size.width.max(1.0)),
+                                height: TaffyAvailable::Definite(view.size.height.max(1.0)),
+                            },
+                            |inputs, _node_id, context, style| {
+                                let Some(context) = context else {
+                                    return taffy::compute_leaf_layout(
+                                        inputs,
+                                        style,
+                                        |_, _| 0.0,
+                                        |_, _| Size::ZERO,
+                                    );
+                                };
+                                let Some(text) = &context.text else {
+                                    return taffy::compute_leaf_layout(
+                                        inputs,
+                                        style,
+                                        |_, _| 0.0,
+                                        |_, _| Size::ZERO,
+                                    );
+                                };
+                                taffy::compute_leaf_layout(
+                                    inputs,
+                                    style,
+                                    |_, _| 0.0,
+                                    |known, available| {
+                                        let max_width = match available.width {
+                                            TaffyAvailable::Definite(width) => Some(width),
+                                            _ => known.width,
+                                        };
+                                        let measured =
+                                            measure.measure(&text.text, &text.style, max_width);
+                                        Size {
+                                            width: known.width.unwrap_or(measured.width),
+                                            height: known.height.unwrap_or(measured.height),
+                                        }
+                                    },
+                                )
+                            },
+                        )
+                        .unwrap();
                 }
-                let Some(root_node) = self.build_node(world_ref, root_entity, themes.as_deref())
-                else {
-                    continue;
-                };
-                self.roots.push((root_entity, root_node, view.order));
-                self.taffy
-                    .compute_layout_with_measure(
-                        root_node,
-                        Size {
-                            width: TaffyAvailable::Definite(view.size.width.max(1.0)),
-                            height: TaffyAvailable::Definite(view.size.height.max(1.0)),
-                        },
-                        |inputs, _node_id, context, style| {
-                            let Some(context) = context else {
-                                return taffy::compute_leaf_layout(
-                                    inputs,
-                                    style,
-                                    |_, _| 0.0,
-                                    |_, _| Size::ZERO,
-                                );
-                            };
-                            let Some(text) = &context.text else {
-                                return taffy::compute_leaf_layout(
-                                    inputs,
-                                    style,
-                                    |_, _| 0.0,
-                                    |_, _| Size::ZERO,
-                                );
-                            };
-                            taffy::compute_leaf_layout(
-                                inputs,
-                                style,
-                                |_, _| 0.0,
-                                |known, available| {
-                                    let max_width = match available.width {
-                                        TaffyAvailable::Definite(width) => Some(width),
-                                        _ => known.width,
-                                    };
-                                    let measured =
-                                        measure.measure(&text.text, &text.style, max_width);
-                                    Size {
-                                        width: known.width.unwrap_or(measured.width),
-                                        height: known.height.unwrap_or(measured.height),
-                                    }
-                                },
-                            )
-                        },
-                    )
-                    .unwrap();
+            }
+
+            let roots = self.roots.clone();
+            for (root_entity, root_node, order) in roots {
+                let z_base = order.saturating_mul(10_000);
+                let origin = world
+                    .get_component_store::<UiView>()
+                    .and_then(|store| {
+                        store
+                            .get_component(root_entity.index)
+                            .map(|view| (view.offset.x, view.offset.y))
+                    })
+                    .unwrap_or((0.0, 0.0));
+                self.write_computed(world, root_node, origin, ClipState::default(), z_base, true);
+            }
+
+            let clamped = clamp_floating_windows(world);
+            if !clamped || passes >= 4 {
+                break;
             }
         }
 
-        let roots = self.roots.clone();
         let mut last_views = Vec::new();
         {
             let views = world.get_component_store::<UiView>();
-            for (root_entity, _, _) in &roots {
+            for (root_entity, _, _) in &self.roots {
                 if let Some(view) = views
                     .as_ref()
                     .and_then(|store| store.get_component(root_entity.index))
@@ -340,18 +364,6 @@ impl UiLayoutEngine {
         self.last_layout_revision = theme_layout_revision(world);
         self.last_viewports = last_views;
 
-        for (root_entity, root_node, order) in roots {
-            let z_base = order.saturating_mul(10_000);
-            let origin = world
-                .get_component_store::<UiView>()
-                .and_then(|store| {
-                    store
-                        .get_component(root_entity.index)
-                        .map(|view| (view.offset.x, view.offset.y))
-                })
-                .unwrap_or((0.0, 0.0));
-            self.write_computed(world, root_node, origin, ClipState::default(), z_base, true);
-        }
         clear_layout_dirty(world);
         true
     }
@@ -605,6 +617,99 @@ impl UiLayoutEngine {
             );
         }
     }
+}
+
+/// Pulls floating windows back into their root viewport.
+///
+/// Runs after a layout pass so the computed rectangles and insets agree. Windows
+/// being dragged or resized are skipped; the widget marks layout dirty when the
+/// interaction ends, so the final position is clamped on the next pass.
+fn clamp_floating_windows(world: &mut World) -> bool {
+    let entities: Vec<Entity> = world.entities().collect();
+    let mut changed = false;
+
+    for entity in entities {
+        let (is_floating, interacting) = world
+            .get_component_store::<crate::widgets::UiWidget>()
+            .and_then(|store| {
+                store.get_component(entity.index).map(|widget| {
+                    (
+                        matches!(
+                            widget.spec,
+                            crate::widgets::UiWidgetSpec::FloatingWindow { .. }
+                        ),
+                        widget.dragging || widget.resizing,
+                    )
+                })
+            })
+            .unwrap_or((false, false));
+        if !is_floating || interacting {
+            continue;
+        }
+
+        let Some(current) = world
+            .get_component_store::<UiComputed>()
+            .and_then(|store| store.get_component(entity.index).copied())
+        else {
+            continue;
+        };
+        if !current.visible {
+            continue;
+        }
+        let Some(mut layout) = world
+            .get_component_store::<UiLayout>()
+            .and_then(|store| store.get_component(entity.index).cloned())
+        else {
+            continue;
+        };
+
+        let parent = world.get_component_store::<UiNode>().and_then(|store| {
+            store
+                .get_component(entity.index)
+                .and_then(|node| node.parent)
+        });
+        let mut root = parent.unwrap_or(entity);
+        while let Some(next) = world
+            .get_component_store::<UiNode>()
+            .and_then(|store| store.get_component(root.index).and_then(|node| node.parent))
+        {
+            root = next;
+        }
+
+        let Some(view) = world
+            .get_component_store::<UiView>()
+            .and_then(|store| store.get_component(root.index).copied())
+        else {
+            continue;
+        };
+        if !view.visible {
+            continue;
+        }
+        let viewport = UiRect::new(
+            view.offset.x,
+            view.offset.y,
+            view.size.width,
+            view.size.height,
+        );
+        let containing_block = match parent {
+            Some(parent) if parent != root => world
+                .get_component_store::<UiComputed>()
+                .and_then(|store| {
+                    store
+                        .get_component(parent.index)
+                        .map(|computed| computed.rect)
+                })
+                .unwrap_or(viewport),
+            _ => viewport,
+        };
+
+        if clamp_floating_window(&mut layout, current.rect, viewport, containing_block) {
+            let _ = world.attach_component(&entity, layout);
+            changed = true;
+        }
+    }
+
+    changed
 }
 
 /// ECS resource wrapper for [`UiLayoutEngine`].
