@@ -447,16 +447,8 @@ impl DebugUiState {
 
     /// Flips the overlay's visibility, logging the new state.
     pub fn toggle_visibility(&mut self) {
-        // If every window was closed, the toggle restores the default panel
-        // instead of hiding an empty overlay and needing another press.
-        if self.visible && self.panels.iter().all(|enabled| !enabled) {
-            self.panels[PanelId::Performance.index()] = true;
-            self.dirty = true;
-            return;
-        }
-
-        // Preserve the current panel selection across hide/show. The toolbar
-        // is the explicit way to open additional panels.
+        // Always hide/show, preserving the current panel selection. The
+        // toolbar is the explicit way to open additional panels.
         self.visible = !self.visible;
         self.dirty = true;
     }
