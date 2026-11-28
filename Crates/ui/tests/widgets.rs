@@ -1,8 +1,9 @@
 use ignit_ecs::{Entity, World};
 use ignit_ui::{
-    UiBuilder, UiClipboardResource, UiColor, UiComputed, UiDimension, UiDocumentNode, UiDrawCommand,
-    UiDrawList, UiFocusState, UiInputState, UiLayout, UiPoint, UiRect, UiSize, UiStyle, UiText,
-    UiTextMeasure, UiTextStyle, UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec, init, update,
+    UiBuilder, UiClipboardResource, UiColor, UiComputed, UiDimension, UiDocumentNode,
+    UiDrawCommand, UiDrawList, UiFocusState, UiInputState, UiLayout, UiPoint, UiRect, UiSize,
+    UiStyle, UiText, UiTextMeasure, UiTextStyle, UiTheme, UiThemes, UiView, UiWidget, UiWidgetSpec,
+    init, update,
 };
 
 struct TenPixelMeasure;
@@ -1681,4 +1682,43 @@ fn open_dropdown_height_matches_its_options() {
         "height {}",
         opened.rect.height
     );
+}
+
+#[test]
+fn tabs_in_scroll_content_draw_their_labels() {
+    let mut world = World::new();
+    init(&mut world);
+    let mut root = UiDocumentNode::new("scroll_root")
+        .layout(UiLayout::column().size(400.0, 300.0).padding(16.0).gap(8.0))
+        .scroll()
+        .child(UiDocumentNode::new("spacer").layout(UiLayout::default().height(120.0)))
+        .child(
+            UiDocumentNode::new("tabs")
+                .layout(UiLayout::default().width(360.0).height(44.0))
+                .widget(UiWidgetSpec::Tabs {
+                    tabs: vec!["Overview".into(), "Rendering".into(), "Console".into()],
+                    active: 0,
+                    contents: Vec::new(),
+                }),
+        );
+    root.view = Some(UiView::new(400.0, 300.0));
+    UiBuilder::new().root(root).build(&mut world).unwrap();
+    let tabs = world
+        .get_resource::<ignit_ui::UiForest>()
+        .unwrap()
+        .find(&"tabs".into())
+        .unwrap();
+    let mut text = ignit_ui::UiFallbackTextMeasure;
+    update(&mut world, &mut text);
+
+    let draw = world.get_resource::<UiDrawList>().unwrap();
+    let labels = draw
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            UiDrawCommand::Text { entity, text, .. } if *entity == tabs => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(labels, vec!["Overview", "Rendering", "Console"]);
 }

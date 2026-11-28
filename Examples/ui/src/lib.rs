@@ -589,7 +589,7 @@ fn graph_showcase() -> UiDocumentNode {
     UiDocumentNode::new("demo_graphs")
         .layout(
             UiLayout::row()
-                .width_full()
+                .width(800.0)
                 .height(180.0)
                 .gap(12.0)
                 .shrink(0.0),
@@ -835,6 +835,14 @@ mod tests {
             graphs,
             scroll
         );
+        let ron_root = forest.find(&"ron_root".into()).unwrap();
+        let ron = computed.get_component(ron_root.index).unwrap().rect;
+        assert!(
+            graphs.intersect(ron).is_none(),
+            "graphs {:?} overlap the RON panel {:?}",
+            graphs,
+            ron
+        );
 
         let root = forest.find(&"demo_root".into()).unwrap();
         let layout = world
@@ -845,6 +853,80 @@ mod tests {
             .unwrap();
         assert_eq!(layout.width, UiDimension::FULL);
         assert_eq!(layout.height, UiDimension::FULL);
+    }
+
+    #[test]
+    fn maximized_layout_keeps_graphs_ron_and_tabs_reachable() {
+        let mut world = World::new();
+        ignit::ui::init(&mut world);
+        build_showcase(&mut world);
+        let roots = world
+            .get_resource::<ignit::ui::UiForest>()
+            .unwrap()
+            .roots()
+            .to_vec();
+        if let Some(views) = world.get_component_store_mut::<ignit::ui::UiView>() {
+            let store = views.get_mut_store();
+            for root in roots {
+                if let Some(view) = store.get_component_mut(root.index) {
+                    view.size = ignit::ui::UiSize::new(1920.0, 1080.0);
+                }
+            }
+        }
+        let mut text = ignit::ui::UiFallbackTextMeasure;
+        ignit::ui::update(&mut world, &mut text);
+        ignit::ui::update(&mut world, &mut text);
+
+        let forest = world.get_resource::<ignit::ui::UiForest>().unwrap();
+        let graphs = forest.find(&"demo_graphs".into()).unwrap();
+        let ron_root = forest.find(&"ron_root".into()).unwrap();
+        let tabs = forest.find(&"tabs".into()).unwrap();
+        let computed = world
+            .get_component_store::<ignit::ui::UiComputed>()
+            .unwrap();
+        let graphs = computed.get_component(graphs.index).unwrap().rect;
+        let ron = computed.get_component(ron_root.index).unwrap().rect;
+        assert!(graphs.intersect(ron).is_none());
+        assert!(ron.x + ron.width <= 1920.0);
+        assert!(ron.y + ron.height <= 1080.0);
+
+        let draw = world.get_resource::<ignit::ui::UiDrawList>().unwrap();
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            ignit::ui::UiDrawCommand::Text { entity, text, .. }
+                if *entity == tabs && text == "Overview"
+        )));
+    }
+
+    #[test]
+    fn tabs_labels_exist_at_the_default_scroll_position() {
+        let mut world = World::new();
+        ignit::ui::init(&mut world);
+        build_showcase(&mut world);
+        let mut text = ignit::ui::UiFallbackTextMeasure;
+        ignit::ui::update(&mut world, &mut text);
+
+        let forest = world.get_resource::<ignit::ui::UiForest>().unwrap();
+        let content = forest.find(&"demo_content".into()).unwrap();
+        let scroll = world
+            .get_component_store::<ignit::ui::UiScroll>()
+            .and_then(|store| store.get_component(content.index).copied())
+            .expect("demo content scroll");
+        assert_eq!(scroll.offset.y, 0.0);
+
+        let tabs = forest.find(&"tabs".into()).unwrap();
+        let draw = world.get_resource::<ignit::ui::UiDrawList>().unwrap();
+        let labels = draw
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                ignit::ui::UiDrawCommand::Text { entity, text, .. } if *entity == tabs => {
+                    Some(text.as_str())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(labels, vec!["Overview", "Rendering", "Console"]);
     }
 
     #[test]

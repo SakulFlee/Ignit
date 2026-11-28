@@ -498,6 +498,10 @@ impl UiLayoutEngine {
                 }
                 crate::widgets::UiWidgetSpec::Modal { .. } => z_index + 1_000_000,
                 crate::widgets::UiWidgetSpec::Dropdown { open: true, .. } => z_index + 200,
+                // Tab labels sit directly above their content panels. Keep
+                // them above panel shadows/borders that could paint over the
+                // text after a scroll-layout change.
+                crate::widgets::UiWidgetSpec::Tabs { .. } => z_index + 50,
                 _ => z_index,
             })
             .unwrap_or(z_index);
