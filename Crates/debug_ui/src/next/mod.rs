@@ -130,7 +130,9 @@ impl Module for DebugUiNextModule {
             return Vec::new();
         }
 
-        ecs.insert_resource(DebugUiState::new(self.toggle_key));
+        let mut state = DebugUiState::new(self.toggle_key);
+        state.panels = [true, false, false, false, false];
+        ecs.insert_resource(state);
         ecs.insert_resource(DebugSelectedEntity::default());
         if ecs.get_resource::<TimingsHistoryConfig>().is_none() {
             ecs.insert_resource(TimingsHistoryConfig::default());
@@ -187,20 +189,6 @@ impl UiSystem for DebugUiNextSystem {
         if self.last_visible != Some(visible) {
             self.last_visible = Some(visible);
             set_visible(world, self.state.root, visible);
-            if visible {
-                // The toolbar can reopen them; don't cover the screen with
-                // every panel on the first show.
-                crate::handle_debug_message_world(DebugMessage::HidePanel(PanelId::Console), world);
-                crate::handle_debug_message_world(
-                    DebugMessage::HidePanel(PanelId::Rendering),
-                    world,
-                );
-                crate::handle_debug_message_world(DebugMessage::HidePanel(PanelId::Ecs), world);
-                crate::handle_debug_message_world(
-                    DebugMessage::HidePanel(PanelId::Animation),
-                    world,
-                );
-            }
             debug!("debug UI next {}", if visible { "shown" } else { "hidden" });
         }
         if !visible {

@@ -447,22 +447,17 @@ impl DebugUiState {
 
     /// Flips the overlay's visibility, logging the new state.
     pub fn toggle_visibility(&mut self) {
-        // A toggle while any panel is closed reopens the panels instead of
-        // hiding the whole overlay and requiring a second press.
-        if self.visible && self.panels.iter().any(|enabled| !enabled) {
-            self.panels = [true; PANEL_COUNT];
+        // If every window was closed, the toggle restores the default panel
+        // instead of hiding an empty overlay and needing another press.
+        if self.visible && self.panels.iter().all(|enabled| !enabled) {
+            self.panels[PanelId::Performance.index()] = true;
             self.dirty = true;
             return;
         }
 
+        // Preserve the current panel selection across hide/show. The toolbar
+        // is the explicit way to open additional panels.
         self.visible = !self.visible;
-
-        // Turning the overlay back on is also the recovery path for panels the
-        // user closed with their X buttons.
-        if self.visible {
-            self.panels = [true; PANEL_COUNT];
-        }
-
         self.dirty = true;
     }
 
@@ -697,7 +692,7 @@ mod tests {
     }
 
     #[test]
-    fn rendering_panel_can_be_hidden_and_restored() {
+    fn rendering_panel_can_be_hidden_and_preserved() {
         let mut state = DebugUiState::new(winit::keyboard::KeyCode::F1);
         state.visible = true;
 
@@ -707,8 +702,10 @@ mod tests {
         assert!(!state.is_panel_visible(PanelId::Rendering));
 
         state.toggle_visibility();
-        assert!(state.is_panel_visible(PanelId::Rendering));
+        assert!(!state.visible);
+        state.toggle_visibility();
         assert!(state.visible);
+        assert!(!state.is_panel_visible(PanelId::Rendering));
     }
 
     #[test]
@@ -854,12 +851,13 @@ mod tests {
     }
 
     #[test]
-    fn showing_the_overlay_again_restores_closed_panels() {
+    fn showing_the_overlay_again_preserves_closed_panels() {
         let mut state = DebugUiState::new(winit::keyboard::KeyCode::F1);
         state.apply(&DebugMessage::HidePanel(PanelId::Console));
 
         state.toggle_visibility();
-        assert!(state.is_panel_visible(PanelId::Console));
+        assert!(state.visible);
+        assert!(!state.is_panel_visible(PanelId::Console));
     }
 
     #[test]
